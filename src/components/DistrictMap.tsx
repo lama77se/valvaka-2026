@@ -8,6 +8,14 @@ import {
   GEOMETRY_URL,
   SWEDEN_BOUNDS,
 } from '@/lib/geometry'
+import { supabase } from '@/lib/supabase'
+
+// Läsbar etikett för district_comparison.jamforbarhet (Fas 2-referensdata).
+const JAMFORBARHET_LABEL: Record<string, string> = {
+  JA: 'Jämförbar mot 2022',
+  NEJ: 'Ej jämförbar mot 2022',
+  FLERA: 'Jämförs mot flera 2022-distrikt',
+}
 
 // Tom bakgrundsstil utan extern basemap: inga API-nycklar, inga externa tiles.
 // Fas 1 ritar bara distrikten själva — "tom karta över alla ~6 300 distrikt".
@@ -28,6 +36,9 @@ export function DistrictMap() {
   const mapRef = useRef<maplibregl.Map | null>(null)
   const hoveredIdRef = useRef<string | null>(null)
   const [hover, setHover] = useState<HoverInfo | null>(null)
+  // Referensdata från Supabase (Fas 2) för det hovrade distriktet — bevisar
+  // klient→DB-uppslag på valdistriktskod i själva appen.
+  const [jamforbarhet, setJamforbarhet] = useState<string | null>(null)
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
@@ -101,10 +112,14 @@ export function DistrictMap() {
         const f = e.features?.[0]
         if (!f) return
         map.getCanvas().style.cursor = 'pointer'
-        setHovered(String(f.id))
+        const id = String(f.id)
+        // mousemove spammar; uppdatera bara state (och trigga DB-uppslag) när
+        // man faktiskt går in i ett nytt distrikt.
+        if (id === hoveredIdRef.current) return
+        setHovered(id)
         const p = f.properties ?? {}
         setHover({
-          kod: String(f.id),
+          kod: id,
           namn: p.Valdistriktsnamn ?? '',
           kommun: p.Kommun ?? '',
           lan: p['Län'] ?? '',
@@ -123,6 +138,29 @@ export function DistrictMap() {
     }
   }, [])
 
+  // Fas 2: slå upp referensdata i Supabase på valdistriktskod när man hovrar ett
+  // nytt distrikt. maybeSingle → null om distriktet saknar jämförelserad.
+  useEffect(() => {
+    const kod = hover?.kod
+    if (!kod) {
+      setJamforbarhet(null)
+      return
+    }
+    let cancelled = false
+    setJamforbarhet(null)
+    supabase
+      .from('district_comparison')
+      .select('jamforbarhet')
+      .eq('valdistriktskod', kod)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!cancelled) setJamforbarhet(data?.jamforbarhet ?? null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [hover?.kod])
+
   return (
     <div className="absolute inset-0">
       <div ref={containerRef} className="h-full w-full" />
@@ -132,6 +170,12 @@ export function DistrictMap() {
           <div className="text-slate-400">
             {hover.kommun} · {hover.lan} · <span className="font-mono">{hover.kod}</span>
           </div>
+          {jamforbarhet && (
+            <div className="mt-1 text-xs text-sky-300">
+              {JAMFORBARHET_LABEL[jamforbarhet] ?? jamforbarhet}
+              <span className="ml-1 text-slate-500">· från Supabase</span>
+            </div>
+          )}
         </div>
       )}
     </div>

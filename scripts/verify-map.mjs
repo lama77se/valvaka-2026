@@ -88,6 +88,25 @@ console.log(logs.length ? logs.join('\n') : '(none)')
 console.log('\n=== MAP REPORT ===')
 console.log(JSON.stringify(report, null, 2))
 
+// Hover-DB-proof (Fas 2): hovra ett känt distrikt, vänta på Supabase-uppslaget,
+// läs jamforbarhet-raden i info-rutan. Kräver __map (dev-bygget).
+if (report.mapExists) {
+  const px = await page.evaluate(() =>
+    (({ x, y }) => ({ x: Math.round(x), y: Math.round(y) }))(
+      window.__map.project([18.0686, 59.3293]), // Stockholm
+    ),
+  )
+  await page.mouse.move(px.x, px.y)
+  await page.mouse.move(px.x + 3, px.y + 3)
+  await page.waitForTimeout(2500)
+  const proof = await page.evaluate(() => {
+    const el = document.querySelector('.text-sky-300')
+    return el ? el.textContent : null
+  })
+  console.log('\n=== HOVER DB-PROOF (info-ruta jamforbarhet) ===')
+  console.log(proof ?? '(ingen jamforbarhet-rad — hover träffade inget distrikt?)')
+}
+
 await page.screenshot({ path: 'scripts/map-shot.png', fullPage: false })
 console.log('\nScreenshot: scripts/map-shot.png')
 await browser.close()
