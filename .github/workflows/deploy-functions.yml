@@ -1,0 +1,27 @@
+name: Deploy edge functions
+
+# Deployar Supabase edge functions vid push till main när supabase/functions ändras.
+# Samma token som db-migrate; ingen DB-lösenord behövs för functions deploy.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/functions/**'
+
+concurrency:
+  group: deploy-functions
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: emtjnmyberugrkdplnsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Deploy ingest-parti
+        run: supabase functions deploy ingest-parti --project-ref "$SUPABASE_PROJECT_REF"
