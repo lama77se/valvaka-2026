@@ -168,10 +168,16 @@ functions. Två kadenser:
 
 ### 3.2 Var artig — conditional GET
 
-Statiska filer bakom CDN stödjer rimligen `ETag`/`Last-Modified`. Spara senaste
-ETag per fil i en `ingest_state`-tabell och skicka `If-None-Match`. `304` → hoppa
-över parsning helt. Lägg på exponentiell backoff vid fel, och en jitter så att inte
-varje cron-tick träffar samtidigt.
+Statiska filer bakom CDN stödjer rimligen `ETag`/`Last-Modified`. Spara validatorn
+per fil i `ingest_state` och skicka en conditional GET. `304` → hoppa över parsning
+helt. Lägg på exponentiell backoff vid fel, och en jitter så att inte varje cron-tick
+träffar samtidigt.
+
+> **⚠️ Verifierat mot val.se (juli 2026):** ETag returneras men **honoreras inte** —
+> `If-None-Match` ger `200`. **`If-Modified-Since` (Last-Modified) ger `304`** och är
+> mekanismen att använda. `ingest_state` driver därför skip på `last_modified`; `etag`
+> sparas bara för audit. Faller Last-Modified någon gång bort → fallback är
+> body-hash i `ingest_state`. Se `supabase/functions/ingest-parti/index.ts` (Fas 3).
 
 ### 3.3 Parsning
 

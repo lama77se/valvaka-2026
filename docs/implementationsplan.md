@@ -58,8 +58,8 @@ Valdagen: **söndag 13 september 2026** (andra söndagen i september). Idag är 
   vi kör migrations mot **moln-projektet** (`supabase link` → `supabase db push`),
   inte `supabase start`.
 - Skapa Supabase-projekt (EU) och Vercel-projekt (koppla repot). Sätt env:
-  `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` i Vercel; service-role-nyckel som
-  edge-function-secret (aldrig i Vercel/klient).
+  `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` i Vercel; service-role-nyckeln
+  auto-injiceras i edge functions (ingen `secrets set`), aldrig i Vercel/klient.
 - `.env.example` incheckad; riktiga `.env`/`.env.local` gitignore:ad (redan
   konfigurerat).
 
