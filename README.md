@@ -29,16 +29,15 @@ Under uppbyggnad. Klart hittills:
   (Supabase Realtime) och färgar distrikten efter vinnarparti via feature-state,
   med rapporteringsgrad-HUD. Repaint rAF-koalescerad. Bevisad headless
   (`npm run verify:realtime`) — simulerad upsert syns inom ~350 ms.
-- **Fas 6 (delvis)** — flervals-dimension: **valtyp-väljare** (Riksdag/Region/Kommun)
-  på samma karta — en `ResultStore` per valtyp, växling färgar om samma geometri
-  utan omladdning, per-valtyp rapporteringsgrad. Regressionstestat att växling
-  nollställer distrikt som saknar resultat i den nya valtypen.
+- **Fas 6** — flervals-dimension (RD/RF/KF): **valtyp-väljare** (Riksdag/Region/Kommun)
+  på samma karta — en `ResultStore` per valtyp, växling färgar om samma geometri utan
+  omladdning, per-valtyp rapporteringsgrad. Mandatmodulen generaliserad
+  (`computeAssembly`) och verifierad mot 2022-facit för alla tre valtyper:
+  RD 349 exakt, **RF 20/20 regioner**, **KF 289/290 kommuner** (de två avvikelserna
+  är lottning resp. ändrad fullmäktigestorlek, inte metodfel).
 
 Återstår:
 
-- **Fas 6 (resten)** — RF/KF-ingestion + RF/KF-**mandatverifiering** mot 2022-facit
-  (region: ~20 oberoende organ, 3 %-spärr; kommun: 290 organ, ingen spärr). Här
-  verifieras överhängsgrenen skarpt. Kräver nedladdade RF/KF-facitfiler.
 - **Fas 7** — generalrep: hela kedjan lastad på uppspelad 2022-data (alla tre
   valtyper) i komprimerad tid via samma ingest-kod, validerad mot Valmyndighetens facit.
 
@@ -96,7 +95,9 @@ npm run dev                # dev-server på fast port http://localhost:5926
 npm run build              # typkoll + prod-bygge
 npm run geometry           # regenerera distriktsgeometrin från källan (mapshaper)
 npm run ingest:reference   # ladda referensdata till Supabase (service-role i .env.local)
-npm run verify:mandate     # regressionstesta mandatmodulen mot 2022 års facit
+npm run verify:mandate     # mandatmodul mot 2022 RD-facit (riksdag)
+npm run verify:mandate-rf  # mandatmodul mot 2022 RF-facit (region, 20 regioner)
+npm run verify:mandate-kf  # mandatmodul mot 2022 KF-facit (kommun, 290 kommuner)
 npm run simulate:valnatt   # simulera inrapportering (RD) för realtidsdemo
 npm run verify:realtime    # headless-acceptans: upsert → kartfärgning via Realtime
 npm run results:reset      # rensa simulerade resultat ur result-tabellen

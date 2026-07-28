@@ -2,7 +2,7 @@
 // Steg-för-steg-checkar (advisor): röstaggregat → spärrset → fasta mandat → 349.
 //   npx tsx scripts/verify-mandate.ts
 import XLSX from 'xlsx'
-import { computeRiksdag, type ConstituencyVotes } from '../src/lib/mandate.ts'
+import { computeAssembly, type ConstituencyVotes } from '../src/lib/mandate.ts'
 
 const DIR = 'data/raw/mandat2022'
 
@@ -96,7 +96,7 @@ for (const r of vRows) {
   facitTotalByCode[code][parti] = Number(String(r[12]).trim()) || 0 // Mandat (kol 12)
 }
 
-const res = computeRiksdag(votesByConstituency, {
+const res = computeAssembly(votesByConstituency, {
   totalSeats: 349,
   firstDivisor: 1.2,
   nationalThreshold: 0.04,
@@ -159,7 +159,7 @@ if (res.overhangParties.length) console.log('överhäng:', res.overhangParties)
 //   Riks-349→5: B=5, A=0.  A:s 3 fasta > 0 mål ⇒ A överhäng, sätts åt sidan med
 //   3; resterande 2 räknas om bland {B} ⇒ B=2.  Facit: A=3, B=2.
 console.log('--- Stage 5: syntetiskt överhäng (steg D set-aside-gren) ---')
-const oh = computeRiksdag(
+const oh = computeAssembly(
   { vk1: { A: 100, B: 1 }, vk2: { B: 1000 } },
   {
     totalSeats: 5,

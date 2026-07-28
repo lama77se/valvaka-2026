@@ -14,6 +14,8 @@
     "geometry": "node scripts/build-geometry.mjs",
     "ingest:reference": "node --env-file=.env.local scripts/ingest-reference.mjs",
     "verify:mandate": "tsx scripts/verify-mandate.ts",
+    "verify:mandate-rf": "tsx scripts/verify-mandate-rf.ts",
+    "verify:mandate-kf": "tsx scripts/verify-mandate-kf.ts",
     "simulate:valnatt": "node --env-file=.env.local scripts/simulate-valnatt.mjs",
     "results:reset": "node --env-file=.env.local scripts/reset-results.mjs",
     "verify:realtime": "node --env-file=.env.local scripts/verify-realtime.mjs"

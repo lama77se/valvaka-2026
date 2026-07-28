@@ -1,7 +1,8 @@
 // Mandatberäkning — jämkade uddatalsmetoden (modifierad Sainte-Laguë).
 //
 // REN funktion: röster in → mandat ut. Ingen DB/IO. Samma modul kör på 2022
-// stand-in (regressionstest) nu och 2026 live sen. Spärrar/divisor/fasta mandat
+// stand-in (regressionstest) nu och 2026 live sen, och på ALLA tre valtyperna
+// (riksdag/region/kommun) — bara config skiljer. Spärrar/divisor/fasta mandat
 // per valkrets är CONFIG, inte hårdkodat (arkitektur.md §5).
 //
 // ⚠️ Verifieras steg för steg mot Valmyndighetens 2022-facit (scripts/
@@ -17,7 +18,7 @@ export type ConstituencyVotes = Record<string, PartyVotes> // valkretskod -> {pa
 
 export interface MandateConfig {
   totalSeats: number // 349 för riksdagen
-  firstDivisor: number // 1.2 (jämkning)
+  firstDivisor: number // 1.2 (jämkning) — används i den församlingsvida proportionella fördelningen
   nationalThreshold: number // 0.04
   constituencyThreshold: number // 0.12 (klarar spärr om ≥ i EN valkrets)
   fixedSeatsByConstituency: Record<string, number> // valkretskod -> fasta mandat (summa = totalSeats - utjämning)
@@ -73,7 +74,11 @@ function sumVotes(cv: ConstituencyVotes): PartyVotes {
   return total
 }
 
-export function computeRiksdag(
+// Generisk: samma jämkade uddatalsmetod driver riksdag, region OCH kommun — bara
+// config skiljer (platser, spärr, valkretsar, fasta mandat). För riksdag: spärr
+// 4 % riks ELLER 12 % i en valkrets. För region/kommun: ingen 12 %-regel → sätt
+// constituencyThreshold till Infinity så bara den församlingsvida spärren gäller.
+export function computeAssembly(
   votesByConstituency: ConstituencyVotes,
   config: MandateConfig,
 ): MandateResult {

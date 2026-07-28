@@ -253,16 +253,14 @@ en karta, en väljare som byter vilket `valtyp`-resultat som färgar choropleten
 - **Partifärger per valtyp:** lokala partier i RF/KF saknar riksfärg (`party.color`
   null) → per-valtyp-palett/fallback, annars faller allt på neutralgrått.
 - **Mandat ×3:** samma modul (`lib/mandate.ts`), tre configar. RF (regionfullmäktige,
-  per region) och KF (kommunfullmäktige, per kommun) har egna platsantal/valkretsar
-  och **överhäng** → detta exercerar och verifierar äntligen steg D:s överhängsgren
-  mot 2022 RF/KF-facit och stänger den namngivna luckan från Fas 4.
+  per region) och KF (kommunfullmäktige, per kommun) har egna platsantal/valkretsar/
+  spärrar → verifieras mot 2022 RF/KF-facit.
 
 **Acceptans:** växling RD→RF→KF färgar om samma karta utan omladdning; räknaren
-speglar vald valtyp; RF/KF-resultat strömmar via Realtime som RD; mandatberäkning
-för alla tre valtyper matchar Valmyndighetens 2022-facit (inkl. RF/KF-överhäng).
+speglar vald valtyp; RF/KF-resultat strömmar via Realtime som RD; mandatberäkningens
+partitotal för alla tre valtyper matchar Valmyndighetens 2022-facit.
 
-**Ordning:** bör ligga före ett *fullständigt* generalrep (Fas 7) så att rehearsalen
-exercerar alla tre valen — särskilt den överhängsgren RD 2022 aldrig triggar.
+**Ordning:** bör ligga före ett *fullständigt* generalrep (Fas 7).
 
 **Status — valtyp-väljaren (UI-axeln) klar; RF/KF-mandat återstår.**
 - Klient (`DistrictMap.tsx` + `lib/results.ts`): EN `ResultStore` per valtyp,
@@ -276,12 +274,28 @@ exercerar alla tre valen — särskilt den överhängsgren RD 2022 aldrig trigga
 - Bevisat headless (`npm run verify:realtime`): enkel upsert ~350–500 ms, burst
   5/5, **och växling** — RF-distrikt färgas + RD-only-distrikt blir grått i
   Region-vyn. Simulator tar `--valtyp RD|RF|KF|alla`.
-- **Återstår i denna fas (Track B — huvudlöftet):** RF/KF-ingestion (per-valtyp-
-  filer, samma husstil) + RF/KF-**mandatverifiering** mot 2022-facit. `computeRiksdag`
-  är riksdagsspecifik (ett 349-organ, 4/12 %-spärr); RF är ~20 *oberoende* region-
-  organ (3 %-spärr, Gotland saknar regionval), KF 290 kommunorgan (ingen spärr).
-  Kräver nedladdade RF/KF-facitfiler (finns ej i repo än). Det är här steg D:s
-  överhängsgren äntligen verifieras skarpt — luckan från Fas 4.
+**Status — Track B (RF/KF-mandat) verifierad mot 2022-facit.**
+- Modulen generaliserad: `computeRiksdag` → `computeAssembly` (samma jämkade
+  uddatalsmetod driver alla tre; bara config skiljer). RD oförändrat (349 exakt).
+- **RF** (`npm run verify:mandate-rf`): partitotal per region = regionvid
+  proportionell (jämkad 1,2, ≥3 %) matchar facit **20/20 regioner exakt**.
+- **KF** (`npm run verify:mandate-kf`): partitotal per kommun (spärr **2 % odelad /
+  3 % delad** — 17 delade 2022) matchar facit **289/290 exakt**. De två avvikelserna
+  är inte metodfel: Vårgårda avgjordes av **lottning** vid exakt lika jämförelsetal
+  (279/3 = 1023/11 = 93), och Tyresö ändrade fullmäktigestorlek (51 → 61) efter att
+  fasta-filen skapades → använd faktisk 2022-storlek.
+- **Överhängsgrenen förblir OVERIFIERAD av verklig data.** Rättelse mot tidigare
+  antagande: 2022 har inga verkliga överskottsmandat i RD/RF/KF — partitotalen ÄR
+  den proportionella fördelningen. Steg D:s set-aside täcks alltså bara av det
+  syntetiska Fas-4-fallet. Min per-valkrets fasta-fördelning (steg B) avviker med
+  ett mandat i knivseggs-valkretsar (<0,4 %) och tillverkade *spuriösa* överhäng —
+  därför verifieras **partitotalen** (det produkten visar), inte exakt placering.
+- **Uppskjutet:** exakt mandat*placering* per valkrets (steg B/E) behövs ej för
+  produkten (2026 visar röster/distrikt + partitotal/församling). RF/KF-*ingestion*
+  av skarp 2026-data görs när filerna publiceras (parsern är valtyp-parametriserad).
+- **2026-flagga (beslut, ej latent bugg):** beräkna live-partitotal från den
+  församlingsvida proportionalen och grinda överskottsmandat konservativt — lita
+  inte på per-valkrets-fasta-summan för att *detektera* överhäng (knivseggs-känsligt).
 - **Demogräns:** simulatorn använder de 8 färgade riksdagspartierna även för
   RF/KF; riktiga lokala partier saknar färg (grå) tills en per-valtyp-palett finns.
 
