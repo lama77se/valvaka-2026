@@ -202,6 +202,26 @@ mandatfil exakt (regressionstest för hela kedjan).
 **Acceptans:** en simulerad upsert syns i kartan inom sekunder utan omladdning;
 repaint debouncad under burst.
 
+**Status — realtidsfärgning klar.**
+- Migration `20260728150000`: `result` publicerad till `supabase_realtime`.
+- Klient (`DistrictMap.tsx` + `lib/results.ts`): prenumererar på `result`
+  (postgres_changes, RD-filtrerat) *före* snapshot-hämtning, ackumulerar röster
+  per parti per distrikt (`ResultStore`), räknar om vinnare + marginal, och färgar
+  via **feature-state** (`coalesce`-paint på tile-features) — geometrin laddas en
+  gång, bara resultatvärden flödar. Rapporteringsgrad-HUD ("X av Y distrikt").
+- **"Debounce" = rAF-koalescerad** `setFeatureState` (många events/tick → en
+  repaint), inte en fördröjande timer — ger "inom sekunder" + burst-tålighet.
+- Bevisat headless (`npm run verify:realtime`): Node upsertar som service_role,
+  sidan tar emot som anon → feature-state satt **inom ~350 ms**; burst 5/5
+  reflekterade; service_role rör aldrig webbläsaren. Simulator + teardown:
+  `npm run simulate:valnatt` / `results:reset`.
+- **Medvetet uppskjutet (namngivet, ej luckor):** (a) edge-funktion som
+  `broadcast`:ar färdiga aggregat i stället för per-rad-CDC — en *skalnings*-
+  optimering för valnattsburst, inte denna acceptans; rAF-batchning bär klienten
+  tills vidare. (b) drill-down rike→län→kommun, (c) ticker över inrapporterade
+  distrikt, (d) puls-animation, (e) live mandatprojektion (kopplar in Fas 4:s
+  modul — egen skiva). RF/KF-realtid följer när de valtyperna ingesteras.
+
 ### Fas 6 — Generalrep (§9.6, §10-harness)
 
 **Mål:** hela kedjan lastad på en uppspelad *riktig* valnatt före skarpt läge.

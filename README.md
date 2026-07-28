@@ -25,6 +25,10 @@ Under uppbyggnad. Klart hittills:
   + mandatmodul (jämkade uddatalsmetoden, 349 mandat). Verifierad mot 2022 RD-facit
   (`npm run verify:mandate`) — 349-fördelningen och fasta mandat per valkrets
   matchar exakt.
+- **Fas 5** — realtidsfärgning: kartklienten prenumererar på `result`-ändringar
+  (Supabase Realtime) och färgar distrikten efter vinnarparti via feature-state,
+  med rapporteringsgrad-HUD. Repaint rAF-koalescerad. Bevisad headless
+  (`npm run verify:realtime`) — simulerad upsert syns inom ~350 ms.
 
 Se **[docs/arkitektur.md](./docs/arkitektur.md)** för hela underlaget och
 **[docs/implementationsplan.md](./docs/implementationsplan.md)** för faser och
@@ -80,6 +84,9 @@ npm run build              # typkoll + prod-bygge
 npm run geometry           # regenerera distriktsgeometrin från källan (mapshaper)
 npm run ingest:reference   # ladda referensdata till Supabase (service-role i .env.local)
 npm run verify:mandate     # regressionstesta mandatmodulen mot 2022 års facit
+npm run simulate:valnatt   # simulera inrapportering (RD) för realtidsdemo
+npm run verify:realtime    # headless-acceptans: upsert → kartfärgning via Realtime
+npm run results:reset      # rensa simulerade resultat ur result-tabellen
 ```
 
 Kopiera `.env.example` → `.env.local` och fyll i Supabase-URL + anon-nyckel.
