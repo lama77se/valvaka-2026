@@ -19,8 +19,8 @@ Valdagen: **söndag 13 september 2026** (andra söndagen i september). Idag är 
 
 | Tjänst | Trigger (skapa senast här) | Vad som aktiveras |
 |--------|----------------------------|-------------------|
-| **Supabase** | Fas 1 om geometrin reprojiceras i PostGIS (`ST_Transform`/`ST_Simplify`); annars Fas 2 (referensdata). | Skapa projekt i **EU-region** — drivet av websocket-/Realtime-latens mot svenska användare, inte GDPR (datan är offentlig aggregerad statistik). Aktivera `postgis`, `pg_cron`, `pg_net` direkt vid skapande. |
-| **Vercel** | Fas 1 (första frontend-deployen: tom karta). | Koppla GitHub-repot → automatiska preview-deployer per PR. **Vercel hostar bara frontend.** Ingestion körs på Supabase edge functions + `pg_cron`, aldrig Vercel cron. |
+| **Supabase** | Fas 1 om geometrin reprojiceras i PostGIS (`ST_Transform`/`ST_Simplify`); annars Fas 2 (referensdata). | Skapa projekt i **EU-region** — drivet av websocket-/Realtime-latens mot svenska användare, inte GDPR (datan är offentlig aggregerad statistik). Aktivera `postgis` via migration i Fas 0 (behövs först för reprojicering); `pg_cron`/`pg_net` skjuts upp till Fas 3 (slås på via Dashboard → Extensions när ingestion schemaläggs). |
+| **Vercel** | Fas 1 (första frontend-deployen: tom karta). | Koppla GitHub-repot → **automatisk produktionsdeploy vid push till `main`; previews avstängda** (dashboard: Settings → Git → Ignored Build Step, skippa när `VERCEL_ENV != production`). **Vercel hostar bara frontend.** Ingestion körs på Supabase edge functions + `pg_cron`, aldrig Vercel cron. |
 
 ### B. Datumstyrd — knuten till valnatten 13 sep 2026
 
@@ -49,16 +49,23 @@ Valdagen: **söndag 13 september 2026** (andra söndagen i september). Idag är 
 
 **Mål:** körbart skelett, deploybart, med infrastruktur-konton på plats.
 
-- Scaffold Vite + React 18 + TypeScript; lägg på Tailwind + shadcn/ui.
-- Supabase CLI + migrations-mapp (`supabase/migrations/`); lokal dev via
-  `supabase start` (Docker/Postgres lokalt).
+- Scaffold Vite + React 18 + TypeScript (Vite 6 för Node-kompat); lägg på
+  Tailwind **v3** + shadcn/ui (stable-CLI:n; shadcn ≥4 kräver Tailwind v4).
+  Node **≥20.19** krävs av toolingen (`.nvmrc` + `engines` satta).
+- `npm run dev` kör på **fast port 5926** (`strictPort`) så den aldrig krockar
+  med andra projekt under `c:\dev`.
+- Supabase CLI + migrations-mapp (`supabase/migrations/`). **Ingen lokal Docker:**
+  vi kör migrations mot **moln-projektet** (`supabase link` → `supabase db push`),
+  inte `supabase start`.
 - Skapa Supabase-projekt (EU) och Vercel-projekt (koppla repot). Sätt env:
   `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` i Vercel; service-role-nyckel som
-  edge-function-secret.
-- `.env.example` incheckad; riktiga `.env` gitignore:ad (redan konfigurerat).
+  edge-function-secret (aldrig i Vercel/klient).
+- `.env.example` incheckad; riktiga `.env`/`.env.local` gitignore:ad (redan
+  konfigurerat).
 
-**Acceptans:** en tom app deployar automatiskt till Vercel preview på PR;
-`supabase start` reser lokal DB; migrations kan appliceras.
+**Acceptans:** en tom app deployar automatiskt till **Vercel produktion vid push
+till `main`** (inga previews); `npm run build` passerar; migrations kan appliceras
+mot **moln-Supabase** via `supabase db push`.
 
 ### Fas 1 — Geometri (§9.1)
 
@@ -96,8 +103,34 @@ statisk asset; ingen 27 MB GeoJSON går till klienten.
 - Deno edge function: fetch → conditional GET (`ETag` i `ingest_state`) → strippa
   BOM → parsa `;` → normalisera (decimalkomma, behåll nollor, versala nycklar) →
   upsert via staging → MERGE.
-- `pg_cron` + `pg_net` schemalägger; kadens 1×/timme i förvalsperioden.
+- Aktivera `pg_cron` + `pg_net` (medvetet uppskjutna från Fas 0 — de slås på via
+  **Dashboard → Database → Extensions**, inte via migration). De schemalägger
+  ingestion; kadens 1×/timme i förvalsperioden.
 - Exponentiell backoff + jitter vid fel; `304` → hoppa parsning.
+- **Automatisera migrationer (först nu, inte tidigare).** T.o.m. Fas 2 körs
+  migrationer manuellt (`supabase db push`) för en medveten grind. Från Fas 3
+  läggs en GitHub Action som kör `db push` vid push till `main` — speglar
+  Vercel-modellen (bara `main`, ingen preview). **Inte** Supabase Branching (betald
+  add-on, krockar med "inga previews"). Repo-secrets: `SUPABASE_ACCESS_TOKEN`,
+  `SUPABASE_DB_PASSWORD`. `paths:`-filter på `supabase/migrations/**` så den bara
+  triggar vid faktiska schemaändringar:
+
+  ```yaml
+  # .github/workflows/db-migrate.yml
+  on:
+    push: { branches: [main], paths: ['supabase/migrations/**'] }
+  jobs:
+    migrate:
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v4
+        - uses: supabase/setup-cli@v1
+        - run: supabase link --project-ref $SUPABASE_PROJECT_REF && supabase db push
+          env:
+            SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+            SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+            SUPABASE_PROJECT_REF: emtjnmyberugrkdplnsh
+  ```
 
 **Acceptans:** alla datafallgropar (§1.2) hanterade och verifierade mot faktisk
 `data.val.se`-fil; ETag ger `304`-skip; ingen körning duplicerar rader.
