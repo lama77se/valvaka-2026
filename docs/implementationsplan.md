@@ -83,6 +83,21 @@ för första deployen.
 **Acceptans:** hela riket ritas som distrikt i webbläsaren; tiles laddas som
 statisk asset; ingen 27 MB GeoJSON går till klienten.
 
+**Status: klar & verifierad (dev + prod headless).** Beslut som låstes:
+- **Källa:** `www.val.se/download/<cms-id>/.../valdistrikt-riket-2026.zip` (en enda
+  ren GeoJSON, EPSG:3006 — inte den gamla per-län-JSON:en; se arkitektur.md §1.1).
+  Index: [råvaru-sidan](https://www.val.se/valresultat-och-statistik/statistik-och-data/radata-val-2026).
+- **Pipeline:** `mapshaper` (ren npm, inget Docker/tippecanoe) — förenkla i plana
+  meter, reprojicera 3006→4326, precision 1e-5. Ut: **6.25 MB GeoJSON, 6 312
+  distrikt** (reprojicering verifierad mot bounds + Blekinge-koordinat).
+- **Format:** rå GeoJSON (ingen pmtiles behövs vid den storleken); MapLibre läser
+  nativt, `promoteId: 'Valdistriktskod'` för resultat-join i Fas 5.
+- **Hosting:** **Supabase Storage** (publik CDN-bucket `geometry`). Prod pekas via
+  `VITE_GEOMETRY_URL`; lokalt servas filen från `public/`. Filen committas aldrig.
+- **maplibre-gl pinnad till v5.24.0** — v6.0.0 har en trasig prod-worker (loadData
+  hänger) + dev-worker som inte laddas via Vites optimizer. Rör inte utan att
+  headless-verifiera bygget (`scripts/verify-map.mjs`).
+
 ### Fas 2 — Referensdata (§9.2)
 
 **Mål:** `party`, `district`, `district_comparison` fyllda från redan publicerade

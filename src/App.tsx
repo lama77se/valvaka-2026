@@ -1,19 +1,18 @@
-import { Button } from '@/components/ui/button'
+import { DistrictMap } from '@/components/DistrictMap'
 
 function App() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-6 p-8 text-center">
-      <div className="space-y-2">
-        <p className="text-sm font-medium uppercase tracking-widest text-muted-foreground">
-          Fas 0 — skelett
+    <main className="relative h-screen w-screen overflow-hidden bg-[#0b1020] text-slate-100">
+      <DistrictMap />
+      <div className="pointer-events-none absolute left-4 top-4 max-w-xs rounded-lg border border-slate-700 bg-slate-900/85 p-4 shadow-lg backdrop-blur">
+        <p className="text-xs font-medium uppercase tracking-widest text-slate-400">
+          Fas 1 — geometri
         </p>
-        <h1 className="text-4xl font-bold tracking-tight">Valvaka 2026</h1>
-        <p className="max-w-md text-muted-foreground">
-          Realtidsvisualisering av svenska valresultat per valdistrikt. Kartan
-          renderas i Fas 1.
+        <h1 className="text-xl font-bold tracking-tight">Valvaka 2026</h1>
+        <p className="mt-1 text-sm text-slate-400">
+          Alla ~6 300 valdistrikt. Resultatfärgning kommer i senare faser.
         </p>
       </div>
-      <Button>Kom igång</Button>
     </main>
   )
 }

@@ -21,6 +21,15 @@ vi *pollar* statiska filer och bygger vår egen realtid ovanpå.
 `partisymboler.zip`, `kandidaturer.*`). Det betyder att 2026 års filnamn och
 struktur går att förutsäga från 2022 — se §1.5.
 
+> **⚠️ Korrigering (verifierat juli 2026):** `data.val.se` är numera en Angular-SPA,
+> inte en rå filkatalog — `data.val.se/filer/...` 404:ar (gäller även 2022).
+> De faktiska nedladdningarna ligger som CMS-länkar på
+> `www.val.se/download/<opakt-id>/<ts>/<filnamn>`. Auktoritativt index:
+> [råvaru-sidan för val 2026](https://www.val.se/valresultat-och-statistik/statistik-och-data/radata-val-2026).
+> Löpande resultat-/valdata-JSON hämtar SPA:n från `/assets/valtillfallen/<id>/valdata/...`
+> (relevant för ingestion, Fas 3). Filnamnen följer fortfarande husstilen; det är
+> bara värdadressen som ändrats.
+
 Bekräftade filer (val 2026):
 
 | Fil | Innehåll | Uppdatering |
@@ -28,7 +37,7 @@ Bekräftade filer (val 2026):
 | `parti/deltagande-partier.csv` | Alla deltagande partier per valtyp/valområde | 1×/dygn |
 | `parti/kandidaturer.csv` | Kandidaturer (kan vara flera per person) | 1×/timme, xx:40 |
 | `parti/partisymboler.zip` | Partilogotyper, filnamn = partikod | statisk |
-| `valdistrikt-riket-2026.zip` (+ per län) | Distriktsgeometri, JSON, **SWEREF99 TM** | statisk |
+| `valdistrikt-riket-2026.zip` | Distriktsgeometri — **en enda GeoJSON** (~98 MB uppackad), **SWEREF99 TM / EPSG:3006**. Ren UTF-8, PascalCase-nycklar (`Valdistriktskod`…), numeriska koordinater — inte 2022 års husstils-fallgropar (§1.2). | statisk |
 | `valdistrikt-hela-landet-2026.xlsx` | Samma utan koordinater | statisk |
 | `...jamforelser-mellan-2022-och-2026.xlsx` | Jämförbarhetsmappning | statisk |
 | *resultatfiler* | Preliminära + slutliga, mandat, personröster, valdeltagande | publiceras "vartefter" på valnatten/efter |
@@ -38,6 +47,12 @@ inte). Modellera generiskt och verifiera mot den faktiska filen när den dyker u
 men 2022 ger en mycket god mall (§1.5).
 
 ### 1.2 Format-fallgropar (verifierade mot 2022 års filer)
+
+> **Scope:** dessa gäller val.se:s **CSV-/resultat-/kandidatfiler** (Fas 2–3) —
+> verifierade mot 2022 och sannolikt oförändrade för 2026. Den nedladdade
+> **distriktsgeometrin för 2026 är däremot ren** (GeoJSON, UTF-8 utan BOM,
+> PascalCase-nycklar, numeriska koordinater, EPSG:3006) och behöver ingen av
+> nedanstående normaliseringar — bara reprojicering (§6).
 
 - **Avgränsare är `;`** trots filändelsen `.csv`.
 - **UTF-8 med BOM** — strippa BOM före parsning.

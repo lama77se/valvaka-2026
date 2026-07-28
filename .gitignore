@@ -43,6 +43,9 @@ supabase/.branches/
 data/raw/
 tiles/
 
+# Diagnostik-artefakter (headless render-verifiering, scripts/verify-map.mjs)
+scripts/*.png
+
 # Logs
 logs/
 *.log
