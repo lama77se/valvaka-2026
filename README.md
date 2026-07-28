@@ -11,7 +11,9 @@ publicerar platta filer på schema.
 ## Status
 
 Tidig fas — repot innehåller hittills dataanalys, stackval och arkitektur.
-Se **[docs/arkitektur.md](./docs/arkitektur.md)** för hela underlaget.
+Se **[docs/arkitektur.md](./docs/arkitektur.md)** för hela underlaget och
+**[docs/implementationsplan.md](./docs/implementationsplan.md)** för faser och
+infrastruktur.
 
 ## Tänkt stack
 

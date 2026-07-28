@@ -13,7 +13,9 @@ schema- eller mandatkod.
 ## Status
 
 Tidig fas. Repot är ännu bara dokumentation; ingen applikationskod finns.
-Planerad byggordning står i docs/arkitektur.md §9.
+Faser, acceptanskriterier och infrastruktur-uppsättning (Supabase/Vercel) står i
+[docs/implementationsplan.md](./docs/implementationsplan.md); byggordningens
+motivering i docs/arkitektur.md §9.
 
 ## Stack (planerad)
 
