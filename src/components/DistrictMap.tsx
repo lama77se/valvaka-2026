@@ -36,9 +36,33 @@ export function DistrictMap() {
   const mapRef = useRef<maplibregl.Map | null>(null)
   const hoveredIdRef = useRef<string | null>(null)
   const [hover, setHover] = useState<HoverInfo | null>(null)
-  // Referensdata från Supabase (Fas 2) för det hovrade distriktet — bevisar
-  // klient→DB-uppslag på valdistriktskod i själva appen.
+  // Referensdata (Fas 2): district_comparison laddas EN gång och joinas synkront
+  // i minnet på valdistriktskod vid hover — statiskt data, ingen per-hover-fetch
+  // (det gav flicker). Bevisar klient→DB-uppslaget i appen.
+  const comparisonRef = useRef<Map<string, string>>(new Map())
   const [jamforbarhet, setJamforbarhet] = useState<string | null>(null)
+
+  // Ladda hela district_comparison en gång (paginerat; PostgREST tak ~1000/sida).
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const map = new Map<string, string>()
+      const PAGE = 1000
+      for (let from = 0; !cancelled; from += PAGE) {
+        const { data, error } = await supabase
+          .from('district_comparison')
+          .select('valdistriktskod,jamforbarhet')
+          .range(from, from + PAGE - 1)
+        if (error || !data || data.length === 0) break
+        for (const r of data) map.set(r.valdistriktskod, r.jamforbarhet)
+        if (data.length < PAGE) break
+      }
+      if (!cancelled) comparisonRef.current = map
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
@@ -124,6 +148,8 @@ export function DistrictMap() {
           kommun: p.Kommun ?? '',
           lan: p['Län'] ?? '',
         })
+        // Synkront uppslag i den förladdade referensdatan — inget flicker.
+        setJamforbarhet(comparisonRef.current.get(id) ?? null)
       })
       map.on('mouseleave', 'district-fill', () => {
         map.getCanvas().style.cursor = ''
@@ -137,29 +163,6 @@ export function DistrictMap() {
       mapRef.current = null
     }
   }, [])
-
-  // Fas 2: slå upp referensdata i Supabase på valdistriktskod när man hovrar ett
-  // nytt distrikt. maybeSingle → null om distriktet saknar jämförelserad.
-  useEffect(() => {
-    const kod = hover?.kod
-    if (!kod) {
-      setJamforbarhet(null)
-      return
-    }
-    let cancelled = false
-    setJamforbarhet(null)
-    supabase
-      .from('district_comparison')
-      .select('jamforbarhet')
-      .eq('valdistriktskod', kod)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (!cancelled) setJamforbarhet(data?.jamforbarhet ?? null)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [hover?.kod])
 
   return (
     <div className="absolute inset-0">
