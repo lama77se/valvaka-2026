@@ -10,7 +10,13 @@ publicerar platta filer på schema.
 
 ## Status
 
-Tidig fas — repot innehåller hittills dataanalys, stackval och arkitektur.
+Under uppbyggnad. Klart hittills:
+
+- **Fas 0** — projektuppsättning (Vite + React 18 + TS + Tailwind + shadcn/ui),
+  Supabase-projekt (EU, PostGIS), Vercel (prod-only vid push till `main`).
+- **Fas 1** — distriktsgeometrin: alla 6 312 valdistrikt reprojicerade
+  (SWEREF99 TM → WGS84) och renderade i MapLibre GL.
+
 Se **[docs/arkitektur.md](./docs/arkitektur.md)** för hela underlaget och
 **[docs/implementationsplan.md](./docs/implementationsplan.md)** för faser och
 infrastruktur.
@@ -20,7 +26,7 @@ infrastruktur.
 | Lager | Val |
 |-------|-----|
 | Frontend | React 18 + TypeScript + Vite + Tailwind + shadcn/ui |
-| Karta | MapLibre GL JS, vektortiles (pmtiles) |
+| Karta | MapLibre GL JS (pinnad v5) — statisk GeoJSON via Supabase Storage |
 | Realtid | Supabase Realtime |
 | Backend | Supabase edge functions (Deno), `pg_cron` + `pg_net` |
 | Databas | Postgres + PostGIS |
@@ -56,7 +62,22 @@ Fullständig motivering, datafallgropar (`;`-avgränsare, BOM, inledande nollor,
 decimalkomma), schema och 2022-replay-harness finns i
 [docs/arkitektur.md](./docs/arkitektur.md).
 
+## Utveckling
+
+```
+npm install
+npm run dev        # dev-server på fast port http://localhost:5926
+npm run build      # typkoll + prod-bygge
+```
+
+Kopiera `.env.example` → `.env.local` och fyll i Supabase-URL + anon-nyckel.
+Geometrin (`public/valdistrikt-2026-wgs84.geojson`) är gitignore:ad och
+regenereras från källan (mapshaper, se docs/implementationsplan.md Fas 1); i
+produktion hostas den i Supabase Storage och pekas ut via `VITE_GEOMETRY_URL`.
+
 ## Datakälla
 
-All data kommer från Valmyndigheten via `data.val.se/filer/val2026/...`.
-Innehållet lyder under Valmyndighetens villkor.
+All data kommer från Valmyndigheten. Rådata laddas från
+[råvaru-sidan för val 2026](https://www.val.se/valresultat-och-statistik/statistik-och-data/radata-val-2026)
+(filer på `www.val.se/download/...`; den gamla `data.val.se/filer/`-sökvägen är
+avvecklad). Innehållet lyder under Valmyndighetens villkor.
