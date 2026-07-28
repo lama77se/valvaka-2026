@@ -21,6 +21,10 @@ Under uppbyggnad. Klart hittills:
   DB-migrationer körs via GitHub Action vid push till `main`.
 - **Fas 3** — poll-ingestion: Deno edge function med conditional GET
   (`If-Modified-Since`), schemalagd med `pg_cron` + `pg_net`.
+- **Fas 4** — resultatschema (`result` idempotent, `result_snapshot` append-only)
+  + mandatmodul (jämkade uddatalsmetoden, 349 mandat). Verifierad mot 2022 RD-facit
+  (`npm run verify:mandate`) — 349-fördelningen och fasta mandat per valkrets
+  matchar exakt.
 
 Se **[docs/arkitektur.md](./docs/arkitektur.md)** för hela underlaget och
 **[docs/implementationsplan.md](./docs/implementationsplan.md)** för faser och
@@ -75,6 +79,7 @@ npm run dev                # dev-server på fast port http://localhost:5926
 npm run build              # typkoll + prod-bygge
 npm run geometry           # regenerera distriktsgeometrin från källan (mapshaper)
 npm run ingest:reference   # ladda referensdata till Supabase (service-role i .env.local)
+npm run verify:mandate     # regressionstesta mandatmodulen mot 2022 års facit
 ```
 
 Kopiera `.env.example` → `.env.local` och fyll i Supabase-URL + anon-nyckel.
