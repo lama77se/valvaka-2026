@@ -274,6 +274,10 @@ export function DistrictMap() {
             roster?: number
           }
           if (!row?.valtyp || !row.valdistriktskod || !row.partikod) return
+          if (import.meta.env.DEV) {
+            const w = window as unknown as { __eventCount?: number }
+            w.__eventCount = (w.__eventCount ?? 0) + 1 // last-test-mätning (Fas 7)
+          }
           const store = storesRef.current[row.valtyp as Valtyp]
           if (!store) return
           store.set(row.valdistriktskod, row.partikod, row.roster ?? 0)

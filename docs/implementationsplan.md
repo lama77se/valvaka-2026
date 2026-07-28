@@ -332,10 +332,21 @@ durabla, återanvändbara delmängden, uppdelad i två dataidentiteter (advisor)
   passerar 4 %-spärren ~40 %). `--stream` matar dessutom ~98 k rader genom det
   append-only `result_snapshot` (FK-fria replay-fordonet) och städar efter sig.
   RD klart; RF/KF-projektion är samma mönster (verifierad mandatlogik) — utbyggnad.
-- **Klient-last/throughput** (2026-koder, riktig karta): ⏳ nästa delsteg — utvidga
-  simulatorn till full valnattsvolym med realistisk kadens och mäta om rAF-koalescerad
-  repaint bär en ihållande burst, eller om broadcast-aggregat-vägen (Fas 5-uppskjuten)
-  behövs. Kopplas till uppskalningsbeslutet.
+- **Klient-last/throughput** (`npm run loadtest:valnatt`, 2026-koder, riktig karta):
+  streamar full RD-valnattsvolym (6 312 distrikt × 8 partier = **50 496 rader**) och
+  mäter Realtime-leverans + repaint. **Fynd:**
+  - **rAF-koalescerad per-rad-CDC BÄR volymen:** 100 % av raderna nådde klienten,
+    alla 6 312 distrikt färgade, ~400 events/s ihållande, drain ~8 s efter sista
+    upsert. → broadcast-aggregat-vägen (Fas 5-uppskjuten) behövs **inte** vid denna
+    volym — uppskjutningen validerad med data.
+  - **Operativt krav upptäckt:** Realtime släpper bara igenom ändringar från
+    transaktioner under ett tak (~100 rader); en jättebatch (4 000 rader/txn) tappas
+    HELT. **Skarp resultat-ingest måste upserta i små transaktioner** (per distrikt/
+    klunga), inte jättebatchar — annars når inget kartan.
+  - *Förbehåll:* testet körde RD ensamt; tre valtyper samtidigt ger ~3× event-takt.
+    Stream-takten (421 rader/s) begränsades av harnessens round-trips, inte av
+    Realtime/klienten — verklig burst kan vara högre. Om nätter/tak överskrids är
+    broadcast-vägen redo som nästa steg.
 
 **Kartan under RD-replay:** 2022 ≠ 2026 distriktskoder, så replayen färgar INTE
 2026-geometrin (rätt data, fel geografi). On-map-valnatt med äkta geografi väntar
