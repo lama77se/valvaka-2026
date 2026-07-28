@@ -317,6 +317,30 @@ Supabase/Vercel efteråt baserat på observerad last.
 kart-paint och mandatprojektion triggas som skarpt; observerad resursförbrukning
 ligger till grund för uppskalningsbeslutet.
 
+**Status — generalrep-harness (delmängd); fullständig trohet väntar på skarp ingest.**
+Det *fullständiga* generalrepet delar "exakt samma ingest-kod som skarp drift"
+(§10). Den skarpa RESULTAT-ingesten finns inte än (blockerad på 2026 års opublicerade
+filschema; Fas 3 byggde parti-CSV-ingest, ej roster-per-distrikt). Byggt nu = den
+durabla, återanvändbara delmängden, uppdelad i två dataidentiteter (advisor):
+
+- **Korrekthet — replay + live mandatprojektion** (`npm run replay:2022`,
+  `scripts/replay-2022.ts`): kör på ÄKTA 2022-geografi (rätt valkretsaggregat). Parsar
+  RD-rostern → röster per distrikt, syntetiserar storleksviktad inrapporterings­ordning
+  (klungor), och driver en replay-klocka som matar in i komprimerad tid. En **löpande
+  mandatprojektion** (samma verifierade `computeAssembly`) konvergerar mot 349-facit
+  exakt vid 100 % (och visar realistisk tidig volatilitet: S överskattas tidigt, L
+  passerar 4 %-spärren ~40 %). `--stream` matar dessutom ~98 k rader genom det
+  append-only `result_snapshot` (FK-fria replay-fordonet) och städar efter sig.
+  RD klart; RF/KF-projektion är samma mönster (verifierad mandatlogik) — utbyggnad.
+- **Klient-last/throughput** (2026-koder, riktig karta): ⏳ nästa delsteg — utvidga
+  simulatorn till full valnattsvolym med realistisk kadens och mäta om rAF-koalescerad
+  repaint bär en ihållande burst, eller om broadcast-aggregat-vägen (Fas 5-uppskjuten)
+  behövs. Kopplas till uppskalningsbeslutet.
+
+**Kartan under RD-replay:** 2022 ≠ 2026 distriktskoder, så replayen färgar INTE
+2026-geometrin (rätt data, fel geografi). On-map-valnatt med äkta geografi väntar
+på skarp 2026-data; last testas separat på 2026-koder (ovan).
+
 ---
 
 ## Öppna punkter att lösa under resans gång

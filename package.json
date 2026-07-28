@@ -18,7 +18,8 @@
     "verify:mandate-kf": "tsx scripts/verify-mandate-kf.ts",
     "simulate:valnatt": "node --env-file=.env.local scripts/simulate-valnatt.mjs",
     "results:reset": "node --env-file=.env.local scripts/reset-results.mjs",
-    "verify:realtime": "node --env-file=.env.local scripts/verify-realtime.mjs"
+    "verify:realtime": "node --env-file=.env.local scripts/verify-realtime.mjs",
+    "replay:2022": "node --env-file=.env.local --import tsx scripts/replay-2022.ts"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.3.3",

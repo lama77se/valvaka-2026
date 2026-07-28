@@ -36,10 +36,16 @@ Under uppbyggnad. Klart hittills:
   RD 349 exakt, **RF 20/20 regioner**, **KF 289/290 kommuner** (de två avvikelserna
   är lottning resp. ändrad fullmäktigestorlek, inte metodfel).
 
+- **Fas 7 (delvis)** — generalrep-harness: replay av en riktig 2022-valnatt i
+  komprimerad tid (`npm run replay:2022`) med **löpande mandatprojektion** som
+  konvergerar mot facit exakt, streamad genom `result_snapshot`. Kör på äkta
+  2022-geografi (rätt mandat, ej 2026-kartan).
+
 Återstår:
 
-- **Fas 7** — generalrep: hela kedjan lastad på uppspelad 2022-data (alla tre
-  valtyper) i komprimerad tid via samma ingest-kod, validerad mot Valmyndighetens facit.
+- **Fas 7 (resten)** — klient-last/throughput på full valnattsvolym (2026-koder),
+  RF/KF-projektion, samt det fullständiga generalrepet mot den skarpa resultat-
+  ingesten (väntar på 2026 års opublicerade filschema).
 
 Se **[docs/arkitektur.md](./docs/arkitektur.md)** för hela underlaget och
 **[docs/implementationsplan.md](./docs/implementationsplan.md)** för faser och
