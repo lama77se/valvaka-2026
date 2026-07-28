@@ -21,14 +21,18 @@ vi *pollar* statiska filer och bygger vår egen realtid ovanpå.
 `partisymboler.zip`, `kandidaturer.*`). Det betyder att 2026 års filnamn och
 struktur går att förutsäga från 2022 — se §1.5.
 
-> **⚠️ Korrigering (verifierat juli 2026):** `data.val.se` är numera en Angular-SPA,
-> inte en rå filkatalog — `data.val.se/filer/...` 404:ar (gäller även 2022).
-> De faktiska nedladdningarna ligger som CMS-länkar på
-> `www.val.se/download/<opakt-id>/<ts>/<filnamn>`. Auktoritativt index:
+> **⚠️ Korrigering (verifierat juli 2026):** källorna ligger på **två ställen** —
+> anta inte att allt är under `data.val.se/filer/`:
+> - **Parti-/röstmottagnings-CSV/JSON lever kvar på `data.val.se/filer/val2026/...`**
+>   (t.ex. `parti/deltagande-partier.csv`, `parti/kandidaturer.csv`,
+>   `rostmottagning/vallokaler.json`) — svarar 200, husstilen intakt (BOM, `;`, versala nycklar).
+> - **Geometri-zip:arna och de flesta xlsx** ligger däremot som CMS-länkar på
+>   `www.val.se/download/<opakt-id>/<ts>/<filnamn>` (den gamla `filer/`-sökvägen 404:ar för dem).
+>
+> Auktoritativt index som listar båda:
 > [råvaru-sidan för val 2026](https://www.val.se/valresultat-och-statistik/statistik-och-data/radata-val-2026).
-> Löpande resultat-/valdata-JSON hämtar SPA:n från `/assets/valtillfallen/<id>/valdata/...`
-> (relevant för ingestion, Fas 3). Filnamnen följer fortfarande husstilen; det är
-> bara värdadressen som ändrats.
+> `data.val.se` som helhet är numera en Angular-SPA; dess löpande valdata-JSON hämtas
+> från `/assets/valtillfallen/<id>/valdata/...` (relevant för ingestion, Fas 3).
 
 Bekräftade filer (val 2026):
 

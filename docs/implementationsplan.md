@@ -111,6 +111,19 @@ statisk asset; ingen 27 MB GeoJSON går till klienten.
 
 **Acceptans:** distrikt i kartan kan färgas/slås upp mot referensdata på `valdistriktskod`.
 
+**Status: klar & verifierad.** Genomfört:
+- Migration `20260728100000_reference_tables.sql` (party/district/district_comparison,
+  utan geom) + `20260728110000_grant_service_role_reference.sql` — applicerade via CI
+  (GitHub Action, se Fas 3-noten). RLS på + anon SELECT-grant/policy; service_role
+  skrivgrant (auto-expose är av → grants krävs explicit).
+- Källor: `district` ur geometrins properties; `party` ur `deltagande-partier.csv`
+  (378 partier, husstil, riksdagsfärger via förkortning); `district_comparison` ur
+  jämförelse-xlsx (JAMFORELSETYP→JA/NEJ/FLERA, 2022-koder padd:ade till 8).
+  Set-likhet geojson↔xlsx verifierad (6312, noll diff).
+- Ingest: `npm run ingest:reference` (idempotent upsert, service-role ur `.env.local`).
+- Verifierat via anon-klienten: partifärger, distrikt + inbäddad jämförelse (PostgREST
+  FK-join), FLERA-fall med 2 paddade koder.
+
 ### Fas 3 — Ingestion parti/kandidat-CSV (§9.3)
 
 **Mål:** verifierad poll-pipeline end-to-end mot riktig data.
