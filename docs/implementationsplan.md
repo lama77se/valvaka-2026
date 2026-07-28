@@ -264,6 +264,27 @@ för alla tre valtyper matchar Valmyndighetens 2022-facit (inkl. RF/KF-överhän
 **Ordning:** bör ligga före ett *fullständigt* generalrep (Fas 7) så att rehearsalen
 exercerar alla tre valen — särskilt den överhängsgren RD 2022 aldrig triggar.
 
+**Status — valtyp-väljaren (UI-axeln) klar; RF/KF-mandat återstår.**
+- Klient (`DistrictMap.tsx` + `lib/results.ts`): EN `ResultStore` per valtyp,
+  prenumererar på ALLA valtyper (inget filter) och routar events per `valtyp`,
+  färgar från vald valtyp. Väljaren (Riksdag/Region/Kommun) färgar om samma
+  geometri utan omladdning. Nämnaren härleds per valtyp ur `count(vk_<valtyp> ej
+  null)` — inte hårdkodad 6312 (Gotland/regionval-fallet).
+- Växlingen färgar om **unionen** av alla valtypers distrikt → distrikt som fanns
+  i förra valtypen men saknas i den nya nollställs till grått (feature-state
+  persisterar annars). Regressionstestat.
+- Bevisat headless (`npm run verify:realtime`): enkel upsert ~350–500 ms, burst
+  5/5, **och växling** — RF-distrikt färgas + RD-only-distrikt blir grått i
+  Region-vyn. Simulator tar `--valtyp RD|RF|KF|alla`.
+- **Återstår i denna fas (Track B — huvudlöftet):** RF/KF-ingestion (per-valtyp-
+  filer, samma husstil) + RF/KF-**mandatverifiering** mot 2022-facit. `computeRiksdag`
+  är riksdagsspecifik (ett 349-organ, 4/12 %-spärr); RF är ~20 *oberoende* region-
+  organ (3 %-spärr, Gotland saknar regionval), KF 290 kommunorgan (ingen spärr).
+  Kräver nedladdade RF/KF-facitfiler (finns ej i repo än). Det är här steg D:s
+  överhängsgren äntligen verifieras skarpt — luckan från Fas 4.
+- **Demogräns:** simulatorn använder de 8 färgade riksdagspartierna även för
+  RF/KF; riktiga lokala partier saknar färg (grå) tills en per-valtyp-palett finns.
+
 ### Fas 7 — Generalrep (§9.6, §10-harness)
 
 **Mål:** hela kedjan lastad på en uppspelad *riktig* valnatt före skarpt läge —

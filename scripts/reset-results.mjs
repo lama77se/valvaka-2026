@@ -1,5 +1,5 @@
-// Fas 5 — teardown: rensa simulerade RD-resultat så demodata inte ligger kvar i
-// det delade Supabase-projektet och ser skarpt ut.
+// Fas 5–6 — teardown: rensa simulerade resultat (alla valtyper) så demodata inte
+// ligger kvar i det delade Supabase-projektet och ser skarpt ut.
 //
 //   node --env-file=.env.local scripts/reset-results.mjs
 import ws from 'ws'
@@ -18,7 +18,7 @@ const db = createClient(url, serviceKey, { auth: { persistSession: false } })
 const { error, count } = await db
   .from('result')
   .delete({ count: 'exact' })
-  .eq('valtyp', 'RD')
+  .in('valtyp', ['RD', 'RF', 'KF'])
 if (error) throw new Error(error.message)
-console.log(`[reset-results] raderade ${count ?? '?'} RD-rader ur result.`)
+console.log(`[reset-results] raderade ${count ?? '?'} rader ur result.`)
 process.exit(0)

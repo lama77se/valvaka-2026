@@ -24,20 +24,22 @@ const db = createClient(url, serviceKey, { auth: { persistSession: false } })
 // En färgad (riksdags)partikod + N distrikt som testmål.
 const { data: parties } = await db.from('party').select('partikod').not('color', 'is', null).limit(1)
 const partikod = parties[0].partikod
-const { data: districts } = await db.from('district').select('valdistriktskod').limit(6)
+const { data: districts } = await db.from('district').select('valdistriktskod').limit(7)
 const codes = districts.map((d) => d.valdistriktskod)
-const single = codes[0]
-const burst = codes.slice(1) // 5 distrikt för burst-testet
+const single = codes[0] // RD-only genom hela testet (används även i växlingstestet)
+const burst = codes.slice(1, 6) // 5 distrikt för burst-testet
+const dRF = codes[6] // får ENDAST RF-resultat (växlingstestet)
 
-// Nollställ målen så snapshot vid sidladdning INTE redan har dem rapporterade
-// (annars bevisar testet ingenting om realtidsvägen).
-await db.from('result').delete().eq('valtyp', 'RD').in('valdistriktskod', codes)
+// Nollställ målen (alla valtyper) så snapshot vid sidladdning INTE redan har dem
+// rapporterade (annars bevisar testet ingenting om realtidsvägen).
+await db.from('result').delete().in('valtyp', ['RD', 'RF', 'KF']).in('valdistriktskod', codes)
 
-const upsert = (vd, roster) =>
+const upsertVt = (valtyp, vd, roster) =>
   db.from('result').upsert(
-    [{ valtyp: 'RD', valdistriktskod: vd, partikod, roster, status: 'preliminar' }],
+    [{ valtyp, valdistriktskod: vd, partikod, roster, status: 'preliminar' }],
     { onConflict: 'valtyp,valdistriktskod,partikod' },
   )
+const upsert = (vd, roster) => upsertVt('RD', vd, roster)
 
 const stateOf = (page, vd) =>
   page.evaluate((id) => window.__map?.getFeatureState({ source: 'districts', id }), vd)
@@ -89,10 +91,28 @@ for (let i = 0; i < 40; i++) {
 }
 check(reflected === burst.length, `burst: ${reflected}/${burst.length} distrikt reflekterade`)
 
+// 3) Valtyp-växling (regressionstest mot feature-state-fällan): RF-resultat på ett
+//    distrikt utan RD, växla till Region → RF-distriktet färgas OCH RD-only-
+//    distriktet nollställs (annars sitter röd RD-färg kvar = fel).
+await upsertVt('RF', dRF, 1200 + Math.floor(Math.random() * 400))
+await page.getByRole('button', { name: 'Region' }).click()
+await page.waitForFunction(() => window.__valtyp === 'RF', { timeout: 5000 })
+let rfReported = false
+let rdCleared = false
+for (let i = 0; i < 40; i++) {
+  const [sRF, sRD] = await Promise.all([stateOf(page, dRF), stateOf(page, single)])
+  rfReported = !!sRF?.reported
+  rdCleared = !sRD?.reported // RD-only-distrikt ska vara orapporterat i Region-vyn
+  if (rfReported && rdCleared) break
+  await page.waitForTimeout(250)
+}
+check(rfReported, `RF-distrikt ${dRF} färgas efter växling till Region`)
+check(rdCleared, `RD-only-distrikt ${single} nollställs (grått) i Region-vyn`)
+
 check(errors.length === 0, `inga page-errors${errors.length ? `: ${errors.join(' | ')}` : ''}`)
 
-// Städa testmålen.
-await db.from('result').delete().eq('valtyp', 'RD').in('valdistriktskod', codes)
+// Städa testmålen (alla valtyper).
+await db.from('result').delete().in('valtyp', ['RD', 'RF', 'KF']).in('valdistriktskod', codes)
 await browser.close()
-console.log(ok ? '\n✅ FAS 5-ACCEPTANS OK' : '\n❌ ACCEPTANS EJ UPPFYLLD')
+console.log(ok ? '\n✅ FAS 5–6-ACCEPTANS OK' : '\n❌ ACCEPTANS EJ UPPFYLLD')
 process.exit(ok ? 0 : 1)

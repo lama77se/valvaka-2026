@@ -3,9 +3,26 @@
 //
 // En `result`-rad = ett parti i ett distrikt (PK: valtyp, valdistriktskod,
 // partikod). Klienten ackumulerar rader per distrikt och räknar om vinnaren när
-// nya röster strömmar in via Realtime. Vi låser valtyp till RD hela Fas 5 (RF/KF
-// har egna valkretsar/överhäng och kommer senare).
-export const RESULT_VALTYP = 'RD'
+// nya röster strömmar in via Realtime.
+//
+// Fas 6: tre val på samma geometri. Distrikten är desamma; bara resultatlagret
+// skiljer per valtyp. Klienten håller en ResultStore per valtyp och färgar från
+// den valda (valtyp-väljare) — inte tre kartor.
+export const VALTYPER = ['RD', 'RF', 'KF'] as const
+export type Valtyp = (typeof VALTYPER)[number]
+
+export const VALTYP_LABEL: Record<Valtyp, string> = {
+  RD: 'Riksdag',
+  RF: 'Region',
+  KF: 'Kommun',
+}
+
+// district-kolumnen som avgör om ett distrikt deltar i valtypen (→ HUD-nämnare).
+export const VALTYP_VK_COLUMN: Record<Valtyp, 'vk_rd' | 'vk_rf' | 'vk_kf'> = {
+  RD: 'vk_rd',
+  RF: 'vk_rf',
+  KF: 'vk_kf',
+}
 
 export interface DistrictOutcome {
   winner: string | null // partikod med flest röster (null = inga röster ännu)
