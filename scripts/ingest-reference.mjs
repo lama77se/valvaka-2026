@@ -11,8 +11,13 @@
 //   district           <- public/valdistrikt-2026-wgs84.geojson   (redan reprojicerad)
 //   district_comparison<- data/raw/jamforelser-2022-2026.xlsx     (blad "Jämförelser")
 import { readFileSync } from 'node:fs'
+import ws from 'ws'
 import { createClient } from '@supabase/supabase-js'
 import XLSX from 'xlsx'
+
+// Node < 22 saknar inbyggd WebSocket; supabase-js initierar Realtime eagerly.
+// Vi använder bara REST här, men klienten kräver ändå en WebSocket-konstruktor.
+globalThis.WebSocket ??= ws
 
 const url = process.env.VITE_SUPABASE_URL
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
