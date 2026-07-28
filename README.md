@@ -30,6 +30,15 @@ Under uppbyggnad. Klart hittills:
   med rapporteringsgrad-HUD. Repaint rAF-koalescerad. Bevisad headless
   (`npm run verify:realtime`) — simulerad upsert syns inom ~350 ms.
 
+Återstår:
+
+- **Fas 6** — flervals-dimension (RD/RF/KF): en karta med **valtyp-väljare** (samma
+  6 312 distrikt röstar i alla tre valen — bara resultatlagret tredubblas, inte
+  geometrin), per-valtyp rapporteringsgrad, RF/KF-ingestion och tre mandat­beräkningar
+  (RF/KF-överhäng verifierar äntligen steg D mot 2022-facit).
+- **Fas 7** — generalrep: hela kedjan lastad på uppspelad 2022-data (alla tre
+  valtyper) i komprimerad tid via samma ingest-kod, validerad mot Valmyndighetens facit.
+
 Se **[docs/arkitektur.md](./docs/arkitektur.md)** för hela underlaget och
 **[docs/implementationsplan.md](./docs/implementationsplan.md)** för faser och
 infrastruktur.
@@ -68,8 +77,9 @@ gång som vektortiles, medan bara resultatvärdena flödar i realtid.
 2. Referensdata — `party`, `district`, `district_comparison`.
 3. Ingestion mot parti/kandidat-CSV.
 4. Resultatschema + mandatmodul mot historisk 2022-data.
-5. Realtime + kart-paint.
-6. Generalrep på 2022-datan uppspelad genom snapshot-tabellen (§10 i doc:en).
+5. Realtime + kart-paint (RD).
+6. Flervals-dimension — RD/RF/KF som en karta med valtyp-väljare + tre mandatberäkningar.
+7. Generalrep på 2022-datan uppspelad genom snapshot-tabellen (§10 i doc:en).
 
 Fullständig motivering, datafallgropar (`;`-avgränsare, BOM, inledande nollor,
 decimalkomma), schema och 2022-replay-harness finns i
