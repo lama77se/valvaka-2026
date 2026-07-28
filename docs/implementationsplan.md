@@ -122,30 +122,11 @@ statisk asset; ingen 27 MB GeoJSON går till klienten.
   **Dashboard → Database → Extensions**, inte via migration). De schemalägger
   ingestion; kadens 1×/timme i förvalsperioden.
 - Exponentiell backoff + jitter vid fel; `304` → hoppa parsning.
-- **Automatisera migrationer (först nu, inte tidigare).** T.o.m. Fas 2 körs
-  migrationer manuellt (`supabase db push`) för en medveten grind. Från Fas 3
-  läggs en GitHub Action som kör `db push` vid push till `main` — speglar
-  Vercel-modellen (bara `main`, ingen preview). **Inte** Supabase Branching (betald
-  add-on, krockar med "inga previews"). Repo-secrets: `SUPABASE_ACCESS_TOKEN`,
-  `SUPABASE_DB_PASSWORD`. `paths:`-filter på `supabase/migrations/**` så den bara
-  triggar vid faktiska schemaändringar:
-
-  ```yaml
-  # .github/workflows/db-migrate.yml
-  on:
-    push: { branches: [main], paths: ['supabase/migrations/**'] }
-  jobs:
-    migrate:
-      runs-on: ubuntu-latest
-      steps:
-        - uses: actions/checkout@v4
-        - uses: supabase/setup-cli@v1
-        - run: supabase link --project-ref $SUPABASE_PROJECT_REF && supabase db push
-          env:
-            SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-            SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-            SUPABASE_PROJECT_REF: emtjnmyberugrkdplnsh
-  ```
+- **Migrationer via GitHub Action** (infört i Fas 2, se `.github/workflows/db-migrate.yml`).
+  Kör `supabase db push` vid push till `main` när `supabase/migrations/**` ändras —
+  speglar Vercel-modellen (bara `main`, ingen preview). **Inte** Supabase Branching
+  (betald add-on, krockar med "inga previews"). Repo-secrets: `SUPABASE_ACCESS_TOKEN`,
+  `SUPABASE_DB_PASSWORD` (projekt-ref är publik, hårdkodad i workflow:en).
 
 **Acceptans:** alla datafallgropar (§1.2) hanterade och verifierade mot faktisk
 `data.val.se`-fil; ETag ger `304`-skip; ingen körning duplicerar rader.
