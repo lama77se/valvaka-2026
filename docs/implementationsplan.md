@@ -323,15 +323,22 @@ Det *fullständiga* generalrepet delar "exakt samma ingest-kod som skarp drift"
 filschema; Fas 3 byggde parti-CSV-ingest, ej roster-per-distrikt). Byggt nu = den
 durabla, återanvändbara delmängden, uppdelad i två dataidentiteter (advisor):
 
-- **Korrekthet — replay + live mandatprojektion** (`npm run replay:2022`,
-  `scripts/replay-2022.ts`): kör på ÄKTA 2022-geografi (rätt valkretsaggregat). Parsar
-  RD-rostern → röster per distrikt, syntetiserar storleksviktad inrapporterings­ordning
-  (klungor), och driver en replay-klocka som matar in i komprimerad tid. En **löpande
-  mandatprojektion** (samma verifierade `computeAssembly`) konvergerar mot 349-facit
-  exakt vid 100 % (och visar realistisk tidig volatilitet: S överskattas tidigt, L
-  passerar 4 %-spärren ~40 %). `--stream` matar dessutom ~98 k rader genom det
-  append-only `result_snapshot` (FK-fria replay-fordonet) och städar efter sig.
-  RD klart; RF/KF-projektion är samma mönster (verifierad mandatlogik) — utbyggnad.
+- **Korrekthet — replay + live mandatprojektion** (`npm run replay:2022 -- --valtyp
+  RD|RF|KF`, `scripts/replay-2022.ts`): kör på ÄKTA 2022-geografi. Parsar rostern →
+  röster per distrikt, syntetiserar storleksviktad inrapporteringsordning (klungor),
+  driver en replay-klocka i komprimerad tid, och kör en **löpande mandatprojektion**
+  (samma verifierade logik som Fas 4/6) som konvergerar mot facit — throttlad till
+  ~10 %-milstolpar (KF = 290 organ/omräkning):
+  - **RD**: 349-organet via `computeAssembly` → 349 exakt (realistisk tidig
+    volatilitet: S överskattas tidigt, L passerar 4 %-spärren ~40 %).
+  - **RF**: 20 regionorgan (regionvid proportionell) → **20/20 matchar facit**;
+    nationellt aggregat 1 720 regionmandat exakt.
+  - **KF**: 290 kommunorgan (spärr 2/3 %) → **290/290 matchar facit** (Vårgårda-
+    lottningen synlig i aggregatet: KD 756/L 508 vs facit 755/509, räknad som matchad).
+  - Församlingarna "blir klara" en och en allt eftersom deras distrikt rapporteras —
+    äkta live-projektionsbeteende.
+  - `--stream` matar rostern genom det append-only `result_snapshot` (FK-fria
+    replay-fordonet, ~98 k rader för RD) och städar efter sig.
 - **Klient-last/throughput** (`npm run loadtest:valnatt`, 2026-koder, riktig karta):
   streamar full RD-valnattsvolym (6 312 distrikt × 8 partier = **50 496 rader**) och
   mäter Realtime-leverans + repaint. **Fynd:**
