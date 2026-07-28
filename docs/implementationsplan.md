@@ -128,9 +128,9 @@ statisk asset; ingen 27 MB GeoJSON går till klienten.
 
 **Mål:** verifierad poll-pipeline end-to-end mot riktig data.
 
-- Deno edge function: fetch → conditional GET (`ETag` i `ingest_state`) → strippa
-  BOM → parsa `;` → normalisera (decimalkomma, behåll nollor, versala nycklar) →
-  upsert via staging → MERGE.
+- Deno edge function: fetch → conditional GET (`Last-Modified` i `ingest_state` —
+  ETag honoreras inte av val.se) → strippa BOM → parsa `;` → normalisera
+  (decimalkomma, behåll nollor, versala nycklar) → upsert.
 - Aktivera `pg_cron` + `pg_net` (medvetet uppskjutna från Fas 0 — de slås på via
   **Dashboard → Database → Extensions**, inte via migration). De schemalägger
   ingestion; kadens 1×/timme i förvalsperioden.
@@ -142,7 +142,20 @@ statisk asset; ingen 27 MB GeoJSON går till klienten.
   `SUPABASE_DB_PASSWORD` (projekt-ref är publik, hårdkodad i workflow:en).
 
 **Acceptans:** alla datafallgropar (§1.2) hanterade och verifierade mot faktisk
-`data.val.se`-fil; ETag ger `304`-skip; ingen körning duplicerar rader.
+`data.val.se`-fil; conditional GET ger `304`-skip; ingen körning duplicerar rader.
+
+**Status: klar & verifierad.** Genomfört:
+- Migration `20260728120000_ingest_state.sql` (conditional-GET-state) — via CI.
+- Edge function `ingest-parti` (`supabase/functions/`): **If-Modified-Since** →
+  304-skip → husstil-parsning (BOM/`;`/versala nycklar/nollor) → idempotent upsert
+  `party` (rör inte `color`). Deployad via `.github/workflows/deploy-functions.yml`.
+  Service-role auto-injiceras (ingen `secrets set`).
+- **Viktigt:** ETag returneras av val.se men honoreras INTE (`If-None-Match`→200);
+  `Last-Modified`/`If-Modified-Since`→304. `ingest_state.last_modified` driver skip.
+- Schemalagt: `20260728130000_schedule_ingest_parti.sql` — `pg_cron` (minut 7/timme)
+  → `pg_net` → funktionen. `pg_cron`/`pg_net` aktiverade via Dashboard.
+- Verifierat: 2× direkt-anrop (1:a upsert 378, 2:a 304-skip); färger orörda; inga
+  dubbletter; cron/pg_net-vägen bevisad via `ingest_state.last_ok`.
 
 ### Fas 4 — Resultatschema + mandatmodul (§9.4)
 
