@@ -222,15 +222,58 @@ repaint debouncad under burst.
   distrikt, (d) puls-animation, (e) live mandatprojektion (kopplar in Fas 4:s
   modul — egen skiva). RF/KF-realtid följer när de valtyperna ingesteras.
 
-### Fas 6 — Generalrep (§9.6, §10-harness)
+### Fas 6 — Flervals-dimension: RD / RF / KF (§4, §5, §7)
 
-**Mål:** hela kedjan lastad på en uppspelad *riktig* valnatt före skarpt läge.
+**Mål:** generalisera RD-MVP:n (Fas 3–5) till alla tre valen — riksdag (RD),
+region (RF) och kommun (KF) — som **en karta med valtyp-väljare**, per-valtyp
+räknare och tre mandatberäkningar.
+
+**Utgångsläge:** dataryggraden är redan flervalsklar och behöver inte byggas om —
+`result` har `valtyp` i primärnyckeln, aggregat sker per valtyp, spärrar/divisorer/
+fasta mandat är **konfig** (Fas 4), och `district` bär `vk_rd`/`vk_rf`/`vk_kf`. Det
+som saknas är RF/KF-*ingestion*, *UI-axeln* och RF/KF-*mandatverifiering*. Fas 3–5
+pinnade medvetet `RD`.
+
+**Nyckelinsikt (inte tre kartor):** geometrin är EN uppsättning 6 312 fysiska
+valdistrikt för alla tre valen — varje distrikt röstar i alla tre samtidigt. Det
+som "tredubblas" är resultat­lagret ovanpå samma geometri, inte distrikten. Därför:
+en karta, en väljare som byter vilket `valtyp`-resultat som färgar choropleten.
+
+- **Ingestion RF + KF:** parsa röster-per-distrikt-filerna (en per valtyp, samma
+  husstil: BOM/`;`/nollor/decimalkomma) och upserta till `result` med rätt
+  `valtyp`. Generalisera RD-ingesten till en valtyp-parameter (samma kod, tre körningar).
+- **Valtyp-väljare (bekräftat val — EN karta, inte small multiples):** `RESULT_VALTYP`
+  → en `valtyp`-state (default `RD`). Väljaren byter aktiv snapshot + Realtime-
+  prenumeration (`filter: valtyp=eq.<vald>`) och färgar om samma tile-features via
+  feature-state — ingen omladdning, samma geometri. Motiv: 6 312 delade distrikt,
+  sparad skärmyta, direkt jämförbar växling.
+- **Per-valtyp rapporteringsgrad:** `Y = 6 312` är oförändrat för alla tre; `X`
+  (inrapporterat) skiljer per valtyp (filerna droppar i olika takt). HUD speglar
+  vald valtyps grad och byts vid växling.
+- **Partifärger per valtyp:** lokala partier i RF/KF saknar riksfärg (`party.color`
+  null) → per-valtyp-palett/fallback, annars faller allt på neutralgrått.
+- **Mandat ×3:** samma modul (`lib/mandate.ts`), tre configar. RF (regionfullmäktige,
+  per region) och KF (kommunfullmäktige, per kommun) har egna platsantal/valkretsar
+  och **överhäng** → detta exercerar och verifierar äntligen steg D:s överhängsgren
+  mot 2022 RF/KF-facit och stänger den namngivna luckan från Fas 4.
+
+**Acceptans:** växling RD→RF→KF färgar om samma karta utan omladdning; räknaren
+speglar vald valtyp; RF/KF-resultat strömmar via Realtime som RD; mandatberäkning
+för alla tre valtyper matchar Valmyndighetens 2022-facit (inkl. RF/KF-överhäng).
+
+**Ordning:** bör ligga före ett *fullständigt* generalrep (Fas 7) så att rehearsalen
+exercerar alla tre valen — särskilt den överhängsgren RD 2022 aldrig triggar.
+
+### Fas 7 — Generalrep (§9.6, §10-harness)
+
+**Mål:** hela kedjan lastad på en uppspelad *riktig* valnatt före skarpt läge —
+nu för alla tre valtyper (RD/RF/KF) efter Fas 6.
 
 - Konvertera 2022 XLSX → normaliserade rader; syntetisera inrapporteringsordning
   (klungor, viktat på storlek).
 - `replay_clock` matar in i `result_snapshot` + `result` i komprimerad tid
   (t.ex. 3 h → 3 min) via **samma ingest-kod** som skarp drift.
-- Validera aggregat + mandat mot 2022:s facit.
+- Validera aggregat + mandat mot 2022:s facit, per valtyp.
 
 **Infra (datumstyrt):** kör generalrepet vid T‑minus 3–4 veckor; skala upp
 Supabase/Vercel efteråt baserat på observerad last.
