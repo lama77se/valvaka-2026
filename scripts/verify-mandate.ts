@@ -70,6 +70,32 @@ for (const r of fRows.slice(1)) {
   fixedSeatsByConstituency[code] = Number(r[iFasta]) || 0
 }
 
+// 3. Facit per valkrets per parti (TOTALT = fasta + utjämning) ur Valkrets-bladet
+//    (höger inbäddad tabell: kol 10 = Parti, 11 = Mandat 2022). Diskriminerar
+//    steg B: på "rena" valkretsar (dit inget utjämningsmandat föll) är totalt ==
+//    fasta, så fixedByConstituencyParty MÅSTE matcha facit exakt där — det är
+//    inte tautologin som stage 3 (summan 310) är.
+const partySet = new Set(Object.keys(FACIT))
+const wbV = XLSX.readFile(`${DIR}/rd-jamforande-2018-2022.xlsx`)
+const vRows = XLSX.utils.sheet_to_json<string[]>(wbV.Sheets['Valkrets'], {
+  header: 1,
+  raw: false,
+  defval: '',
+})
+const facitTotalByCode: Record<string, Record<string, number>> = {}
+for (const r of vRows) {
+  const name = String(r[1]).trim()
+  const parti = String(r[11]).trim() // höger-blockets partikolumn (kol 11)
+  if (!name || !partySet.has(parti)) continue
+  const code = nameToCode[name]
+  if (!code) {
+    console.warn('⚠ Valkrets-facit utan kod-match:', name)
+    continue
+  }
+  ;(facitTotalByCode[code] ??= {})
+  facitTotalByCode[code][parti] = Number(String(r[12]).trim()) || 0 // Mandat (kol 12)
+}
+
 const res = computeRiksdag(votesByConstituency, {
   totalSeats: 349,
   firstDivisor: 1.2,
@@ -94,13 +120,58 @@ check('valkretsar med fasta mandat', Object.keys(fixedSeatsByConstituency).lengt
 console.log('--- Stage 2: spärr (4%) ---')
 check('antal kvalificerade partier', res.qualified.length, 8)
 
-console.log('--- Stage 3: fasta mandat ---')
+console.log('--- Stage 3: fasta mandat (summa) ---')
 check('summa fasta mandat', sum(res.fixedByParty), 310)
+
+// Diskriminerande per-valkrets-kontroll av steg B (ren S-L per valkrets):
+//  a) rena valkretsar (facit-summa == fasta mandat i valkretsen) → exakt match.
+//  b) alla valkretsar → fasta ≤ totalt (utjämning kan bara addera, aldrig ta bort).
+console.log('--- Stage 3b: fasta mandat per valkrets (diskriminerande) ---')
+let cleanCount = 0
+let cleanMismatch = 0
+let invariantViol = 0
+for (const [code, facitByP] of Object.entries(facitTotalByCode)) {
+  const fixedHere = res.fixedByConstituencyParty[code] ?? {}
+  const facitSum = Object.values(facitByP).reduce((a, b) => a + b, 0)
+  const isClean = facitSum === (fixedSeatsByConstituency[code] ?? -1)
+  if (isClean) cleanCount++
+  for (const p of partySet) {
+    const got = fixedHere[p] ?? 0
+    const facitTot = facitByP[p] ?? 0
+    if (got > facitTot) invariantViol++
+    if (isClean && got !== facitTot) cleanMismatch++
+  }
+}
+check('valkretsar med facit-mandat', Object.keys(facitTotalByCode).length, 29)
+console.log(`   (${cleanCount} rena valkretsar utan utjämningsmandat verifierade exakt)`)
+check('rena valkretsar: fasta == facit exakt', cleanMismatch, 0)
+check('invariant fasta ≤ totalt (alla valkretsar)', invariantViol, 0)
 
 console.log('--- Stage 4: slutliga mandat vs facit ---')
 for (const [p, exp] of Object.entries(FACIT)) check(p, res.seatsByParty[p] ?? 0, exp)
 check('summa mandat', sum(res.seatsByParty), 349)
 if (res.overhangParties.length) console.log('överhäng:', res.overhangParties)
+
+// Steg D:s överhängsgren (set-aside + omräkning) triggas ALDRIG av RD 2022
+// (inget parti har fler fasta än sin proportionella andel). Syntetiskt fall med
+// handräknat facit så grenen inte är overifierad tills RF/KF exercerar den:
+//   vk1 (3 fasta): A=100,B=1 → A tar alla 3 fasta.  vk2 (0 fasta): B=1000.
+//   Riks-349→5: B=5, A=0.  A:s 3 fasta > 0 mål ⇒ A överhäng, sätts åt sidan med
+//   3; resterande 2 räknas om bland {B} ⇒ B=2.  Facit: A=3, B=2.
+console.log('--- Stage 5: syntetiskt överhäng (steg D set-aside-gren) ---')
+const oh = computeRiksdag(
+  { vk1: { A: 100, B: 1 }, vk2: { B: 1000 } },
+  {
+    totalSeats: 5,
+    firstDivisor: 1.2,
+    nationalThreshold: 0,
+    constituencyThreshold: 1,
+    fixedSeatsByConstituency: { vk1: 3, vk2: 0 },
+  },
+)
+check('överhängsparti', oh.overhangParties, ['A'])
+check('mandat med överhäng', oh.seatsByParty, { A: 3, B: 2 })
+check('summa mandat (överhäng)', sum(oh.seatsByParty), 5)
 
 console.log(ok ? '\n✅ MATCHAR FACIT EXAKT' : '\n❌ MATCHAR EJ — se FEL ovan')
 process.exit(ok ? 0 : 1)

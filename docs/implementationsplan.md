@@ -174,6 +174,21 @@ stand-in tills 2026-filerna publiceras.
 **Acceptans:** mandatberäkning på 2022:s slutliga data matchar Valmyndighetens
 mandatfil exakt (regressionstest för hela kedjan).
 
+**Status — mandatmodul + resultatschema klara.**
+- Ren TS-modul `src/lib/mandate.ts` (röster in → mandat ut, spärrar/divisor/fasta
+  mandat som konfig). `result` + `result_snapshot` migrerade (FK mot 2026 års
+  district/party; anon läser, service_role skriver).
+- Verifierat mot 2022 RD-facit (`npm run verify:mandate`, 5 steg):
+  röstaggregat (6 477 970) → spärrset (8 partier) → fasta mandat → **349 exakt mot
+  Riket-facit**. Steg B (fasta per valkrets) verifieras *diskriminerande*: exakt
+  match mot Valkrets-facit på de 9 "rena" valkretsarna (dit inget utjämningsmandat
+  föll, så totalt == fasta) + invarianten fasta ≤ totalt på alla 29.
+- **Overifierat av detta dataset:** överhängsgrenen (steg D set-aside) triggas inte
+  av RD 2022 — täcks nu av ett syntetiskt handräknat fall, men verifieras skarpt
+  först när RF/KF körs (regioner/kommuner har överhäng). Utjämningsmandatens
+  *placering per valkrets* (steg E) är inte implementerad — behövs inte för
+  riks-mandaten och skjuts till när kart-paint kräver mandat per distrikt.
+
 ### Fas 5 — Realtime + kart-paint (§9.5)
 
 **Mål:** förändringar pushas och animeras i kartan.

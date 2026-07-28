@@ -4,9 +4,13 @@
 // stand-in (regressionstest) nu och 2026 live sen. Spärrar/divisor/fasta mandat
 // per valkrets är CONFIG, inte hårdkodat (arkitektur.md §5).
 //
-// ⚠️ Verifieras steg för steg mot Valmyndighetens 2022-facit (röstaggregat →
-// spärrset → fasta mandat per valkrets → utjämning → 349). Överhäng och
-// lott-brytning är de subtila delarna — facit är auktoriteten, inte minnet.
+// ⚠️ Verifieras steg för steg mot Valmyndighetens 2022-facit (scripts/
+// verify-mandate.ts): röstaggregat → spärrset → fasta mandat per valkrets
+// (diskriminerande: exakt match på "rena" valkretsar utan utjämningsmandat) →
+// 349 mot Riket-facit. Överhängsgrenen triggas inte av RD 2022 och täcks av ett
+// syntetiskt handräknat fall; den verifieras skarpt först när RF/KF (regioner/
+// kommuner har överhäng) kör genom modulen. Lott-brytning är deterministisk på
+// partikod — facit är auktoriteten, inte minnet.
 
 export type PartyVotes = Record<string, number> // partikod -> röster
 export type ConstituencyVotes = Record<string, PartyVotes> // valkretskod -> {partikod -> röster}
