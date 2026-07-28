@@ -16,6 +16,11 @@ Under uppbyggnad. Klart hittills:
   Supabase-projekt (EU, PostGIS), Vercel (prod-only vid push till `main`).
 - **Fas 1** — distriktsgeometrin: alla 6 312 valdistrikt reprojicerade
   (SWEREF99 TM → WGS84) och renderade i MapLibre GL.
+- **Fas 2** — referensdata (`party`, `district`, `district_comparison`) i Postgres,
+  läsbar av klienten på `valdistriktskod` (hover slår upp jämförbarhet mot 2022).
+  DB-migrationer körs via GitHub Action vid push till `main`.
+- **Fas 3** — poll-ingestion: Deno edge function med conditional GET
+  (`If-Modified-Since`), schemalagd med `pg_cron` + `pg_net`.
 
 Se **[docs/arkitektur.md](./docs/arkitektur.md)** för hela underlaget och
 **[docs/implementationsplan.md](./docs/implementationsplan.md)** för faser och
@@ -35,7 +40,7 @@ infrastruktur.
 
 ```
 data.val.se (statiska CSV/JSON)
-      │  cron: conditional GET (ETag)
+      │  cron: conditional GET (If-Modified-Since)
       ▼
 Ingest edge function (Deno) ──upsert──▶ Postgres + PostGIS
                                              │ rollups, mandat, delta
@@ -66,18 +71,22 @@ decimalkomma), schema och 2022-replay-harness finns i
 
 ```
 npm install
-npm run dev        # dev-server på fast port http://localhost:5926
-npm run build      # typkoll + prod-bygge
+npm run dev                # dev-server på fast port http://localhost:5926
+npm run build              # typkoll + prod-bygge
+npm run geometry           # regenerera distriktsgeometrin från källan (mapshaper)
+npm run ingest:reference   # ladda referensdata till Supabase (service-role i .env.local)
 ```
 
 Kopiera `.env.example` → `.env.local` och fyll i Supabase-URL + anon-nyckel.
 Geometrin (`public/valdistrikt-2026-wgs84.geojson`) är gitignore:ad och
-regenereras från källan (mapshaper, se docs/implementationsplan.md Fas 1); i
-produktion hostas den i Supabase Storage och pekas ut via `VITE_GEOMETRY_URL`.
+regenereras från källan (se docs/implementationsplan.md Fas 1); i produktion hostas
+den i Supabase Storage och pekas ut via `VITE_GEOMETRY_URL`. DB-migrationer och
+edge functions deployas via GitHub Actions vid push till `main`.
 
 ## Datakälla
 
-All data kommer från Valmyndigheten. Rådata laddas från
-[råvaru-sidan för val 2026](https://www.val.se/valresultat-och-statistik/statistik-och-data/radata-val-2026)
-(filer på `www.val.se/download/...`; den gamla `data.val.se/filer/`-sökvägen är
-avvecklad). Innehållet lyder under Valmyndighetens villkor.
+All data kommer från Valmyndigheten; index är
+[råvaru-sidan för val 2026](https://www.val.se/valresultat-och-statistik/statistik-och-data/radata-val-2026).
+Källorna ligger på två ställen: parti-/röstmottagnings-CSV på
+`data.val.se/filer/val2026/...`, medan geometri-zip och de flesta xlsx ligger som
+CMS-länkar på `www.val.se/download/...`. Innehållet lyder under Valmyndighetens villkor.
