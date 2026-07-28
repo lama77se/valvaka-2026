@@ -39,6 +39,10 @@ const PARTY_COLORS = {
 const log = (m) => console.log(`[ingest-reference] ${m}`)
 
 // Upsert i chunkar (PostgREST gillar inte gigantiska payloads).
+// OBS: detta är upsert, inte mirror — rader som FÖRSVINNER ur källan (t.ex. ett
+// borttaget distrikt i "slutlig"-versionen ~30 dagar före valet) städas INTE bort.
+// Distriktsindelningen är låst 30 dagar innan, så det är sannolikt ett icke-problem,
+// men vid en riktig full-sync krävs en delete-of-missing-fas.
 async function upsert(table, rows, onConflict) {
   const CHUNK = 1000
   for (let i = 0; i < rows.length; i += CHUNK) {
