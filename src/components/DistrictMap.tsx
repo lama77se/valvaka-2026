@@ -395,7 +395,7 @@ export function DistrictMap() {
               Ledare ({VALTYP_LABEL[valtyp]}):{' '}
               <span className="font-semibold">{hoverResult.forkortning}</span>
               <span className="ml-1 text-slate-400">
-                +{Math.round(hoverResult.margin * 100)} pe · {hoverResult.total.toLocaleString('sv-SE')} röster
+                +{Math.round(hoverResult.margin * 100)} %-enh · {hoverResult.total.toLocaleString('sv-SE')} röster
               </span>
             </div>
           ) : (
