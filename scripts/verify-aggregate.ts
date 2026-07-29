@@ -5,7 +5,7 @@
 //   npx tsx scripts/verify-aggregate.ts
 import { readFileSync } from 'node:fs'
 import XLSX from 'xlsx'
-import { buildRows, collapseForDisplay, districtsInArea, proportionalSeats, type DistrictMeta, type PartyMeta } from '../src/lib/aggregate.ts'
+import { applyComparison, buildRows, collapseForDisplay, districtsInArea, proportionalSeats, type Comparison2022, type DistrictMeta, type PartyMeta } from '../src/lib/aggregate.ts'
 import { SEAT_CONFIG_2026 } from '../src/lib/seatConfig2026.ts'
 
 const t = (v: unknown) => String(v ?? '').trim()
@@ -101,6 +101,27 @@ try {
   check(Math.abs(deltaA - 1.7) < 0.2, 'delta-räkning: 32 % nu − 30,3 % 2022 ≈ +1,7 %-enh', `${deltaA.toFixed(1)}`)
 } catch {
   check(false, 'public/comparison-2022.json läsbar (kör npm run comparison)')
+}
+
+// 7) 2022-basläge (applyComparison): union-sådd när 2026 saknas + live-spärr.
+console.log('\n--- 7. 2022-basläge (applyComparison) ---')
+try {
+  const cmp = JSON.parse(readFileSync('public/comparison-2022.json', 'utf8')) as Comparison2022
+  const S = 'Arbetarepartiet-Socialdemokraterna'
+  // 7a: tomt 2026 (giltiga 0) i KF Stockholm → rader sås in ur 2022-facit.
+  const empty = applyComparison(buildRows({}, emptyParty, 0.02), 'KF', 'kommun', '0180', cmp, emptyParty)
+  check(empty.rows.length >= 1, 'KF 0180 utan 2026: partirader sådda ur 2022', `${empty.rows.length} rader`)
+  check(empty.rows.every((r) => r.andel2022 != null), 'alla insådda rader har 2022-andel')
+  check(empty.totalMandat2022 === 101, 'totalMandat2022 = 101 (Stockholms fullmäktige 2022)', String(empty.totalMandat2022))
+  // 7b: spärr-linjen följer LIVE-året — S med 0,1 % 2026 hamnar under spärren
+  //     trots stor 2022-andel (annars läser man in fjolårets styrkeförhållande).
+  const party = new Map<string, PartyMeta>([['P1', { forkortning: 'S', farg: null, beteckning: S }]])
+  const live = applyComparison(buildRows({ P1: 1, P2: 1000 }, party, 0.02), 'KF', 'kommun', '0180', cmp, party)
+  const sRow = live.rows.find((r) => r.partikod === 'P1')!
+  check(sRow.andel2022 != null && sRow.andel2022 > 0.02, 'S hade stor 2022-andel i 0180 (>2 %)', `${((sRow.andel2022 ?? 0) * 100).toFixed(1)} %`)
+  check(sRow.overSparr === false, 'live-spärr: S under 2 % i 2026 → under spärren trots 2022-andel')
+} catch (e) {
+  check(false, `2022-basläge-test kastade (${(e as Error).message})`)
 }
 
 console.log(ok ? '\n✅ AGGREGAT + MANDAT + ±2022 MATCHAR FACIT / FÖRVÄNTAT' : '\n❌ se FEL ovan')

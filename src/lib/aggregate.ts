@@ -32,7 +32,9 @@ export interface PartyRow {
   deltaAndel: number | null // ±procentenheter mot förra valet (null = ej wirat/ojämförbart)
   mandat: number | null
   deltaMandat: number | null
-  ny: boolean // partiet fanns inte i 2022 (i detta område) → "ny" i stället för ±
+  andel2022: number | null // 2022 års andel (egen kolumn — visas alltid, ej bara delta)
+  mandat2022: number | null // 2022 års mandat i församlingen
+  ny: boolean // partiet fanns inte i 2022 (i detta område) → "ny" i 2022-kolumnen
   overSparr: boolean
 }
 
@@ -41,6 +43,7 @@ export interface AreaResult {
   giltiga: number
   sparr: number
   totalMandat: number | null
+  totalMandat2022: number | null
 }
 
 // Bygg partirader ur redan aggregerade röster för ETT område.
@@ -58,12 +61,14 @@ export function buildRows(votes: PartyVotes, party: Map<string, PartyMeta>, spar
       deltaAndel: null,
       mandat: null,
       deltaMandat: null,
+      andel2022: null,
+      mandat2022: null,
       ny: false,
       overSparr: andel >= sparr,
     }
   })
   rows.sort((a, b) => b.roster - a.roster)
-  return { rows, giltiga, sparr, totalMandat: null }
+  return { rows, giltiga, sparr, totalMandat: null, totalMandat2022: null }
 }
 
 export interface OvrigaRow {
@@ -71,6 +76,8 @@ export interface OvrigaRow {
   roster: number
   andel: number
   mandat: number | null
+  andel2022: number | null
+  mandat2022: number | null
 }
 export interface DisplayRows {
   shown: PartyRow[]
@@ -78,16 +85,23 @@ export interface DisplayRows {
   sparrIndex: number // insättningsposition i `shown` för spärr-linjen (= shown.length om alla visade är över spärren → linjen ritas före Övriga)
 }
 
-// Render-tid: dela i visade (≥ tröskel) + en sammanslagen Övriga-rad.
+// Render-tid: dela i visade (≥ tröskel) + en sammanslagen Övriga-rad. Ett parti
+// visas individuellt om det når tröskeln i ENDERA året (annars försvinner ett
+// parti som var stort 2022 men står på 0 % innan 2026 kommit in).
+const displayAndel = (r: PartyRow) => Math.max(r.andel, r.andel2022 ?? 0)
 export function collapseForDisplay(area: AreaResult, threshold = DISPLAY_THRESHOLD): DisplayRows {
-  const shown = area.rows.filter((r) => r.andel >= threshold)
-  const rest = area.rows.filter((r) => r.andel < threshold)
+  const shown = area.rows.filter((r) => displayAndel(r) >= threshold)
+  const rest = area.rows.filter((r) => displayAndel(r) < threshold)
+  const sum = (rs: PartyRow[], pick: (r: PartyRow) => number | null) =>
+    rs.every((r) => pick(r) == null) ? null : rs.reduce((a, r) => a + (pick(r) ?? 0), 0)
   const ovriga: OvrigaRow | null = rest.length
     ? {
         count: rest.length,
         roster: rest.reduce((a, r) => a + r.roster, 0),
         andel: rest.reduce((a, r) => a + r.andel, 0),
-        mandat: rest.every((r) => r.mandat == null) ? null : rest.reduce((a, r) => a + (r.mandat ?? 0), 0),
+        mandat: sum(rest, (r) => r.mandat),
+        andel2022: sum(rest, (r) => r.andel2022),
+        mandat2022: sum(rest, (r) => r.mandat2022),
       }
     : null
   const idx = shown.findIndex((r) => !r.overSparr)
@@ -241,8 +255,12 @@ function comparisonFor(
   return level === 'kommun' && areaCode ? c.KF[areaCode] ?? null : null
 }
 
-// Fyll ±2022 (deltaAndel i procentenheter, deltaMandat i mandat) genom join på
-// beteckning. Parti utan 2022-motsvarighet i området → `ny`.
+// Fyll 2022 års andel + mandat som EGNA kolumner (visas alltid, bredvid 2026 —
+// ingen switch). Join på beteckning. Två saker gör att 2022 syns även utan 2026:
+//   1) Raduppsättningen blir UNIONEN — 2022-partier utan 2026-röster sås in som
+//      egna rader (annars är tabellen tom innan 2026 kommit in).
+//   2) Spärr-linjen följer det LIVE året: 2026 när röster finns, annars 2022 (så
+//      ett parti på 4,1 % 2022 men 3,5 % nu hamnar under linjen, inte över).
 export function applyComparison(
   area: AreaResult,
   valtyp: Valtyp,
@@ -254,18 +272,57 @@ export function applyComparison(
   if (!comparison) return area
   const c = comparisonFor(comparison, valtyp, level, areaCode)
   if (!c) return area
-  return {
-    ...area,
-    rows: area.rows.map((r) => {
-      const namn = party.get(r.partikod)?.beteckning
-      const a2022 = namn != null ? c.andel[namn] : undefined
-      if (a2022 === undefined) return { ...r, ny: true }
-      return {
-        ...r,
-        ny: false,
-        deltaAndel: (r.andel - a2022) * 100,
-        deltaMandat: r.mandat != null ? r.mandat - (c.mandat[namn!] ?? 0) : null,
-      }
-    }),
+
+  // Reverse-lookup partinamn → 2026-partimeta (färg/förkortning för insådda 2022-rader).
+  const byName = new Map<string, { partikod: string; forkortning: string | null; farg: string | null }>()
+  for (const [partikod, m] of party) if (m.beteckning) byName.set(m.beteckning, { partikod, forkortning: m.forkortning, farg: m.farg })
+
+  const live = area.giltiga > 0
+  const over = (andel: number, andel2022: number | null) => (live ? andel : andel2022 ?? 0) >= area.sparr
+
+  const covered = new Set<string>()
+  const rows: PartyRow[] = area.rows.map((r) => {
+    const namn = party.get(r.partikod)?.beteckning ?? null
+    if (namn) covered.add(namn)
+    const a2022 = namn != null ? c.andel[namn] : undefined
+    if (a2022 === undefined) {
+      return { ...r, ny: true, andel2022: null, mandat2022: null, deltaAndel: null, deltaMandat: null, overSparr: over(r.andel, null) }
+    }
+    const m2022 = c.mandat[namn!] ?? null
+    return {
+      ...r,
+      ny: false,
+      andel2022: a2022,
+      mandat2022: m2022,
+      deltaAndel: (r.andel - a2022) * 100,
+      deltaMandat: r.mandat != null ? r.mandat - (m2022 ?? 0) : null,
+      overSparr: over(r.andel, a2022),
+    }
+  })
+
+  // Så in 2022-partier utan 2026-rad (innan 2026 kommit in → alla partier hit).
+  for (const [namn, a2022] of Object.entries(c.andel)) {
+    if (covered.has(namn)) continue
+    const meta = byName.get(namn)
+    rows.push({
+      partikod: meta?.partikod ?? namn,
+      forkortning: meta?.forkortning ?? null,
+      farg: meta?.farg ?? null,
+      roster: 0,
+      andel: 0,
+      deltaAndel: null,
+      mandat: area.totalMandat != null ? 0 : null,
+      deltaMandat: null,
+      andel2022: a2022,
+      mandat2022: c.mandat[namn] ?? null,
+      ny: false,
+      overSparr: over(0, a2022),
+    })
   }
+
+  // Sortera på 2026-röster, med 2022-andel som utslag → 2022-ordning när tomt.
+  rows.sort((a, b) => b.roster - a.roster || (b.andel2022 ?? 0) - (a.andel2022 ?? 0))
+
+  const has2022 = rows.some((r) => r.mandat2022 != null)
+  return { ...area, rows, totalMandat2022: has2022 ? rows.reduce((a, r) => a + (r.mandat2022 ?? 0), 0) : null }
 }

@@ -65,7 +65,16 @@ export function ResultPanel() {
     areaResult = applyComparison(areaResult, valtyp, selectedArea.level, selectedArea.code, comparisonRef.current, partyRef.current)
     const display = collapseForDisplay(areaResult)
     const reported = codes.reduce((n, c) => n + (store.has(c) ? 1 : 0), 0)
-    return { display, giltiga: areaResult.giltiga, totalMandat: areaResult.totalMandat, reported, total: codes.length }
+    const has2022 = areaResult.rows.some((r) => r.andel2022 != null)
+    return {
+      display,
+      giltiga: areaResult.giltiga,
+      totalMandat: areaResult.totalMandat,
+      totalMandat2022: areaResult.totalMandat2022,
+      has2022,
+      reported,
+      total: codes.length,
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [valtyp, selectedArea, revision])
 
@@ -133,12 +142,19 @@ export function ResultPanel() {
               giltiga={view.giltiga}
               sparr={SPARR[valtyp]}
               totalMandat={view.totalMandat}
+              totalMandat2022={view.totalMandat2022}
             />
-            {view.giltiga === 0 && (
-              <p className="mt-4 text-center text-xs text-slate-500">
-                Inga resultat inrapporterade för {VALTYP_LABEL[valtyp].toLowerCase()} i {areaName} än.
-              </p>
-            )}
+            {view.giltiga === 0 &&
+              (view.has2022 ? (
+                <p className="mt-4 text-center text-xs text-slate-500">
+                  Inga 2026-röster inrapporterade än — <span className="text-slate-400">2022</span>-kolumnerna visar
+                  förra valets slutresultat.
+                </p>
+              ) : (
+                <p className="mt-4 text-center text-xs text-slate-500">
+                  Inga resultat inrapporterade för {VALTYP_LABEL[valtyp].toLowerCase()} i {areaName} än.
+                </p>
+              ))}
           </>
         )}
       </div>

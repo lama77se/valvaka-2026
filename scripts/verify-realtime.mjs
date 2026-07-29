@@ -34,6 +34,9 @@ const dPanel = codes[7] // RD-only, används bara för panel-liveness-testet
 // Nollställ målen (alla valtyper) så snapshot vid sidladdning INTE redan har dem
 // rapporterade (annars bevisar testet ingenting om realtidsvägen).
 await db.from('result').delete().in('valtyp', ['RD', 'RF', 'KF']).in('valdistriktskod', codes)
+// KF Stockholm (0180) töms FÖRE sidladdning så klientens snapshot saknar 2026 där
+// → 2022-baslägets union-sådd testas (partirader ska visas trots 0 inrapporterat).
+await db.from('result').delete().eq('valtyp', 'KF').like('valdistriktskod', '0180%')
 
 const upsertVt = (valtyp, vd, roster) =>
   db.from('result').upsert(
@@ -162,6 +165,19 @@ for (let i = 0; i < 40; i++) {
 }
 check(rfReported, `RF-distrikt ${dRF} färgas efter växling till Region`)
 check(rdCleared, `RD-only-distrikt ${single} nollställs (grått) i Region-vyn`)
+
+// 4) 2022 alltid synligt: KF Stockholm (0180) saknar 2026-röster → tabellen ska
+//    ändå visa partirader ur 2022 års facit (union-sådd innan 2026 kommit in).
+await page.getByRole('button', { name: 'Kommun' }).first().click()
+await page.waitForFunction(() => window.__valtyp === 'KF', { timeout: 5000 })
+await page.locator('aside select').selectOption('k:0180')
+let baseline2022 = 0
+for (let i = 0; i < 20; i++) {
+  baseline2022 = await page.locator('aside tbody tr span.rounded-sm').count() // en färgprick = en partirad
+  if (baseline2022 >= 1) break
+  await page.waitForTimeout(150)
+}
+check(baseline2022 >= 1, `KF Stockholm utan 2026-röster visar ändå 2022 års resultat (${baseline2022} partirader)`)
 
 check(errors.length === 0, `inga page-errors${errors.length ? `: ${errors.join(' | ')}` : ''}`)
 
