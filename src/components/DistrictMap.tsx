@@ -9,16 +9,7 @@ import {
   SWEDEN_BOUNDS,
 } from '@/lib/geometry'
 import { VALTYPER, VALTYP_LABEL, type Valtyp } from '@/lib/results'
-import type { Level } from '@/lib/aggregate'
 import { useResults } from '@/components/ResultsProvider'
-
-// Kartklick drillar till valtypens nativa nivå: riksdagsval → kommun (geografisk
-// nedbrytning), regionval → region (organet distriktet väljer), kommunval → kommun.
-const CLICK_DRILL: Record<Valtyp, { level: Level; digits: number }> = {
-  RD: { level: 'kommun', digits: 4 },
-  RF: { level: 'region', digits: 2 },
-  KF: { level: 'kommun', digits: 4 },
-}
 
 // Läsbar etikett för district_comparison.jamforbarhet (Fas 2-referensdata).
 const JAMFORBARHET_LABEL: Record<string, string> = {
@@ -229,13 +220,14 @@ export function DistrictMap() {
         setHoverResult(null)
       })
 
-      // Klick på distrikt → drilldown i tabellen (delad state) till valtypens
-      // nativa nivå.
+      // Klick på ett distrikt → visa DET distriktets fullständiga partibrytning i
+      // tabellen (röster + andel). Minsta kartdelen = minsta tabellnivån. Mandat
+      // och ±2022 saknas på distriktsnivå (inget organ fördelas; 2026-distrikt ≠
+      // 2022-distrikt) → "–". Distriktet är samma kod i alla tre valen.
       map.on('click', 'district-fill', (e) => {
         const f = e.features?.[0]
         if (!f) return
-        const drill = CLICK_DRILL[activeValtypRef.current]
-        setSelectedArea({ level: drill.level, code: String(f.id).slice(0, drill.digits) })
+        setSelectedArea({ level: 'distrikt', code: String(f.id) })
       })
     })
 

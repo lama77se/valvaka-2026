@@ -179,6 +179,21 @@ for (let i = 0; i < 20; i++) {
 }
 check(baseline2022 >= 1, `KF Stockholm utan 2026-röster visar ändå 2022 års resultat (${baseline2022} partirader)`)
 
+// 5) Kartklick på ett distrikt → tabellen visar DET distriktet (minsta kartdelen =
+//    minsta tabellnivån). Klickar några punkter över södra Sverige tills ett
+//    distrikt träffas; verifierar att panelens områdesväljare blir "d:<kod>".
+let districtSelected = null
+for (const [x, y] of [[560, 760], [520, 700], [600, 660], [500, 800], [620, 720]]) {
+  await page.mouse.click(x, y)
+  await page.waitForTimeout(300)
+  const val = await page.locator('aside select').inputValue()
+  if (val.startsWith('d:')) {
+    districtSelected = val
+    break
+  }
+}
+check(!!districtSelected, `kartklick på distrikt → tabellen visar distriktet (väljare = ${districtSelected ?? 'ingen träff'})`)
+
 check(errors.length === 0, `inga page-errors${errors.length ? `: ${errors.join(' | ')}` : ''}`)
 
 // Städa testmålen (alla valtyper).

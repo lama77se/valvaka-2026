@@ -10,7 +10,7 @@ import { modifiedSainteLague, type PartyVotes } from './mandate'
 import type { Valtyp } from './results'
 import { SEAT_CONFIG_2026 } from './seatConfig2026'
 
-export type Level = 'riket' | 'region' | 'kommun' | 'valkrets'
+export type Level = 'riket' | 'region' | 'kommun' | 'valkrets' | 'distrikt'
 
 // Riksspärr per valtyp (för spärr-linjen). KF varierar 2 %/3 % per kommun —
 // förfinas när mandat wiras (increment 2); 2 % som default här.
@@ -128,6 +128,7 @@ export function districtsInArea(
   const out: string[] = []
   for (const vd of allCodes) {
     if (level === 'riket') out.push(vd)
+    else if (level === 'distrikt' && vd === code) out.push(vd)
     else if (level === 'region' && vd.slice(0, 2) === code) out.push(vd)
     else if (level === 'kommun' && vd.slice(0, 4) === code) out.push(vd)
     else if (level === 'valkrets' && meta.get(vd)?.[VK_COL[valtyp]] === code) out.push(vd)

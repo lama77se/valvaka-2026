@@ -60,6 +60,8 @@ const meta = new Map<string, DistrictMeta>([
   ['1280C099', { vk_rd: '12', vk_rf: 'C', vk_kf: 'M' }],
 ])
 check(districtsInArea(codes, 'riket', null, 'RD', meta).length === 5, 'riket = alla 5')
+check(districtsInArea(codes, 'distrikt', '0180C001', 'RD', meta).length === 1, 'distrikt = exakt det ena')
+check(districtsInArea(codes, 'distrikt', '9999X999', 'RD', meta).length === 0, 'okänt distrikt = 0')
 check(districtsInArea(codes, 'region', '01', 'RD', meta).length === 3, 'region/län 01 = 3 distrikt (kommun 80 + 14)')
 check(districtsInArea(codes, 'region', '12', 'RD', meta).length === 2, 'region/län 12 = 2 distrikt')
 check(districtsInArea(codes, 'kommun', '1280', 'RD', meta).length === 2, 'kommun 1280 (Malmö) = 2 distrikt')

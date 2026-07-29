@@ -45,6 +45,7 @@ export interface ResultsContextValue {
   groupsRef: RefObject<AreaGroups>
   comparisonRef: RefObject<Comparison2022 | null>
   districtComparisonRef: RefObject<Map<string, string>>
+  distriktNamnRef: RefObject<Map<string, string>>
 
   // Områdesväljar-listor + HUD-nämnare
   kommuner: NamedCode[]
@@ -71,10 +72,11 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
   const [valtyp, setValtypState] = useState<Valtyp>('RD')
   const [selectedArea, setSelectedArea] = useState<Area>(RIKET)
   // Byt valtyp → nollställ området till den nya valtypens nativa default (ett
-  // kommun-val kan inte visa "Riket" osv). Kartklick/listval drillar sen ner.
+  // kommun-val kan inte visa "Riket" osv). Ett valt DISTRIKT behålls dock — samma
+  // 8-siffriga kod gäller i alla tre valen, så man kan jämföra distriktets RD/RF/KF.
   const setValtyp = useCallback((v: Valtyp) => {
     setValtypState(v)
-    setSelectedArea(defaultAreaFor(v))
+    setSelectedArea((prev) => (prev.level === 'distrikt' ? prev : defaultAreaFor(v)))
   }, [])
   const [revision, setRevision] = useState(0)
   const [snapshotVersion, setSnapshotVersion] = useState(0)
@@ -92,6 +94,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
   const groupsRef = useRef<AreaGroups>(buildGroups([]))
   const comparisonRef = useRef<Comparison2022 | null>(null)
   const districtComparisonRef = useRef<Map<string, string>>(new Map())
+  const distriktNamnRef = useRef<Map<string, string>>(new Map()) // vd-kod → distriktsnamn (tabellrubrik vid kartklick)
 
   // Per-distrikt-lyssnare (kartan). Muteras utanför React-render.
   const listenersRef = useRef<Set<ChangeListener>>(new Set())
@@ -193,6 +196,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
       // district_comparison (jämförbarhet mot 2022) för kart-hover.
       const cmp = new Map<string, string>()
       const meta = new Map<string, DistrictMeta>()
+      const namn = new Map<string, string>()
       const codes: string[] = []
       const kommunMap = new Map<string, string>()
       const lanMap = new Map<string, string>()
@@ -200,12 +204,13 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
       for (let from = 0; !cancelled; from += PAGE) {
         const { data, error } = await supabase
           .from('district')
-          .select('valdistriktskod,kommun,lan,vk_rd,vk_rf,vk_kf')
+          .select('valdistriktskod,namn,kommun,lan,vk_rd,vk_rf,vk_kf')
           .range(from, from + PAGE - 1)
         if (error || !data || data.length === 0) break
         for (const d of data) {
           codes.push(d.valdistriktskod)
           meta.set(d.valdistriktskod, { vk_rd: d.vk_rd, vk_rf: d.vk_rf, vk_kf: d.vk_kf })
+          namn.set(d.valdistriktskod, d.namn ?? d.valdistriktskod)
           kommunMap.set(d.valdistriktskod.slice(0, 4), d.kommun ?? d.valdistriktskod.slice(0, 4))
           lanMap.set(d.valdistriktskod.slice(0, 2), d.lan ?? d.valdistriktskod.slice(0, 2))
         }
@@ -222,6 +227,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
       }
       if (cancelled) return
       metaRef.current = meta
+      distriktNamnRef.current = namn
       allCodesRef.current = codes
       groupsRef.current = buildGroups(codes)
       districtComparisonRef.current = cmp
@@ -249,6 +255,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     groupsRef,
     comparisonRef,
     districtComparisonRef,
+    distriktNamnRef,
     kommuner,
     regioner,
     totalByValtyp,

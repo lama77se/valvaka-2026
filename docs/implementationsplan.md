@@ -406,6 +406,14 @@ Demonstrerat: RD/Riket och KF/Kommun med färgkodade ±andel + ±mandat.
   roster); mandat lämnas "–" på nedbrytningsnivåer där mandat inte fördelas per
   område (riksmandat är nationellt, regionmandat per region). Strikt-omöjliga aggregat
   (RF/KF-riket, KF-region) är bortvalda i väljaren → inga kvarvarande ±2022-luckor.
+- ~~**Distriktsnivå i tabellen**~~ **(klar).** Klick på ett valdistrikt i kartan
+  visar DET distriktets fullständiga partibrytning i tabellen (röster + andel).
+  Minsta kartdelen = minsta tabellnivån (`Level` fick `'distrikt'`; `districtsInArea`
+  matchar exakt kod). Mandat, ±2022 **och spärr-linjen** döljs/visar "–" på distrikts-
+  nivå — alla tre är församlingsvida bestämningar, inte per-distrikt (ett distrikt
+  väljer inget organ; 2026-distrikt ≠ 2022-distrikt). Distriktsvalet behålls vid
+  valtyp-byte (samma kod i alla tre valen → jämför distriktets RD/RF/KF). Bevisat
+  headless: kartklick → väljaren blir `d:<kod>`.
 - ~~**Live + delad state**~~ **(klar).** Result-flödet lyft till en gemensam
   `ResultsProvider` som både kartan och tabellen delar: EN Realtime-prenumeration,
   en `ResultStore` per valtyp (stabil ref), delad `valtyp` + `selectedArea`. Två

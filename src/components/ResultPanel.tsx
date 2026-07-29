@@ -45,15 +45,18 @@ export function ResultPanel() {
     comparisonRef,
     kommuner,
     regioner,
+    distriktNamnRef,
     revision,
   } = useResults()
 
   const areaName =
     selectedArea.level === 'riket'
       ? 'Riket'
-      : selectedArea.level === 'region'
-        ? (regioner.find((r) => r.code === selectedArea.code)?.name ?? selectedArea.code ?? '')
-        : (kommuner.find((k) => k.code === selectedArea.code)?.name ?? selectedArea.code ?? '')
+      : selectedArea.level === 'distrikt'
+        ? (distriktNamnRef.current.get(selectedArea.code ?? '') ?? selectedArea.code ?? '')
+        : selectedArea.level === 'region'
+          ? (regioner.find((r) => r.code === selectedArea.code)?.name ?? selectedArea.code ?? '')
+          : (kommuner.find((k) => k.code === selectedArea.code)?.name ?? selectedArea.code ?? '')
 
   const view = useMemo(() => {
     void revision // beroende: räkna om vid ny snapshot / strypt Realtime-bump
@@ -87,7 +90,9 @@ export function ResultPanel() {
     ? ''
     : selectedArea.level === 'riket'
       ? 'riket'
-      : `${selectedArea.level === 'region' ? 'r' : 'k'}:${selectedArea.code}`
+      : selectedArea.level === 'distrikt'
+        ? `d:${selectedArea.code}`
+        : `${selectedArea.level === 'region' ? 'r' : 'k'}:${selectedArea.code}`
 
   return (
     <div className="flex h-full flex-col gap-3 overflow-hidden">
@@ -98,6 +103,7 @@ export function ResultPanel() {
         value={selectValue}
         onChange={(e) => {
           const v = e.target.value
+          if (v.startsWith('d:')) return // distrikt sätts via kartklick, inte listan
           const next: Area =
             v === ''
               ? defaultAreaFor(valtyp)
@@ -107,6 +113,9 @@ export function ResultPanel() {
           setSelectedArea(next)
         }}
       >
+        {selectedArea.level === 'distrikt' && (
+          <option value={`d:${selectedArea.code}`}>Distrikt: {areaName}</option>
+        )}
         {levels.includes('riket') ? (
           <option value="riket">Riket</option>
         ) : (
@@ -141,6 +150,7 @@ export function ResultPanel() {
               display={view.display}
               giltiga={view.giltiga}
               sparr={SPARR[valtyp]}
+              showSparr={selectedArea.level !== 'distrikt'}
               totalMandat={view.totalMandat}
               totalMandat2022={view.totalMandat2022}
             />

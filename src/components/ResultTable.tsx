@@ -26,9 +26,10 @@ export interface ResultTableProps {
   blanka?: number | null
   totalMandat?: number | null
   totalMandat2022?: number | null
+  showSparr?: boolean // spärr-linjen är en församlingsvid bestämning → dölj på distriktsnivå
 }
 
-export function ResultTable({ title, subtitle, status, display, giltiga, sparr, blanka, totalMandat, totalMandat2022 }: ResultTableProps) {
+export function ResultTable({ title, subtitle, status, display, giltiga, sparr, blanka, totalMandat, totalMandat2022, showSparr = true }: ResultTableProps) {
   const { shown, ovriga, sparrIndex } = display
   const sparrLabel = `${(sparr * 100).toFixed(0)} %-spärr`
 
@@ -72,7 +73,7 @@ export function ResultTable({ title, subtitle, status, display, giltiga, sparr, 
         <tbody>
           {shown.map((r, i) => (
             <Fragment key={r.partikod}>
-              {i === sparrIndex && <SparrLine />}
+              {showSparr && i === sparrIndex && <SparrLine />}
               <tr className="border-b border-slate-800/60">
                 <td className="py-1 pr-2">
                   <div className="flex items-center gap-2">
@@ -94,7 +95,7 @@ export function ResultTable({ title, subtitle, status, display, giltiga, sparr, 
               </tr>
             </Fragment>
           ))}
-          {sparrIndex >= shown.length && <SparrLine />}
+          {showSparr && sparrIndex >= shown.length && <SparrLine />}
           {ovriga && (
             <tr className="border-b border-slate-800/60 text-slate-400">
               <td className="py-1 pr-2 italic">Övriga partier ({ovriga.count} st)</td>
