@@ -388,9 +388,18 @@ partitotalen = proportionalen (Fas 6-insikten). Spärr 4 % (RD) / 3 % (RF) / 2�
 RF/Region Stockholm 149, KF/Kommun Stockholm 101 (3 %, indelad).
 
 **Återstår:**
-- **Increment 3 — ±2022:** ladda 2022 områdesaggregat som referens, joina 1:1 på
-  områdeskod (rike/region/kommun är kod-stabila; bara valkretsgränser skiftar);
-  `ny` för parti utan 2022-motsvarighet.
+**Increment 3 — ±2022 (klar).** 2022 års andel + mandat per LÖV-församling (RD riket,
+RF per region, KF per kommun) genereras ur 2022-rostern + fasta-2022
+(`npm run comparison` → `public/comparison-2022.json`, ~236 kB statisk asset),
+nycklat på områdeskod + partinamn (beteckning). Klienten joinar 1:1 (`applyComparison`)
+→ fyller `deltaAndel` (procentenheter, grön/röd) + `deltaMandat`; parti utan
+2022-motsvarighet → **`ny`**. Aggregatnivåer (RF/KF-riket, KF-region) och valkrets
+visar "–" tills vidare. Validerat mot facit (`npm run verify:aggregate`).
+Demonstrerat: RD/Riket och KF/Kommun med färgkodade ±andel + ±mandat.
+
+**Återstår:**
+- **Aggregat-±2022:** RF/KF-riket + KF-region (kräver 2022-röstsummor för att
+  aggregera andel; ±mandat = summa av löv-seats).
 - **Live + delad state:** tabellen läser snapshot nu (ej Realtime). Lyft result-
   flödet till en gemensam provider som både kartan och tabellen delar, och koppla
   kartklick → drilldown.

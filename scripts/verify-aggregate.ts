@@ -3,6 +3,7 @@
 //   2. Övriga-kollaps (1 %-regeln) grupperar rätt.
 //   3. districtsInArea (vd-prefix + valkrets) väljer rätt distrikt (syntetiskt).
 //   npx tsx scripts/verify-aggregate.ts
+import { readFileSync } from 'node:fs'
 import XLSX from 'xlsx'
 import { buildRows, collapseForDisplay, districtsInArea, proportionalSeats, type DistrictMeta, type PartyMeta } from '../src/lib/aggregate.ts'
 import { SEAT_CONFIG_2026 } from '../src/lib/seatConfig2026.ts'
@@ -86,5 +87,21 @@ check(Object.keys(SEAT_CONFIG_2026.KF).length === 290, 'KF 290 kommuner')
 check(SEAT_CONFIG_2026.KF['0180']?.seats === 101 && SEAT_CONFIG_2026.KF['0180']?.threshold === 0.03, 'KF Stockholm (0180) = 101 platser, 3 %-spärr (delad)')
 check(SEAT_CONFIG_2026.KF['0114']?.threshold === 0.02, 'KF Upplands Väsby (0114) 2 %-spärr (odelad)')
 
-console.log(ok ? '\n✅ AGGREGAT + MANDAT-WIRING MATCHAR FACIT / FÖRVÄNTAT' : '\n❌ se FEL ovan')
+// 6) ±2022-referens (public/comparison-2022.json) sanity + join-logik.
+console.log('\n--- 6. comparison-2022 (±2022) ---')
+try {
+  const cmp = JSON.parse(readFileSync('public/comparison-2022.json', 'utf8'))
+  const S = 'Arbetarepartiet-Socialdemokraterna'
+  check(Math.abs(cmp.RD.andel[S] - 0.303) < 0.002, 'RD S-andel 2022 ≈ 30,3 %', `${(cmp.RD.andel[S] * 100).toFixed(1)} %`)
+  check(cmp.RD.mandat[S] === 107, 'RD S-mandat 2022 = 107')
+  check(Object.keys(cmp.RF).length === 20 && cmp.RF['01'].mandat[S] === 50, 'RF 20 regioner, Stockholm(01) S = 50 mandat')
+  check(Object.keys(cmp.KF).length === 290 && cmp.KF['0180'].mandat[S] > 0, 'KF 290 kommuner, Stockholm(0180) S-mandat finns')
+  // join: aktuell andel 32 % mot 2022 30,3 % → +1,7 %-enh
+  const deltaA = (0.32 - cmp.RD.andel[S]) * 100
+  check(Math.abs(deltaA - 1.7) < 0.2, 'delta-räkning: 32 % nu − 30,3 % 2022 ≈ +1,7 %-enh', `${deltaA.toFixed(1)}`)
+} catch {
+  check(false, 'public/comparison-2022.json läsbar (kör npm run comparison)')
+}
+
+console.log(ok ? '\n✅ AGGREGAT + MANDAT + ±2022 MATCHAR FACIT / FÖRVÄNTAT' : '\n❌ se FEL ovan')
 process.exit(ok ? 0 : 1)

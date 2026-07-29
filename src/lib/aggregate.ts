@@ -20,6 +20,7 @@ export const DISPLAY_THRESHOLD = 0.01 // visa individuellt ≥1 %, resten → Ö
 export interface PartyMeta {
   forkortning: string | null
   farg: string | null
+  beteckning?: string | null // fullständigt partinamn — join-nyckel mot 2022-facit
 }
 
 export interface PartyRow {
@@ -31,6 +32,7 @@ export interface PartyRow {
   deltaAndel: number | null // ±procentenheter mot förra valet (null = ej wirat/ojämförbart)
   mandat: number | null
   deltaMandat: number | null
+  ny: boolean // partiet fanns inte i 2022 (i detta område) → "ny" i stället för ±
   overSparr: boolean
 }
 
@@ -56,6 +58,7 @@ export function buildRows(votes: PartyVotes, party: Map<string, PartyMeta>, spar
       deltaAndel: null,
       mandat: null,
       deltaMandat: null,
+      ny: false,
       overSparr: andel >= sparr,
     }
   })
@@ -201,13 +204,68 @@ export function computeMandate(
   return totalMandat === 0 ? null : { seatsByParty: acc, totalMandat }
 }
 
-// Slå in mandat i partiraderna (behåller andel/sortering; deltaMandat = null → wiras
-// i increment 3).
+// Slå in mandat i partiraderna (behåller andel/sortering).
 export function applyMandate(area: AreaResult, mandate: MandateResult | null): AreaResult {
   if (!mandate) return area
   return {
     ...area,
     totalMandat: mandate.totalMandat,
     rows: area.rows.map((r) => ({ ...r, mandat: mandate.seatsByParty[r.partikod] ?? 0 })),
+  }
+}
+
+// --- ±2022 (increment 3) -------------------------------------------------------
+// 2022 års andel + mandat per LÖV-församling (RD riket, RF per region, KF per
+// kommun), nycklat på områdeskod + partinamn (beteckning). Genereras av
+// scripts/build-comparison-2022.ts → public/comparison-2022.json.
+export interface AreaComparison {
+  andel: Record<string, number> // partinamn → andel 2022 (0..1)
+  mandat: Record<string, number> // partinamn → mandat 2022
+}
+export interface Comparison2022 {
+  RD: AreaComparison
+  RF: Record<string, AreaComparison>
+  KF: Record<string, AreaComparison>
+}
+
+// Vilken 2022-jämförelse gäller för (valtyp, nivå, område)? Bara löv-vyerna joinar
+// 1:1; aggregat (RF/KF riket, KF region) och valkrets → null (visar "–").
+function comparisonFor(
+  c: Comparison2022,
+  valtyp: Valtyp,
+  level: Level,
+  areaCode: string | null,
+): AreaComparison | null {
+  if (valtyp === 'RD') return level === 'riket' ? c.RD : null
+  if (valtyp === 'RF') return level === 'region' && areaCode ? c.RF[areaCode] ?? null : null
+  return level === 'kommun' && areaCode ? c.KF[areaCode] ?? null : null
+}
+
+// Fyll ±2022 (deltaAndel i procentenheter, deltaMandat i mandat) genom join på
+// beteckning. Parti utan 2022-motsvarighet i området → `ny`.
+export function applyComparison(
+  area: AreaResult,
+  valtyp: Valtyp,
+  level: Level,
+  areaCode: string | null,
+  comparison: Comparison2022 | null,
+  party: Map<string, PartyMeta>,
+): AreaResult {
+  if (!comparison) return area
+  const c = comparisonFor(comparison, valtyp, level, areaCode)
+  if (!c) return area
+  return {
+    ...area,
+    rows: area.rows.map((r) => {
+      const namn = party.get(r.partikod)?.beteckning
+      const a2022 = namn != null ? c.andel[namn] : undefined
+      if (a2022 === undefined) return { ...r, ny: true }
+      return {
+        ...r,
+        ny: false,
+        deltaAndel: (r.andel - a2022) * 100,
+        deltaMandat: r.mandat != null ? r.mandat - (c.mandat[namn!] ?? 0) : null,
+      }
+    }),
   }
 }

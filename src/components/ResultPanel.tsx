@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { ResultStore, VALTYPER, VALTYP_LABEL, type Valtyp } from '@/lib/results'
 import {
   SPARR,
+  applyComparison,
   applyMandate,
   buildGroups,
   buildRows,
@@ -14,6 +15,7 @@ import {
   computeMandate,
   districtsInArea,
   type AreaGroups,
+  type Comparison2022,
   type DistrictMeta,
   type Level,
   type PartyMeta,
@@ -38,6 +40,7 @@ export function ResultPanel() {
   const partyRef = useRef<Map<string, PartyMeta>>(new Map())
   const allCodesRef = useRef<string[]>([])
   const groupsRef = useRef<AreaGroups>(buildGroups([]))
+  const comparisonRef = useRef<Comparison2022 | null>(null)
   const [kommuner, setKommuner] = useState<{ code: string; name: string }[]>([])
   const [regioner, setRegioner] = useState<{ code: string; name: string }[]>([])
 
@@ -45,11 +48,18 @@ export function ResultPanel() {
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      const { data: parties } = await supabase.from('party').select('partikod,color,forkortning')
+      const { data: parties } = await supabase.from('party').select('partikod,color,forkortning,beteckning')
       if (!cancelled && parties) {
         const m = new Map<string, PartyMeta>()
-        for (const p of parties) m.set(p.partikod, { forkortning: p.forkortning, farg: p.color })
+        for (const p of parties) m.set(p.partikod, { forkortning: p.forkortning, farg: p.color, beteckning: p.beteckning })
         partyRef.current = m
+      }
+      // 2022-jämförelse (statisk asset, laddas en gång).
+      try {
+        const res = await fetch('/comparison-2022.json')
+        if (res.ok && !cancelled) comparisonRef.current = (await res.json()) as Comparison2022
+      } catch {
+        /* saknas → ±2022 visar "–" */
       }
       const meta = new Map<string, DistrictMeta>()
       const codes: string[] = []
@@ -115,7 +125,8 @@ export function ResultPanel() {
     const codes = districtsInArea(allCodesRef.current, area.level, area.code, valtyp, metaRef.current)
     const votes = store.aggregate(codes)
     const mandate = computeMandate(valtyp, area.level, area.code, (c) => store.aggregate(c), groupsRef.current)
-    const areaResult = applyMandate(buildRows(votes, partyRef.current, SPARR[valtyp]), mandate)
+    let areaResult = applyMandate(buildRows(votes, partyRef.current, SPARR[valtyp]), mandate)
+    areaResult = applyComparison(areaResult, valtyp, area.level, area.code, comparisonRef.current, partyRef.current)
     const display = collapseForDisplay(areaResult)
     const reported = codes.reduce((n, c) => n + (store.has(c) ? 1 : 0), 0)
     return { display, giltiga: areaResult.giltiga, totalMandat: areaResult.totalMandat, reported, total: codes.length }

@@ -72,9 +72,9 @@ export function ResultTable({ title, subtitle, status, display, giltiga, sparr, 
                 </td>
                 <td className="py-1 px-1 text-right text-slate-300">{nf.format(r.roster)}</td>
                 <td className="py-1 px-1 text-right font-medium">{pct(r.andel)}</td>
-                <td className={`py-1 px-1 text-right ${deltaColor(r.deltaAndel)}`}>{delta(r.deltaAndel)}</td>
+                <td className={`py-1 px-1 text-right ${r.ny ? 'text-amber-400' : deltaColor(r.deltaAndel)}`}>{r.ny ? 'ny' : delta(r.deltaAndel)}</td>
                 <td className="py-1 px-1 text-right font-semibold">{r.mandat ?? '–'}</td>
-                <td className={`py-1 pl-1 text-right ${deltaColor(r.deltaMandat)}`}>{dInt(r.deltaMandat)}</td>
+                <td className={`py-1 pl-1 text-right ${r.ny ? 'text-amber-400' : deltaColor(r.deltaMandat)}`}>{r.ny ? 'ny' : dInt(r.deltaMandat)}</td>
               </tr>
             </Fragment>
           ))}

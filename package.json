@@ -13,6 +13,7 @@
     "preview": "vite preview",
     "geometry": "node scripts/build-geometry.mjs",
     "seat-config": "node scripts/build-seat-config.mjs",
+    "comparison": "tsx scripts/build-comparison-2022.ts",
     "ingest:reference": "node --env-file=.env.local scripts/ingest-reference.mjs",
     "verify:mandate": "tsx scripts/verify-mandate.ts",
     "verify:mandate-rf": "tsx scripts/verify-mandate-rf.ts",
