@@ -400,9 +400,21 @@ Demonstrerat: RD/Riket och KF/Kommun med färgkodade ±andel + ±mandat.
 **Återstår:**
 - **Aggregat-±2022:** RF/KF-riket + KF-region (kräver 2022-röstsummor för att
   aggregera andel; ±mandat = summa av löv-seats).
-- **Live + delad state:** tabellen läser snapshot nu (ej Realtime). Lyft result-
-  flödet till en gemensam provider som både kartan och tabellen delar, och koppla
-  kartklick → drilldown.
+- ~~**Live + delad state**~~ **(klar).** Result-flödet lyft till en gemensam
+  `ResultsProvider` som både kartan och tabellen delar: EN Realtime-prenumeration,
+  en `ResultStore` per valtyp (stabil ref), delad `valtyp` + `selectedArea`. Två
+  signalkanaler — synkron per-distrikt-notis (kartans rAF-repaint) + strypt
+  `revision` (~750 ms, tabellens omräkning). Kartklick → drilldown (kommun); egen
+  panel-väljare borttagen (en väljare). Bevisat headless (`verify:realtime`): panel
+  går live via Realtime, och delad `selectedArea` driver panelen (dropdown →
+  rubrikbyte). Commit `abeeb4d`, prod-deploy READY.
+- **Valtyp-medveten områdesväljare (klar, beslut: strikt).** Väljaren erbjuder bara
+  nivåer som motsvarar ett *faktiskt valt organ* för valtypen — den aggregerar aldrig
+  uppåt förbi den nativa nivån: RD → Riket + geografisk nedbrytning (län/kommun),
+  RF → Region (native) + kommun inom, KF → Kommun (native). Ingen KF-riket/län, ingen
+  RF-riket (de vore bara röstaggregat utan församling). Vid valtyp-byte nollställs
+  området till valtypens native-default; RF/KF utan valt organ visar "välj region/
+  kommun"-prompt. Kartklick drillar till native-nivån (RD→kommun, RF→region, KF→kommun).
 - **Övriga presentationsdelar** (arkitektur §7): mandatprojektion/riksdagssoffa,
   departure board-ticker, aggregat-paneler, drill-down rike→län→kommun, partilegend,
   status/tidsstämpel.

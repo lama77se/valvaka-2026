@@ -46,6 +46,15 @@ Under uppbyggnad. Klart hittills:
     bär volymen (broadcast-vägen ej nödvändig än). Fynd: ingest måste ske i små
     transaktioner (Realtime tappar jättebatchar).
 
+- **Presentation — resultattabell (pågår):** en delad `ResultsProvider` driver både
+  kartan och en live resultattabell från samma Realtime-flöde (delad valtyp + valt
+  område; kartklick → drilldown). Tabellen visar parti · röster · andel · ±2022 ·
+  mandat · ± på alla nivåer. Områdesväljaren är **valtyp-medveten**: riksdagsval →
+  riket + nedbrytning till län/kommun, regionval → region, kommunval → kommun
+  (aggregerar aldrig uppåt förbi det organ valtypen faktiskt väljer). Aggregatet
+  återanvänder den verifierade mandatmodulen och är kollat mot 2022-facit
+  (`npm run verify:aggregate`).
+
 Återstår:
 
 - **Fas 7 (resten)** — det fullständiga generalrepet mot den skarpa resultat-
@@ -109,7 +118,8 @@ npm run verify:mandate     # mandatmodul mot 2022 RD-facit (riksdag)
 npm run verify:mandate-rf  # mandatmodul mot 2022 RF-facit (region, 20 regioner)
 npm run verify:mandate-kf  # mandatmodul mot 2022 KF-facit (kommun, 290 kommuner)
 npm run simulate:valnatt   # simulera inrapportering (RD) för realtidsdemo
-npm run verify:realtime    # headless-acceptans: upsert → kartfärgning via Realtime
+npm run verify:realtime    # headless-acceptans: upsert → karta + tabell via Realtime
+npm run verify:aggregate   # resultattabellens aggregat + mandat + ±2022 mot 2022-facit
 npm run results:reset      # rensa simulerade resultat ur result-tabellen
 ```
 

@@ -19,6 +19,14 @@ import { buildGroups, type AreaGroups, type Comparison2022, type DistrictMeta, t
 export type Area = { level: Level; code: string | null }
 export const RIKET: Area = { level: 'riket', code: null }
 
+// Varje valtyp väljer ett organ på EN nativ nivå: RD ett riksorgan, RF 20 region-
+// fullmäktige, KF 290 kommunfullmäktige. Ovanför den nivån finns bara röstaggregat,
+// ingen församling → väljaren aggregerar aldrig uppåt förbi den nativa nivån.
+export const NATIVE_LEVEL: Record<Valtyp, Level> = { RD: 'riket', RF: 'region', KF: 'kommun' }
+// Default-område per valtyp. RD → Riket (organ finns). RF/KF → ingen riksnivå, så
+// "välj region/kommun"-läge (code null) tills man väljer i listan eller klickar i kartan.
+export const defaultAreaFor = (valtyp: Valtyp): Area => ({ level: NATIVE_LEVEL[valtyp], code: null })
+
 type NamedCode = { code: string; name: string }
 type ChangeListener = (vd: string, valtyp: Valtyp) => void
 
@@ -60,8 +68,14 @@ export function useResults(): ResultsContextValue {
 const emptyCounts = (): Record<Valtyp, number> => ({ RD: 0, RF: 0, KF: 0 })
 
 export function ResultsProvider({ children }: { children: ReactNode }) {
-  const [valtyp, setValtyp] = useState<Valtyp>('RD')
+  const [valtyp, setValtypState] = useState<Valtyp>('RD')
   const [selectedArea, setSelectedArea] = useState<Area>(RIKET)
+  // Byt valtyp → nollställ området till den nya valtypens nativa default (ett
+  // kommun-val kan inte visa "Riket" osv). Kartklick/listval drillar sen ner.
+  const setValtyp = useCallback((v: Valtyp) => {
+    setValtypState(v)
+    setSelectedArea(defaultAreaFor(v))
+  }, [])
   const [revision, setRevision] = useState(0)
   const [snapshotVersion, setSnapshotVersion] = useState(0)
   const [kommuner, setKommuner] = useState<NamedCode[]>([])

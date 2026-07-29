@@ -67,3 +67,9 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Kartkontroller får inte hamna under den 380px breda resultatpanelen (höger).
+   Skjut zoom-kontrollen till vänster om panelen så den går att nå/se. */
+.maplibregl-ctrl-bottom-right {
+  margin-right: 396px; /* 380px panel + 16px luft */
+}

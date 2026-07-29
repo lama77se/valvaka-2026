@@ -9,7 +9,16 @@ import {
   SWEDEN_BOUNDS,
 } from '@/lib/geometry'
 import { VALTYPER, VALTYP_LABEL, type Valtyp } from '@/lib/results'
+import type { Level } from '@/lib/aggregate'
 import { useResults } from '@/components/ResultsProvider'
+
+// Kartklick drillar till valtypens nativa nivå: riksdagsval → kommun (geografisk
+// nedbrytning), regionval → region (organet distriktet väljer), kommunval → kommun.
+const CLICK_DRILL: Record<Valtyp, { level: Level; digits: number }> = {
+  RD: { level: 'kommun', digits: 4 },
+  RF: { level: 'region', digits: 2 },
+  KF: { level: 'kommun', digits: 4 },
+}
 
 // Läsbar etikett för district_comparison.jamforbarhet (Fas 2-referensdata).
 const JAMFORBARHET_LABEL: Record<string, string> = {
@@ -82,7 +91,9 @@ export function DistrictMap() {
     if (import.meta.env.DEV) {
       ;(window as unknown as { __map?: maplibregl.Map }).__map = map
     }
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
+    // Bottom-right, förskjuten vänster om resultatpanelen via CSS (annars hamnar
+    // zoom-knapparna under panelen och blockerar områdesväljaren).
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right')
 
     map.on('error', (e) => {
       console.error('[DistrictMap] maplibre error:', e.error ?? e)
@@ -218,11 +229,13 @@ export function DistrictMap() {
         setHoverResult(null)
       })
 
-      // Klick på distrikt → drilldown till dess kommun i tabellen (delad state).
+      // Klick på distrikt → drilldown i tabellen (delad state) till valtypens
+      // nativa nivå.
       map.on('click', 'district-fill', (e) => {
         const f = e.features?.[0]
         if (!f) return
-        setSelectedArea({ level: 'kommun', code: String(f.id).slice(0, 4) })
+        const drill = CLICK_DRILL[activeValtypRef.current]
+        setSelectedArea({ level: drill.level, code: String(f.id).slice(0, drill.digits) })
       })
     })
 
