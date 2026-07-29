@@ -237,20 +237,28 @@ export interface AreaComparison {
   mandat: Record<string, number> // partinamn → mandat 2022
 }
 export interface Comparison2022 {
-  RD: AreaComparison
+  RD: AreaComparison // riket
+  RD_byLan?: Record<string, AreaComparison> // RD-andel per län (mandat tomt — riksmandat finns bara nationellt)
+  RD_byKommun?: Record<string, AreaComparison> // RD-andel per kommun
   RF: Record<string, AreaComparison>
   KF: Record<string, AreaComparison>
 }
 
-// Vilken 2022-jämförelse gäller för (valtyp, nivå, område)? Bara löv-vyerna joinar
-// 1:1; aggregat (RF/KF riket, KF region) och valkrets → null (visar "–").
+// Vilken 2022-jämförelse gäller för (valtyp, nivå, område)? RD joinar på riket +
+// geografisk nedbrytning (län/kommun, andel); RF per region; KF per kommun.
+// Övriga aggregat (RF/KF-riket, KF-region) och valkrets → null (visar "–").
 function comparisonFor(
   c: Comparison2022,
   valtyp: Valtyp,
   level: Level,
   areaCode: string | null,
 ): AreaComparison | null {
-  if (valtyp === 'RD') return level === 'riket' ? c.RD : null
+  if (valtyp === 'RD') {
+    if (level === 'riket') return c.RD
+    if (level === 'region' && areaCode) return c.RD_byLan?.[areaCode] ?? null
+    if (level === 'kommun' && areaCode) return c.RD_byKommun?.[areaCode] ?? null
+    return null
+  }
   if (valtyp === 'RF') return level === 'region' && areaCode ? c.RF[areaCode] ?? null : null
   return level === 'kommun' && areaCode ? c.KF[areaCode] ?? null : null
 }

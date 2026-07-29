@@ -73,6 +73,20 @@ const { RF: rfSeats, kfSeats, kfRows } = loadSeats2022()
 const rdVotes = loadVotes('RD', 0).get('riket')!
 const RD = areaEntry(rdVotes, 349, 0.04)
 
+// RD — geografisk nedbrytning: andel per län + per kommun (gör drilldown RD→län/
+// kommun jämförbar mot 2022). Riksdagsmandat finns BARA nationellt, så mandat
+// lämnas tomt här → "–" i tabellen; bara röstandelen är meningsfull per område.
+const andelOnly = (votes: PartyVotes) => {
+  const total = Object.values(votes).reduce((a, b) => a + b, 0)
+  const andel: Record<string, number> = {}
+  for (const [p, v] of Object.entries(votes)) if (v > 0) andel[p] = round(v / total)
+  return { andel, mandat: {} as Record<string, number> }
+}
+const RD_byLan: Record<string, ReturnType<typeof andelOnly>> = {}
+for (const [code, votes] of loadVotes('RD', 2)) RD_byLan[code] = andelOnly(votes)
+const RD_byKommun: Record<string, ReturnType<typeof andelOnly>> = {}
+for (const [code, votes] of loadVotes('RD', 4)) RD_byKommun[code] = andelOnly(votes)
+
 // RF — per region (län-kod), 3 %.
 const RF: Record<string, ReturnType<typeof areaEntry>> = {}
 for (const [code, votes] of loadVotes('RF', 2)) {
@@ -87,8 +101,11 @@ for (const [code, votes] of loadVotes('KF', 4)) {
   KF[code] = areaEntry(votes, kfSeats[code], kfRows[code] > 1 ? 0.03 : 0.02)
 }
 
-writeFileSync('public/comparison-2022.json', JSON.stringify({ RD, RF, KF }))
-const size = Math.round(JSON.stringify({ RD, RF, KF }).length / 1024)
-console.log(`[comparison] public/comparison-2022.json — RF ${Object.keys(RF).length} regioner, KF ${Object.keys(KF).length} kommuner (~${size} kB)`)
+const out = { RD, RD_byLan, RD_byKommun, RF, KF }
+writeFileSync('public/comparison-2022.json', JSON.stringify(out))
+const size = Math.round(JSON.stringify(out).length / 1024)
+console.log(
+  `[comparison] public/comparison-2022.json — RD (riket + ${Object.keys(RD_byLan).length} län + ${Object.keys(RD_byKommun).length} kommuner), RF ${Object.keys(RF).length} regioner, KF ${Object.keys(KF).length} kommuner (~${size} kB)`,
+)
 console.log('Stickprov RD: S andel', RD.andel['Arbetarepartiet-Socialdemokraterna'], 'mandat', RD.mandat['Arbetarepartiet-Socialdemokraterna'])
 console.log('Stickprov RF 01 (Sthlm): S mandat', RF['01']?.mandat['Arbetarepartiet-Socialdemokraterna'], '| KF 0180: S mandat', KF['0180']?.mandat['Arbetarepartiet-Socialdemokraterna'])

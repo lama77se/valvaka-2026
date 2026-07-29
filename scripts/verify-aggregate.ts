@@ -96,6 +96,12 @@ try {
   check(cmp.RD.mandat[S] === 107, 'RD S-mandat 2022 = 107')
   check(Object.keys(cmp.RF).length === 20 && cmp.RF['01'].mandat[S] === 50, 'RF 20 regioner, Stockholm(01) S = 50 mandat')
   check(Object.keys(cmp.KF).length === 290 && cmp.KF['0180'].mandat[S] > 0, 'KF 290 kommuner, Stockholm(0180) S-mandat finns')
+  // RD geografisk nedbrytning (andel per län/kommun för drilldown-jämförelse).
+  const rdLan = Object.keys(cmp.RD_byLan ?? {}).length
+  const rdKommun = Object.keys(cmp.RD_byKommun ?? {}).length
+  check(rdLan >= 20 && rdKommun >= 290, 'RD-andel per län + kommun finns', `${rdLan} län / ${rdKommun} kommuner`)
+  const sthlmRD = cmp.RD_byKommun?.['0180']?.andel[S]
+  check(sthlmRD > 0 && sthlmRD < 1 && Math.abs(sthlmRD - cmp.RD.andel[S]) > 0.001, 'RD 0180 S-andel 2022 är kommun-specifik (≠ riks)', `${(sthlmRD * 100).toFixed(1)} %`)
   // join: aktuell andel 32 % mot 2022 30,3 % → +1,7 %-enh
   const deltaA = (0.32 - cmp.RD.andel[S]) * 100
   check(Math.abs(deltaA - 1.7) < 0.2, 'delta-räkning: 32 % nu − 30,3 % 2022 ≈ +1,7 %-enh', `${deltaA.toFixed(1)}`)
@@ -120,6 +126,12 @@ try {
   const sRow = live.rows.find((r) => r.partikod === 'P1')!
   check(sRow.andel2022 != null && sRow.andel2022 > 0.02, 'S hade stor 2022-andel i 0180 (>2 %)', `${((sRow.andel2022 ?? 0) * 100).toFixed(1)} %`)
   check(sRow.overSparr === false, 'live-spärr: S under 2 % i 2026 → under spärren trots 2022-andel')
+  // 7c: RD-drilldown jämförbar mot 2022 — andel wirad på län + kommun, mandat "–".
+  const rdK = applyComparison(buildRows({}, emptyParty, 0.04), 'RD', 'kommun', '0180', cmp, emptyParty)
+  check(rdK.rows.length >= 1 && rdK.rows.every((r) => r.andel2022 != null), 'RD kommun 0180: 2022-andel wirad (ej "–")', `${rdK.rows.length} rader`)
+  check(rdK.rows.every((r) => r.mandat2022 == null), 'RD kommun 0180: 2022-mandat = "–" (riksmandat bara nationellt)')
+  const rdL = applyComparison(buildRows({}, emptyParty, 0.04), 'RD', 'region', '01', cmp, emptyParty)
+  check(rdL.rows.length >= 1 && rdL.rows.every((r) => r.andel2022 != null), 'RD län 01: 2022-andel wirad')
 } catch (e) {
   check(false, `2022-basläge-test kastade (${(e as Error).message})`)
 }
