@@ -6,8 +6,9 @@
 // som "–". Mandat (increment 2) och ±2022 (increment 3) fylls i utan att röra
 // tabellkomponenten. Kollaps till "Övriga" sker vid RENDER — andel/spärr räknas
 // alltid på HELA partiuppsättningen, aldrig på den 1%-kollapsade.
-import type { PartyVotes } from './mandate'
+import { modifiedSainteLague, type PartyVotes } from './mandate'
 import type { Valtyp } from './results'
+import { SEAT_CONFIG_2026 } from './seatConfig2026'
 
 export type Level = 'riket' | 'region' | 'kommun' | 'valkrets'
 
@@ -115,4 +116,98 @@ export function districtsInArea(
     else if (level === 'valkrets' && meta.get(vd)?.[VK_COL[valtyp]] === code) out.push(vd)
   }
   return out
+}
+
+// --- Mandat (increment 2) ------------------------------------------------------
+// Använder den VERIFIERADE proportionella metoden per församling (samma som
+// verify-mandate-rf/kf + replay): RD nationellt (349), RF per region, KF per
+// kommun. 2026 års platsantal/spärr kommer från seatConfig2026 (genererad ur
+// Valmyndighetens fasta-fil). Summerar över församlingar för riksaggregat.
+
+// Förgruppera distrikt per län/kommun-kod EN gång (O(1)-uppslag per församling).
+export interface AreaGroups {
+  all: string[]
+  byLan: Map<string, string[]>
+  byKommun: Map<string, string[]>
+}
+export function buildGroups(allCodes: string[]): AreaGroups {
+  const byLan = new Map<string, string[]>()
+  const byKommun = new Map<string, string[]>()
+  for (const vd of allCodes) {
+    const lan = vd.slice(0, 2)
+    const kommun = vd.slice(0, 4)
+    ;(byLan.get(lan) ?? byLan.set(lan, []).get(lan)!).push(vd)
+    ;(byKommun.get(kommun) ?? byKommun.set(kommun, []).get(kommun)!).push(vd)
+  }
+  return { all: allCodes, byLan, byKommun }
+}
+
+// Proportionell mandatfördelning (jämkad uddatalsmetod 1,2) bland partier ≥ spärr.
+export function proportionalSeats(votes: PartyVotes, seats: number, threshold: number): Record<string, number> {
+  const total = Object.values(votes).reduce((a, b) => a + b, 0)
+  if (total === 0 || seats === 0) return {}
+  const qual = Object.fromEntries(Object.entries(votes).filter(([, v]) => v / total >= threshold))
+  return modifiedSainteLague(qual, seats, 1.2)
+}
+
+export interface MandateResult {
+  seatsByParty: Record<string, number>
+  totalMandat: number
+}
+
+// Mandat för (valtyp, nivå, område). null där mandat inte gäller (t.ex. riksdags-
+// mandat på kommunnivå, eller regionval för Gotland som saknar regionfullmäktige).
+export function computeMandate(
+  valtyp: Valtyp,
+  level: Level,
+  areaCode: string | null,
+  aggregate: (codes: Iterable<string>) => PartyVotes,
+  groups: AreaGroups,
+): MandateResult | null {
+  const acc: Record<string, number> = {}
+  const add = (seats: Record<string, number>) => {
+    for (const [p, s] of Object.entries(seats)) acc[p] = (acc[p] ?? 0) + s
+  }
+  const emptyIfNone = (codes: string[] | undefined) => codes ?? []
+
+  if (valtyp === 'RD') {
+    if (level !== 'riket') return null
+    add(proportionalSeats(aggregate(groups.all), SEAT_CONFIG_2026.RD.totalSeats, SEAT_CONFIG_2026.RD.threshold))
+  } else if (valtyp === 'RF') {
+    if (level === 'region') {
+      const seats = SEAT_CONFIG_2026.RF[areaCode ?? '']
+      if (!seats) return null
+      add(proportionalSeats(aggregate(emptyIfNone(groups.byLan.get(areaCode!))), seats, 0.03))
+    } else if (level === 'riket') {
+      for (const [lan, seats] of Object.entries(SEAT_CONFIG_2026.RF))
+        add(proportionalSeats(aggregate(emptyIfNone(groups.byLan.get(lan))), seats, 0.03))
+    } else return null
+  } else {
+    // KF
+    if (level === 'kommun') {
+      const cfg = SEAT_CONFIG_2026.KF[areaCode ?? '']
+      if (!cfg) return null
+      add(proportionalSeats(aggregate(emptyIfNone(groups.byKommun.get(areaCode!))), cfg.seats, cfg.threshold))
+    } else if (level === 'riket' || level === 'region') {
+      const prefix = level === 'region' ? areaCode ?? '' : ''
+      for (const [code, cfg] of Object.entries(SEAT_CONFIG_2026.KF)) {
+        if (prefix && !code.startsWith(prefix)) continue
+        add(proportionalSeats(aggregate(emptyIfNone(groups.byKommun.get(code))), cfg.seats, cfg.threshold))
+      }
+    } else return null
+  }
+
+  const totalMandat = Object.values(acc).reduce((a, b) => a + b, 0)
+  return totalMandat === 0 ? null : { seatsByParty: acc, totalMandat }
+}
+
+// Slå in mandat i partiraderna (behåller andel/sortering; deltaMandat = null → wiras
+// i increment 3).
+export function applyMandate(area: AreaResult, mandate: MandateResult | null): AreaResult {
+  if (!mandate) return area
+  return {
+    ...area,
+    totalMandat: mandate.totalMandat,
+    rows: area.rows.map((r) => ({ ...r, mandat: mandate.seatsByParty[r.partikod] ?? 0 })),
+  }
 }

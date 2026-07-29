@@ -376,10 +376,18 @@ uppsättningen), med spärr-linje och giltiga-fot. Verifierad mot 2022-facit
 över 4 %, S ≈ 30,3 %), Övriga-kollaps, och områdesfiltrering. `ResultPanel` (höger
 panel) laddar snapshot + distriktsmetadata och drilldownar Riket → kommun.
 
+**Increment 2 — mandatkolumn (klar).** Använder den VERIFIERADE proportionella
+metoden per församling (`proportionalSeats`/`computeMandate` i `lib/aggregate.ts`):
+RD nationellt (349), RF per region, KF per kommun; riksaggregat = summa över
+församlingar. 2026 års platsantal + spärr genereras ur Valmyndighetens fasta-fil
+(`npm run seat-config` → `lib/seatConfig2026.ts`), nycklat på områdeskod (län 2 /
+kommun 4 siffror) — ingen fasta-valkretsmandat/namn-mappning behövs eftersom
+partitotalen = proportionalen (Fas 6-insikten). Spärr 4 % (RD) / 3 % (RF) / 2–3 %
+(KF, delad kommun). Väljaren fick region-nivå. Validerat: RD-proportionell 349 =
+2022-facit + config-sanity (`npm run verify:aggregate`). Demonstrerat: RD/Riket 349,
+RF/Region Stockholm 149, KF/Kommun Stockholm 101 (3 %, indelad).
+
 **Återstår:**
-- **Increment 2 — mandatkolumn:** wire `computeAssembly` per församling (RD = ett
-  349-organ; RF/KF = summa av per-region/-kommun-organ, som replayens aggregat).
-  Kräver 2026 platsantal/fasta valkretsmandat som referensdata (fasta-2026-filen).
 - **Increment 3 — ±2022:** ladda 2022 områdesaggregat som referens, joina 1:1 på
   områdeskod (rike/region/kommun är kod-stabila; bara valkretsgränser skiftar);
   `ny` för parti utan 2022-motsvarighet.

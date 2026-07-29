@@ -4,7 +4,8 @@
 //   3. districtsInArea (vd-prefix + valkrets) väljer rätt distrikt (syntetiskt).
 //   npx tsx scripts/verify-aggregate.ts
 import XLSX from 'xlsx'
-import { buildRows, collapseForDisplay, districtsInArea, type DistrictMeta, type PartyMeta } from '../src/lib/aggregate.ts'
+import { buildRows, collapseForDisplay, districtsInArea, proportionalSeats, type DistrictMeta, type PartyMeta } from '../src/lib/aggregate.ts'
+import { SEAT_CONFIG_2026 } from '../src/lib/seatConfig2026.ts'
 
 const t = (v: unknown) => String(v ?? '').trim()
 const INVALID = new Set(['Valdeltagande', 'Summa giltiga röster', 'ej anmält deltagande', 'blanka röster', 'övriga ogiltiga', 'Röstberättigade'])
@@ -64,5 +65,26 @@ check(districtsInArea(codes, 'kommun', '1280', 'RD', meta).length === 2, 'kommun
 check(districtsInArea(codes, 'valkrets', '01', 'RD', meta).length === 2, 'RD-valkrets 01 = 2 distrikt')
 check(districtsInArea(codes, 'valkrets', 'M', 'KF', meta).length === 2, 'KF-valkrets M = 2 distrikt')
 
-console.log(ok ? '\n✅ AGGREGAT MATCHAR FACIT / FÖRVÄNTAT' : '\n❌ se FEL ovan')
+// 4) Mandat-wiring: RD nationell proportionell fördelning == 349-facit (2022).
+console.log('\n--- 4. Mandat-wiring (RD proportionell) ---')
+const FACIT: Record<string, number> = {
+  'Arbetarepartiet-Socialdemokraterna': 107, Sverigedemokraterna: 73, Moderaterna: 68, Centerpartiet: 24,
+  Vänsterpartiet: 24, Kristdemokraterna: 19, 'Miljöpartiet de gröna': 18, 'Liberalerna (tidigare Folkpartiet)': 16,
+}
+const seats = proportionalSeats(national, 349, 0.04)
+let mandOk = true
+for (const [p, exp] of Object.entries(FACIT)) if ((seats[p] ?? 0) !== exp) mandOk = false
+check(mandOk, 'RD-proportionell 349 = facit (S 107, SD 73, M 68, …)')
+check(Object.values(seats).reduce((a, b) => a + b, 0) === 349, 'summa mandat = 349')
+
+// 5) Seat-config 2026 sanity.
+console.log('\n--- 5. seatConfig2026 ---')
+check(SEAT_CONFIG_2026.RD.totalSeats === 349, 'RD 349 platser')
+check(Object.keys(SEAT_CONFIG_2026.RF).length === 20, 'RF 20 regioner', `${Object.keys(SEAT_CONFIG_2026.RF).length}`)
+check(SEAT_CONFIG_2026.RF['01'] === 149, 'RF Stockholm (01) = 149', `${SEAT_CONFIG_2026.RF['01']}`)
+check(Object.keys(SEAT_CONFIG_2026.KF).length === 290, 'KF 290 kommuner')
+check(SEAT_CONFIG_2026.KF['0180']?.seats === 101 && SEAT_CONFIG_2026.KF['0180']?.threshold === 0.03, 'KF Stockholm (0180) = 101 platser, 3 %-spärr (delad)')
+check(SEAT_CONFIG_2026.KF['0114']?.threshold === 0.02, 'KF Upplands Väsby (0114) 2 %-spärr (odelad)')
+
+console.log(ok ? '\n✅ AGGREGAT + MANDAT-WIRING MATCHAR FACIT / FÖRVÄNTAT' : '\n❌ se FEL ovan')
 process.exit(ok ? 0 : 1)
