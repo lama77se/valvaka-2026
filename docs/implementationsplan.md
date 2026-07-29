@@ -398,15 +398,14 @@ visar "–" tills vidare. Validerat mot facit (`npm run verify:aggregate`).
 Demonstrerat: RD/Riket och KF/Kommun med färgkodade ±andel + ±mandat.
 
 **Återstår:**
-- ~~**2022 alltid synligt + RD-drilldown**~~ **(klar).** 2022 års andel + mandat
-  visas alltid i egna kolumner bredvid 2026 (union-sådda rader → syns även innan
-  2026 kommit in; se `applyComparison`). RD:s drilldown till **län + kommun** jämförs
-  nu mot 2022 (andel per område ur RD-rostern → `comparison-2022.json` RD_byLan/
-  RD_byKommun; riksmandat finns bara nationellt → 2022-mandat "–" på de nivåerna).
-  Övriga strikt-omöjliga aggregat (RF/KF-riket, KF-region) är bortvalda i väljaren.
-- **Kvarvarande ±2022-lucka:** RF drillat till kommun-inom-region (regionvalets
-  röstandel per kommun) saknar 2022-löv → "–". Samma generatormönster som RD_byKommun
-  löser det när det behövs.
+- ~~**2022 alltid synligt + full drilldown-täckning**~~ **(klar).** 2022 års andel +
+  mandat visas alltid i egna kolumner bredvid 2026 (union-sådda rader → syns även
+  innan 2026 kommit in; se `applyComparison`). **Alla valbara nivåer** jämförs nu mot
+  2022: RD riket/län/kommun, RF region/kommun, KF kommun. `comparison-2022.json` har
+  RD_byLan/RD_byKommun + RF_byKommun med **röstandel per område** (ur respektive
+  roster); mandat lämnas "–" på nedbrytningsnivåer där mandat inte fördelas per
+  område (riksmandat är nationellt, regionmandat per region). Strikt-omöjliga aggregat
+  (RF/KF-riket, KF-region) är bortvalda i väljaren → inga kvarvarande ±2022-luckor.
 - ~~**Live + delad state**~~ **(klar).** Result-flödet lyft till en gemensam
   `ResultsProvider` som både kartan och tabellen delar: EN Realtime-prenumeration,
   en `ResultStore` per valtyp (stabil ref), delad `valtyp` + `selectedArea`. Två

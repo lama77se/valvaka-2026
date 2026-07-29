@@ -94,6 +94,11 @@ for (const [code, votes] of loadVotes('RF', 2)) {
   RF[code] = areaEntry(votes, rfSeats[code], 0.03)
 }
 
+// RF — andel per kommun (gör drilldown RF→kommun-inom-region jämförbar mot 2022).
+// Regionfullmäktigemandat är per region, inte per kommun → mandat lämnas tomt ("–").
+const RF_byKommun: Record<string, ReturnType<typeof andelOnly>> = {}
+for (const [code, votes] of loadVotes('RF', 4)) RF_byKommun[code] = andelOnly(votes)
+
 // KF — per kommun (4-siffrig kod), 2/3 % efter delning.
 const KF: Record<string, ReturnType<typeof areaEntry>> = {}
 for (const [code, votes] of loadVotes('KF', 4)) {
@@ -101,11 +106,11 @@ for (const [code, votes] of loadVotes('KF', 4)) {
   KF[code] = areaEntry(votes, kfSeats[code], kfRows[code] > 1 ? 0.03 : 0.02)
 }
 
-const out = { RD, RD_byLan, RD_byKommun, RF, KF }
+const out = { RD, RD_byLan, RD_byKommun, RF, RF_byKommun, KF }
 writeFileSync('public/comparison-2022.json', JSON.stringify(out))
 const size = Math.round(JSON.stringify(out).length / 1024)
 console.log(
-  `[comparison] public/comparison-2022.json — RD (riket + ${Object.keys(RD_byLan).length} län + ${Object.keys(RD_byKommun).length} kommuner), RF ${Object.keys(RF).length} regioner, KF ${Object.keys(KF).length} kommuner (~${size} kB)`,
+  `[comparison] public/comparison-2022.json — RD (riket + ${Object.keys(RD_byLan).length} län + ${Object.keys(RD_byKommun).length} kommuner), RF (${Object.keys(RF).length} regioner + ${Object.keys(RF_byKommun).length} kommuner), KF ${Object.keys(KF).length} kommuner (~${size} kB)`,
 )
 console.log('Stickprov RD: S andel', RD.andel['Arbetarepartiet-Socialdemokraterna'], 'mandat', RD.mandat['Arbetarepartiet-Socialdemokraterna'])
 console.log('Stickprov RF 01 (Sthlm): S mandat', RF['01']?.mandat['Arbetarepartiet-Socialdemokraterna'], '| KF 0180: S mandat', KF['0180']?.mandat['Arbetarepartiet-Socialdemokraterna'])

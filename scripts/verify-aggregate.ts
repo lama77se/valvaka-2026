@@ -102,6 +102,10 @@ try {
   check(rdLan >= 20 && rdKommun >= 290, 'RD-andel per län + kommun finns', `${rdLan} län / ${rdKommun} kommuner`)
   const sthlmRD = cmp.RD_byKommun?.['0180']?.andel[S]
   check(sthlmRD > 0 && sthlmRD < 1 && Math.abs(sthlmRD - cmp.RD.andel[S]) > 0.001, 'RD 0180 S-andel 2022 är kommun-specifik (≠ riks)', `${(sthlmRD * 100).toFixed(1)} %`)
+  const rfKommun = Object.keys(cmp.RF_byKommun ?? {}).length
+  check(rfKommun >= 280, 'RF-andel per kommun finns (drilldown RF→kommun)', `${rfKommun} kommuner`)
+  const sthlmRF = cmp.RF_byKommun?.['0180']?.andel[S]
+  check(sthlmRF > 0 && sthlmRF < 1, 'RF 0180 S-andel 2022 finns', `${(sthlmRF * 100).toFixed(1)} %`)
   // join: aktuell andel 32 % mot 2022 30,3 % → +1,7 %-enh
   const deltaA = (0.32 - cmp.RD.andel[S]) * 100
   check(Math.abs(deltaA - 1.7) < 0.2, 'delta-räkning: 32 % nu − 30,3 % 2022 ≈ +1,7 %-enh', `${deltaA.toFixed(1)}`)
@@ -132,6 +136,10 @@ try {
   check(rdK.rows.every((r) => r.mandat2022 == null), 'RD kommun 0180: 2022-mandat = "–" (riksmandat bara nationellt)')
   const rdL = applyComparison(buildRows({}, emptyParty, 0.04), 'RD', 'region', '01', cmp, emptyParty)
   check(rdL.rows.length >= 1 && rdL.rows.every((r) => r.andel2022 != null), 'RD län 01: 2022-andel wirad')
+  // 7d: RF drillat till kommun jämförbart mot 2022 (andel; regionmandat per region → "–").
+  const rfK = applyComparison(buildRows({}, emptyParty, 0.03), 'RF', 'kommun', '0180', cmp, emptyParty)
+  check(rfK.rows.length >= 1 && rfK.rows.every((r) => r.andel2022 != null), 'RF kommun 0180: 2022-andel wirad (ej "–")', `${rfK.rows.length} rader`)
+  check(rfK.rows.every((r) => r.mandat2022 == null), 'RF kommun 0180: 2022-mandat = "–" (regionmandat per region)')
 } catch (e) {
   check(false, `2022-basläge-test kastade (${(e as Error).message})`)
 }
