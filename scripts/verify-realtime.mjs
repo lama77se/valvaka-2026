@@ -24,11 +24,12 @@ const db = createClient(url, serviceKey, { auth: { persistSession: false } })
 // En färgad (riksdags)partikod + N distrikt som testmål.
 const { data: parties } = await db.from('party').select('partikod').not('color', 'is', null).limit(1)
 const partikod = parties[0].partikod
-const { data: districts } = await db.from('district').select('valdistriktskod').limit(7)
+const { data: districts } = await db.from('district').select('valdistriktskod').limit(8)
 const codes = districts.map((d) => d.valdistriktskod)
 const single = codes[0] // RD-only genom hela testet (används även i växlingstestet)
 const burst = codes.slice(1, 6) // 5 distrikt för burst-testet
 const dRF = codes[6] // får ENDAST RF-resultat (växlingstestet)
+const dPanel = codes[7] // RD-only, används bara för panel-liveness-testet
 
 // Nollställ målen (alla valtyper) så snapshot vid sidladdning INTE redan har dem
 // rapporterade (annars bevisar testet ingenting om realtidsvägen).
@@ -91,11 +92,64 @@ for (let i = 0; i < 40; i++) {
 }
 check(reflected === burst.length, `burst: ${reflected}/${burst.length} distrikt reflekterade`)
 
+// 2.5) Panel-tabellen går live via DELAD state: en Realtime-upsert höjer distrikt-
+//      räknaren i resultattabellen (höger panel), inte bara kartan. Bevisar att
+//      ResultsProvider→revision→ResultTable-vägen fungerar (kartan mäts via __map).
+const panelReported = async () => {
+  const txt = await page
+    .locator('aside')
+    .getByText(/distrikt räknade/)
+    .first()
+    .textContent()
+    .catch(() => null)
+  const m = txt?.match(/([\d \s.]+?)\s*av/)
+  return m ? Number(m[1].replace(/\D/g, '')) : null
+}
+// Vänta tills snapshot-laddningen stabiliserats (två lika läsningar i rad) så att
+// ökningen nedan otvetydigt kommer från Realtime-upserten, inte från snapshot.
+let prevPanel = await panelReported()
+for (let i = 0; i < 40; i++) {
+  await page.waitForTimeout(400)
+  const now = await panelReported()
+  if (now != null && now === prevPanel) break
+  prevPanel = now
+}
+const bPre = prevPanel ?? 0
+await upsert(dPanel, 1300 + Math.floor(Math.random() * 400))
+let panelLive = false
+for (let i = 0; i < 40; i++) {
+  const now = await panelReported()
+  if (now != null && now > bPre) {
+    panelLive = true
+    break
+  }
+  await page.waitForTimeout(250)
+}
+check(panelLive, `panel-tabellen räknar upp distrikt vid Realtime-upsert (${bPre} → >${bPre})`)
+
+// 2.6) Delad selectedArea driver panelen: välj en kommun i panel-dropdownen och
+//      verifiera att tabellrubriken byter till kommunens namn. Kartklick→drilldown
+//      går samma väg (setSelectedArea) — själva canvas-klicket testas ej headless.
+const { data: krow } = await db.from('district').select('kommun').eq('valdistriktskod', dPanel).single()
+const kommunKod = dPanel.slice(0, 4)
+const kommunNamn = krow?.kommun || kommunKod
+await page.locator('aside select').selectOption(`k:${kommunKod}`)
+let titleFlipped = false
+for (let i = 0; i < 20; i++) {
+  const title = await page.locator('aside h2').first().textContent().catch(() => null)
+  if (title?.includes(kommunNamn)) {
+    titleFlipped = true
+    break
+  }
+  await page.waitForTimeout(150)
+}
+check(titleFlipped, `panel-dropdown → delad selectedArea → rubrik byter till "${kommunNamn}"`)
+
 // 3) Valtyp-växling (regressionstest mot feature-state-fällan): RF-resultat på ett
 //    distrikt utan RD, växla till Region → RF-distriktet färgas OCH RD-only-
 //    distriktet nollställs (annars sitter röd RD-färg kvar = fel).
 await upsertVt('RF', dRF, 1200 + Math.floor(Math.random() * 400))
-await page.getByRole('button', { name: 'Region' }).click()
+await page.getByRole('button', { name: 'Region' }).first().click()
 await page.waitForFunction(() => window.__valtyp === 'RF', { timeout: 5000 })
 let rfReported = false
 let rdCleared = false

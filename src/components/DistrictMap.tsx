@@ -8,14 +8,8 @@ import {
   GEOMETRY_URL,
   SWEDEN_BOUNDS,
 } from '@/lib/geometry'
-import { supabase } from '@/lib/supabase'
-import {
-  VALTYPER,
-  VALTYP_LABEL,
-  VALTYP_VK_COLUMN,
-  ResultStore,
-  type Valtyp,
-} from '@/lib/results'
+import { VALTYPER, VALTYP_LABEL, type Valtyp } from '@/lib/results'
+import { useResults } from '@/components/ResultsProvider'
 
 // Läsbar etikett för district_comparison.jamforbarhet (Fas 2-referensdata).
 const JAMFORBARHET_LABEL: Record<string, string> = {
@@ -40,74 +34,36 @@ const BLANK_STYLE: StyleSpecification = {
 
 type HoverInfo = { kod: string; namn: string; kommun: string; lan: string }
 type HoverResult = { forkortning: string; share: number; margin: number; total: number }
-type Party = { color: string | null; forkortning: string | null }
-
-const emptyCounts = (): Record<Valtyp, number> => ({ RD: 0, RF: 0, KF: 0 })
 
 export function DistrictMap() {
+  // Delad state (karta + tabell). Kartan äger inte längre data — den läser storarna
+  // och prenumererar på per-distrikt-ändringar via providern.
+  const {
+    valtyp,
+    setValtyp,
+    setSelectedArea,
+    storesRef,
+    partyRef,
+    districtComparisonRef,
+    totalByValtyp,
+    subscribeChanges,
+    snapshotVersion,
+  } = useResults()
+
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const hoveredIdRef = useRef<string | null>(null)
   const [hover, setHover] = useState<HoverInfo | null>(null)
-
-  // Referensdata (Fas 2): district_comparison laddas EN gång och joinas synkront.
-  const comparisonRef = useRef<Map<string, string>>(new Map())
   const [jamforbarhet, setJamforbarhet] = useState<string | null>(null)
 
-  // Resultat (Fas 5–6): partifärger + EN ResultStore per valtyp (samma geometri,
-  // olika resultatlager). Kartan färgas från den valda valtypen.
-  const partyRef = useRef<Map<string, Party>>(new Map())
-  const storesRef = useRef<Record<Valtyp, ResultStore>>(null!)
-  if (!storesRef.current) {
-    storesRef.current = { RD: new ResultStore(), RF: new ResultStore(), KF: new ResultStore() }
-  }
   const pendingRef = useRef<Set<string>>(new Set())
   const rafRef = useRef<number | null>(null)
   const sourceReadyRef = useRef(false)
-  const activeValtypRef = useRef<Valtyp>('RD') // speglar `valtyp`-state för closures
+  const activeValtypRef = useRef<Valtyp>(valtyp) // speglar `valtyp` för closures
   const recolorRef = useRef<(() => void) | null>(null)
 
-  const [valtyp, setValtyp] = useState<Valtyp>('RD')
   const [hoverResult, setHoverResult] = useState<HoverResult | null>(null)
   const [reportedCount, setReportedCount] = useState(0)
-  const [totalByValtyp, setTotalByValtyp] = useState<Record<Valtyp, number>>(emptyCounts)
-
-  // Ladda hela district_comparison en gång (paginerat; PostgREST tak ~1000/sida).
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      const map = new Map<string, string>()
-      const PAGE = 1000
-      for (let from = 0; !cancelled; from += PAGE) {
-        const { data, error } = await supabase
-          .from('district_comparison')
-          .select('valdistriktskod,jamforbarhet')
-          .range(from, from + PAGE - 1)
-        if (error || !data || data.length === 0) break
-        for (const r of data) map.set(r.valdistriktskod, r.jamforbarhet)
-        if (data.length < PAGE) break
-      }
-      if (!cancelled) comparisonRef.current = map
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  // Ladda partifärger en gång (riksdagspartier har hex, lokala partier null).
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      const { data } = await supabase.from('party').select('partikod,color,forkortning')
-      if (cancelled || !data) return
-      const m = new Map<string, Party>()
-      for (const p of data) m.set(p.partikod, { color: p.color, forkortning: p.forkortning })
-      partyRef.current = m
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [])
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
@@ -122,6 +78,7 @@ export function DistrictMap() {
       pitchWithRotate: false,
     })
     mapRef.current = map
+    let removed = false // vakt: rAF/sourcedata får inte röra en borttagen karta
     if (import.meta.env.DEV) {
       ;(window as unknown as { __map?: maplibregl.Map }).__map = map
     }
@@ -131,10 +88,11 @@ export function DistrictMap() {
       console.error('[DistrictMap] maplibre error:', e.error ?? e)
     })
 
-    // --- Fas 6: applicera ett distrikts resultat FÖR DEN AKTIVA VALTYPEN --------
+    // --- Applicera ett distrikts resultat FÖR DEN AKTIVA VALTYPEN --------------
     const applyDistrict = (vd: string) => {
+      if (removed) return
       const o = storesRef.current[activeValtypRef.current].outcome(vd)
-      const color = (o.winner && partyRef.current.get(o.winner)?.color) || REPORTED_NEUTRAL
+      const color = (o.winner && partyRef.current.get(o.winner)?.farg) || REPORTED_NEUTRAL
       map.setFeatureState(
         { source: 'districts', id: vd },
         // Orapporterat i denna valtyp → color null så coalesce faller till grått
@@ -145,9 +103,10 @@ export function DistrictMap() {
 
     // rAF-koalescerad repaint (many events/tick → one paint), ingen fördröjande timer.
     const scheduleFlush = () => {
-      if (rafRef.current != null) return
+      if (rafRef.current != null || removed) return
       rafRef.current = requestAnimationFrame(() => {
         rafRef.current = null
+        if (removed) return
         for (const vd of pendingRef.current) applyDistrict(vd)
         pendingRef.current.clear()
         const n = storesRef.current[activeValtypRef.current].reportedCount
@@ -163,7 +122,7 @@ export function DistrictMap() {
     // Måste iterera unionen — annars behåller distrikt som fanns i förra valtypen
     // men saknas i den nya sin gamla färg (feature-state-fällan vid växling).
     const recolorActive = () => {
-      if (!sourceReadyRef.current) return
+      if (!sourceReadyRef.current || removed) return
       for (const vt of VALTYPER)
         for (const vd of storesRef.current[vt].districts()) pendingRef.current.add(vd)
       scheduleFlush()
@@ -239,7 +198,7 @@ export function DistrictMap() {
           kommun: p.Kommun ?? '',
           lan: p['Län'] ?? '',
         })
-        setJamforbarhet(comparisonRef.current.get(id) ?? null)
+        setJamforbarhet(districtComparisonRef.current.get(id) ?? null)
         const o = storesRef.current[activeValtypRef.current].outcome(id)
         setHoverResult(
           o.winner
@@ -258,75 +217,38 @@ export function DistrictMap() {
         setHover(null)
         setHoverResult(null)
       })
+
+      // Klick på distrikt → drilldown till dess kommun i tabellen (delad state).
+      map.on('click', 'district-fill', (e) => {
+        const f = e.features?.[0]
+        if (!f) return
+        setSelectedArea({ level: 'kommun', code: String(f.id).slice(0, 4) })
+      })
     })
 
-    // --- Realtime: prenumerera på ALLA valtyper (inget filter), routa till rätt
-    // store. Instant växling utan om-prenumeration. Prenumerera FÖRE snapshot. ---
-    const channel = supabase
-      .channel('result-live')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'result' },
-        (payload) => {
-          const row = payload.new as {
-            valtyp?: string
-            valdistriktskod?: string
-            partikod?: string
-            roster?: number
-          }
-          if (!row?.valtyp || !row.valdistriktskod || !row.partikod) return
-          if (import.meta.env.DEV) {
-            const w = window as unknown as { __eventCount?: number }
-            w.__eventCount = (w.__eventCount ?? 0) + 1 // last-test-mätning (Fas 7)
-          }
-          const store = storesRef.current[row.valtyp as Valtyp]
-          if (!store) return
-          store.set(row.valdistriktskod, row.partikod, row.roster ?? 0)
-          if (row.valtyp === activeValtypRef.current) requestApply(row.valdistriktskod)
-        },
-      )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          ;(window as unknown as { __realtimeReady?: boolean }).__realtimeReady = true
-        }
-      })
+    // Per-distrikt-notis från providern (Realtime). Kartan bryr sig bara om aktiv
+    // valtyp; store.set har redan skett i providern → vi bara begär ompaint.
+    const unsubscribe = subscribeChanges((vd, vt) => {
+      if (vt === activeValtypRef.current) requestApply(vd)
+    })
 
-    ;(async () => {
-      // Per-valtyp nämnare: distrikt som deltar i valtypen (vk_<valtyp> ej null).
-      // Härled ur data — anta inte 6312 för alla tre (t.ex. Gotlands regionval).
-      const counts = emptyCounts()
-      for (const vt of VALTYPER) {
-        const { count } = await supabase
-          .from('district')
-          .select('*', { count: 'exact', head: true })
-          .not(VALTYP_VK_COLUMN[vt], 'is', null)
-        counts[vt] = count ?? 0
-      }
-      setTotalByValtyp(counts)
-
-      // Snapshot av redan inrapporterade resultat (alla valtyper, paginerat).
-      const PAGE = 1000
-      for (let from = 0; ; from += PAGE) {
-        const { data, error } = await supabase
-          .from('result')
-          .select('valtyp,valdistriktskod,partikod,roster')
-          .range(from, from + PAGE - 1)
-        if (error || !data || data.length === 0) break
-        for (const r of data) storesRef.current[r.valtyp as Valtyp]?.set(r.valdistriktskod, r.partikod, r.roster)
-        if (data.length < PAGE) break
-      }
-      recolorActive()
-      setReportedCount(storesRef.current[activeValtypRef.current].reportedCount)
-    })()
+    setReportedCount(storesRef.current[activeValtypRef.current].reportedCount)
 
     return () => {
-      supabase.removeChannel(channel)
+      unsubscribe()
+      removed = true
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
       recolorRef.current = null
       map.remove()
       mapRef.current = null
     }
-  }, [])
+  }, [subscribeChanges, storesRef, partyRef, districtComparisonRef, setSelectedArea])
+
+  // Bulkladdning (referens/snapshot) klar → full ompaint + färsk räknare.
+  useEffect(() => {
+    recolorRef.current?.()
+    setReportedCount(storesRef.current[activeValtypRef.current].reportedCount)
+  }, [snapshotVersion, storesRef])
 
   // Valtyp-växling: uppdatera aktiv valtyp och färga om kartan från dess store.
   useEffect(() => {
@@ -350,7 +272,7 @@ export function DistrictMap() {
           : null,
       )
     }
-  }, [valtyp])
+  }, [valtyp, storesRef, partyRef])
 
   const total = totalByValtyp[valtyp]
   const reportedPct = total > 0 ? Math.round((reportedCount / total) * 100) : 0
