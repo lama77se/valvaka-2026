@@ -46,6 +46,7 @@ export function ResultPanel() {
     kommuner,
     regioner,
     distriktNamnRef,
+    district2022Ref,
     revision,
   } = useResults()
 
@@ -65,7 +66,11 @@ export function ResultPanel() {
     const votes = store.aggregate(codes)
     const mandate = computeMandate(valtyp, selectedArea.level, selectedArea.code, (c) => store.aggregate(c), groupsRef.current)
     let areaResult = applyMandate(buildRows(votes, partyRef.current, SPARR[valtyp]), mandate)
-    areaResult = applyComparison(areaResult, valtyp, selectedArea.level, selectedArea.code, comparisonRef.current, partyRef.current)
+    const districtLeaf =
+      selectedArea.level === 'distrikt' && selectedArea.code
+        ? district2022Ref.current.get(`${valtyp}:${selectedArea.code}`) ?? null
+        : null
+    areaResult = applyComparison(areaResult, valtyp, selectedArea.level, selectedArea.code, comparisonRef.current, partyRef.current, districtLeaf)
     const display = collapseForDisplay(areaResult)
     const reported = codes.reduce((n, c) => n + (store.has(c) ? 1 : 0), 0)
     const has2022 = areaResult.rows.some((r) => r.andel2022 != null)

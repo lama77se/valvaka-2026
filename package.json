@@ -15,6 +15,7 @@
     "seat-config": "node scripts/build-seat-config.mjs",
     "comparison": "tsx scripts/build-comparison-2022.ts",
     "ingest:reference": "node --env-file=.env.local scripts/ingest-reference.mjs",
+    "ingest:district-2022": "node --env-file=.env.local scripts/ingest-district-2022.mjs",
     "verify:mandate": "tsx scripts/verify-mandate.ts",
     "verify:mandate-rf": "tsx scripts/verify-mandate-rf.ts",
     "verify:mandate-kf": "tsx scripts/verify-mandate-kf.ts",

@@ -142,6 +142,13 @@ try {
   const rfK = applyComparison(buildRows({}, emptyParty, 0.03), 'RF', 'kommun', '0180', cmp, emptyParty)
   check(rfK.rows.length >= 1 && rfK.rows.every((r) => r.andel2022 != null), 'RF kommun 0180: 2022-andel wirad (ej "–")', `${rfK.rows.length} rader`)
   check(rfK.rows.every((r) => r.mandat2022 == null), 'RF kommun 0180: 2022-mandat = "–" (regionmandat per region)')
+  // 7e: distriktsnivå — 2022-lövet skickas in explicit (i appen DB-hämtat per klick).
+  const dLeaf = { andel: { [S]: 0.3, Moderaterna: 0.2 }, mandat: {} }
+  const dArea = applyComparison(buildRows({}, emptyParty, 0.04), 'RD', 'distrikt', '10820101', null, emptyParty, dLeaf)
+  check(dArea.rows.length === 2 && dArea.rows.every((r) => r.andel2022 != null), 'distrikt: 2022-andel sås in ur inskickat löv', `${dArea.rows.length} rader`)
+  check(dArea.rows.every((r) => r.mandat2022 == null) && dArea.totalMandat2022 == null, 'distrikt: 2022-mandat "–" (inget organ per distrikt)')
+  const dNull = applyComparison(buildRows({}, emptyParty, 0.04), 'RD', 'distrikt', 'X', null, emptyParty, null)
+  check(dNull.rows.length === 0, 'distrikt utan 2022 (NEJ/null löv) → inga insådda rader')
 } catch (e) {
   check(false, `2022-basläge-test kastade (${(e as Error).message})`)
 }

@@ -14,7 +14,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { supabase } from '@/lib/supabase'
 import { ResultStore, VALTYPER, VALTYP_VK_COLUMN, type Valtyp } from '@/lib/results'
-import { buildGroups, type AreaGroups, type Comparison2022, type DistrictMeta, type Level, type PartyMeta } from '@/lib/aggregate'
+import { buildGroups, type AreaComparison, type AreaGroups, type Comparison2022, type DistrictMeta, type Level, type PartyMeta } from '@/lib/aggregate'
 
 export type Area = { level: Level; code: string | null }
 export const RIKET: Area = { level: 'riket', code: null }
@@ -46,6 +46,7 @@ export interface ResultsContextValue {
   comparisonRef: RefObject<Comparison2022 | null>
   districtComparisonRef: RefObject<Map<string, string>>
   distriktNamnRef: RefObject<Map<string, string>>
+  district2022Ref: RefObject<Map<string, AreaComparison | null>>
 
   // Områdesväljar-listor + HUD-nämnare
   kommuner: NamedCode[]
@@ -95,6 +96,8 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
   const comparisonRef = useRef<Comparison2022 | null>(null)
   const districtComparisonRef = useRef<Map<string, string>>(new Map())
   const distriktNamnRef = useRef<Map<string, string>>(new Map()) // vd-kod → distriktsnamn (tabellrubrik vid kartklick)
+  // 2022 per distrikt, lazy-hämtat på klick (`${valtyp}:${vd}` → löv, eller null om NEJ/inget).
+  const district2022Ref = useRef<Map<string, AreaComparison | null>>(new Map())
 
   // Per-distrikt-lyssnare (kartan). Muteras utanför React-render.
   const listenersRef = useRef<Set<ChangeListener>>(new Set())
@@ -243,6 +246,32 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  // Distriktsval → hämta det distriktets 2022-resultat (en gång, cache:at). Bumpar
+  // revision när det landat så tabellen räknar om med 2022-kolumnerna ifyllda.
+  useEffect(() => {
+    if (selectedArea.level !== 'distrikt' || !selectedArea.code) return
+    const code = selectedArea.code
+    const key = `${valtyp}:${code}`
+    if (district2022Ref.current.has(key)) return
+    let cancelled = false
+    ;(async () => {
+      const { data, error } = await supabase
+        .from('district_result_2022')
+        .select('beteckning,andel')
+        .eq('valtyp', valtyp)
+        .eq('valdistriktskod', code)
+      if (cancelled) return
+      const andel: Record<string, number> = {}
+      if (!error && data) for (const r of data) andel[r.beteckning] = r.andel
+      // Tomt (NEJ/ingen 2022-motsvarighet) → null → 2022-kolumnerna visar "–".
+      district2022Ref.current.set(key, Object.keys(andel).length ? { andel, mandat: {} } : null)
+      setRevision((r) => r + 1)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [valtyp, selectedArea])
+
   const value: ResultsContextValue = {
     valtyp,
     setValtyp,
@@ -256,6 +285,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     comparisonRef,
     districtComparisonRef,
     distriktNamnRef,
+    district2022Ref,
     kommuner,
     regioner,
     totalByValtyp,

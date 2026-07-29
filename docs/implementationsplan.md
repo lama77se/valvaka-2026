@@ -409,11 +409,17 @@ Demonstrerat: RD/Riket och KF/Kommun med färgkodade ±andel + ±mandat.
 - ~~**Distriktsnivå i tabellen**~~ **(klar).** Klick på ett valdistrikt i kartan
   visar DET distriktets fullständiga partibrytning i tabellen (röster + andel).
   Minsta kartdelen = minsta tabellnivån (`Level` fick `'distrikt'`; `districtsInArea`
-  matchar exakt kod). Mandat, ±2022 **och spärr-linjen** döljs/visar "–" på distrikts-
-  nivå — alla tre är församlingsvida bestämningar, inte per-distrikt (ett distrikt
-  väljer inget organ; 2026-distrikt ≠ 2022-distrikt). Distriktsvalet behålls vid
-  valtyp-byte (samma kod i alla tre valen → jämför distriktets RD/RF/KF). Bevisat
-  headless: kartklick → väljaren blir `d:<kod>`.
+  matchar exakt kod). Mandat och spärr-linjen döljs/visar "–" på distriktsnivå
+  (församlingsvida bestämningar, inte per-distrikt — ett distrikt väljer inget organ).
+  Distriktsvalet behålls vid valtyp-byte (samma kod i alla tre valen → jämför
+  distriktets RD/RF/KF). Bevisat headless: kartklick → väljaren blir `d:<kod>`.
+- ~~**2022 på distriktsnivå (DB-lookup)**~~ **(klar).** 2026-distrikt ≠ 2022-distrikt,
+  så 2022 föraggregeras per 2026-distrikt via `district_comparison.koder_foreg`
+  (JA = 1:1, FLERA = summa, NEJ = "–") in i tabellen `district_result_2022` (alla tre
+  valtyper, ~198 k rader, `npm run ingest:district-2022`). Klienten hämtar distriktets
+  2022 per klick (cache:at) och fyller 2022-andelskolumnen; mandat förblir "–". ~80 %
+  av distrikten (JA+FLERA) får 2022; NEJ visar "–". Bevisat headless: klick på JA-
+  distrikt → 2022-kolumnen fylls ur DB.
 - ~~**Live + delad state**~~ **(klar).** Result-flödet lyft till en gemensam
   `ResultsProvider` som både kartan och tabellen delar: EN Realtime-prenumeration,
   en `ResultStore` per valtyp (stabil ref), delad `valtyp` + `selectedArea`. Två

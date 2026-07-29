@@ -180,19 +180,34 @@ for (let i = 0; i < 20; i++) {
 check(baseline2022 >= 1, `KF Stockholm utan 2026-röster visar ändå 2022 års resultat (${baseline2022} partirader)`)
 
 // 5) Kartklick på ett distrikt → tabellen visar DET distriktet (minsta kartdelen =
-//    minsta tabellnivån). Klickar några punkter över södra Sverige tills ett
-//    distrikt träffas; verifierar att panelens områdesväljare blir "d:<kod>".
-let districtSelected = null
-for (const [x, y] of [[560, 760], [520, 700], [600, 660], [500, 800], [620, 720]]) {
+//    minsta tabellnivån), med 2022-kolumnerna ifyllda ur district_result_2022
+//    (DB-lookup). Klickar punkter över södra Sverige tills ett JÄMFÖRBART (JA/FLERA)
+//    distrikt träffas, så 2022 faktiskt ska visas.
+let dCode = null
+for (const [x, y] of [[560, 760], [520, 700], [600, 660], [500, 800], [620, 720], [540, 640], [580, 720]]) {
   await page.mouse.click(x, y)
-  await page.waitForTimeout(300)
+  await page.waitForTimeout(250)
   const val = await page.locator('aside select').inputValue()
-  if (val.startsWith('d:')) {
-    districtSelected = val
+  if (!val.startsWith('d:')) continue
+  const code = val.slice(2)
+  const { data: jc } = await db.from('district_comparison').select('jamforbarhet').eq('valdistriktskod', code).single()
+  if (jc && (jc.jamforbarhet === 'JA' || jc.jamforbarhet === 'FLERA')) {
+    dCode = code
     break
   }
 }
-check(!!districtSelected, `kartklick på distrikt → tabellen visar distriktet (väljare = ${districtSelected ?? 'ingen träff'})`)
+check(!!dCode, `kartklick → jämförbart distrikt valt i tabellen (d:${dCode ?? 'ingen träff'})`)
+// 2022-andel (kolumn 4) i första partiraden ska visa ett %-värde, inte "–".
+let has2022cell = false
+for (let i = 0; i < 20 && dCode; i++) {
+  const txt = await page.locator('aside tbody tr').first().locator('td').nth(3).textContent().catch(() => null)
+  if (txt && txt.includes('%')) {
+    has2022cell = true
+    break
+  }
+  await page.waitForTimeout(200)
+}
+check(has2022cell, 'distriktets 2022-andel visas i tabellen (DB-lookup fyller 2022-kolumnen)')
 
 check(errors.length === 0, `inga page-errors${errors.length ? `: ${errors.join(' | ')}` : ''}`)
 

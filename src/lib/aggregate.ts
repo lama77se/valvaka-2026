@@ -282,9 +282,16 @@ export function applyComparison(
   areaCode: string | null,
   comparison: Comparison2022 | null,
   party: Map<string, PartyMeta>,
+  districtLeaf?: AreaComparison | null, // 2022 för ett enskilt distrikt (DB-hämtat), används vid level==='distrikt'
 ): AreaResult {
-  if (!comparison) return area
-  const c = comparisonFor(comparison, valtyp, level, areaCode)
+  // Distriktsnivå har ingen statisk löv-fil (2026-distrikt ≠ 2022-distrikt) — 2022
+  // hämtas per distrikt ur district_result_2022 och skickas in här.
+  const c =
+    level === 'distrikt'
+      ? districtLeaf ?? null
+      : comparison
+        ? comparisonFor(comparison, valtyp, level, areaCode)
+        : null
   if (!c) return area
 
   // Reverse-lookup partinamn → 2026-partimeta (färg/förkortning för insådda 2022-rader).

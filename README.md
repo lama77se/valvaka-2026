@@ -54,10 +54,13 @@ Under uppbyggnad. Klart hittills:
   Områdesväljaren är **valtyp-medveten**: riksdagsval → riket + nedbrytning till
   län/kommun, regionval → region, kommunval → kommun (aggregerar aldrig uppåt förbi
   det organ valtypen faktiskt väljer). **Klick på ett distrikt i kartan** visar det
-  enskilda valdistriktets brytning (röster + andel) i tabellen — mandat, ±2022 och
-  spärr-linjen är församlingsvida bestämningar och visas därför "–"/döljs på
-  distriktsnivå. Aggregatet återanvänder den verifierade mandatmodulen och är kollat
-  mot 2022-facit (`npm run verify:aggregate`).
+  enskilda valdistriktets brytning (röster + andel + 2022) i tabellen. 2022 på
+  distriktsnivå föraggregeras via `district_comparison.koder_foreg` (2026-distrikt ≠
+  2022-distrikt) till tabellen `district_result_2022` och hämtas per klick; ~80 % av
+  distrikten (jämförbara) får 2022, övriga "–". Mandat och spärr-linjen döljs på
+  distriktsnivå (församlingsvida bestämningar, inte per-distrikt). Aggregatet
+  återanvänder den verifierade mandatmodulen och är kollat mot 2022-facit
+  (`npm run verify:aggregate`).
 
 Återstår:
 
@@ -118,6 +121,7 @@ npm run dev                # dev-server på fast port http://localhost:5926
 npm run build              # typkoll + prod-bygge
 npm run geometry           # regenerera distriktsgeometrin från källan (mapshaper)
 npm run ingest:reference   # ladda referensdata till Supabase (service-role i .env.local)
+npm run ingest:district-2022 # 2022 per 2026-distrikt (koder_foreg-aggregat) → district_result_2022
 npm run verify:mandate     # mandatmodul mot 2022 RD-facit (riksdag)
 npm run verify:mandate-rf  # mandatmodul mot 2022 RF-facit (region, 20 regioner)
 npm run verify:mandate-kf  # mandatmodul mot 2022 KF-facit (kommun, 290 kommuner)
