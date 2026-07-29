@@ -68,8 +68,9 @@
   }
 }
 
-/* Kartkontroller får inte hamna under den 380px breda resultatpanelen (höger).
-   Skjut zoom-kontrollen till vänster om panelen så den går att nå/se. */
+/* Kartkontroller får inte hamna under den 440px breda resultatpanelen (höger).
+   Skjut zoom-kontrollen till vänster om panelen så den går att nå/se.
+   OBS: håll i synk med panelbredden (w-[440px]) i App.tsx. */
 .maplibregl-ctrl-bottom-right {
-  margin-right: 396px; /* 380px panel + 16px luft */
+  margin-right: 456px; /* 440px panel + 16px luft */
 }

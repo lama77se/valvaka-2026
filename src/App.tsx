@@ -19,7 +19,7 @@ function App() {
         </div>
 
         {/* Resultattabell — höger panel (layout provisorisk) */}
-        <aside className="absolute right-0 top-0 h-full w-[380px] border-l border-slate-800 bg-slate-950/90 p-4 shadow-2xl backdrop-blur">
+        <aside className="absolute right-0 top-0 h-full w-[440px] border-l border-slate-800 bg-slate-950/90 p-4 shadow-2xl backdrop-blur">
           <ResultPanel />
         </aside>
       </main>

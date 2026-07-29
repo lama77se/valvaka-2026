@@ -48,8 +48,10 @@ Under uppbyggnad. Klart hittills:
 
 - **Presentation — resultattabell (pågår):** en delad `ResultsProvider` driver både
   kartan och en live resultattabell från samma Realtime-flöde (delad valtyp + valt
-  område; kartklick → drilldown). Tabellen visar parti · röster · andel · ±2022 ·
-  mandat · ± på alla nivåer. Områdesväljaren är **valtyp-medveten**: riksdagsval →
+  område; kartklick → drilldown). Tabellen visar parti · röster · andel (2026/2022/±)
+  · mandat (2026/2022/±) på alla nivåer — **2022 års slutresultat visas alltid** i
+  egna kolumner bredvid 2026, även innan 2026 kommit in (raderna sås in ur 2022 och
+  fylls på live). Områdesväljaren är **valtyp-medveten**: riksdagsval →
   riket + nedbrytning till län/kommun, regionval → region, kommunval → kommun
   (aggregerar aldrig uppåt förbi det organ valtypen faktiskt väljer). Aggregatet
   återanvänder den verifierade mandatmodulen och är kollat mot 2022-facit
