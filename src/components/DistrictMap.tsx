@@ -39,7 +39,7 @@ const BLANK_STYLE: StyleSpecification = {
 }
 
 type HoverInfo = { kod: string; namn: string; kommun: string; lan: string }
-type HoverResult = { forkortning: string; margin: number; total: number }
+type HoverResult = { forkortning: string; share: number; margin: number; total: number }
 type Party = { color: string | null; forkortning: string | null }
 
 const emptyCounts = (): Record<Valtyp, number> => ({ RD: 0, RF: 0, KF: 0 })
@@ -245,6 +245,7 @@ export function DistrictMap() {
           o.winner
             ? {
                 forkortning: partyRef.current.get(o.winner)?.forkortning ?? o.winner,
+                share: o.share,
                 margin: o.margin,
                 total: o.total,
               }
@@ -342,6 +343,7 @@ export function DistrictMap() {
         o.winner
           ? {
               forkortning: partyRef.current.get(o.winner)?.forkortning ?? o.winner,
+              share: o.share,
               margin: o.margin,
               total: o.total,
             }
@@ -393,9 +395,10 @@ export function DistrictMap() {
           {hoverResult ? (
             <div className="mt-1 text-xs text-emerald-300">
               Ledare ({VALTYP_LABEL[valtyp]}):{' '}
-              <span className="font-semibold">{hoverResult.forkortning}</span>
+              <span className="font-semibold">{hoverResult.forkortning}</span>{' '}
+              <span className="font-semibold">{Math.round(hoverResult.share * 100)} %</span>
               <span className="ml-1 text-slate-400">
-                +{Math.round(hoverResult.margin * 100)} %-enh · {hoverResult.total.toLocaleString('sv-SE')} röster
+                (+{Math.round(hoverResult.margin * 100)} %-enh) · {hoverResult.total.toLocaleString('sv-SE')} röster
               </span>
             </div>
           ) : (

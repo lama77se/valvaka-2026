@@ -26,11 +26,12 @@ export const VALTYP_VK_COLUMN: Record<Valtyp, 'vk_rd' | 'vk_rf' | 'vk_kf'> = {
 
 export interface DistrictOutcome {
   winner: string | null // partikod med flest röster (null = inga röster ännu)
+  share: number // vinnarens andel av rösterna, 0..1
   margin: number // (1:a − 2:a) / totalt, 0..1 — hur säker ledningen är
   total: number // totala giltiga röster i distriktet hittills
 }
 
-const EMPTY: DistrictOutcome = { winner: null, margin: 0, total: 0 }
+const EMPTY: DistrictOutcome = { winner: null, share: 0, margin: 0, total: 0 }
 
 // Ackumulerar result-rader och räknar om vinnaren per distrikt on demand.
 export class ResultStore {
@@ -62,8 +63,9 @@ export class ResultStore {
         second = v
       }
     }
+    const share = total > 0 ? top / total : 0
     const margin = total > 0 ? (top - Math.max(second, 0)) / total : 0
-    return { winner, margin, total }
+    return { winner, share, margin, total }
   }
 
   districts(): IterableIterator<string> {
