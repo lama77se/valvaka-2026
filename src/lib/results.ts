@@ -72,6 +72,21 @@ export class ResultStore {
     return this.byDistrict.keys()
   }
 
+  has(valdistriktskod: string): boolean {
+    return this.byDistrict.has(valdistriktskod)
+  }
+
+  // Summera röster per parti över en uppsättning distrikt (område-aggregat).
+  aggregate(codes: Iterable<string>): Record<string, number> {
+    const total: Record<string, number> = {}
+    for (const vd of codes) {
+      const parties = this.byDistrict.get(vd)
+      if (!parties) continue
+      for (const [p, v] of parties) total[p] = (total[p] ?? 0) + v
+    }
+    return total
+  }
+
   get reportedCount(): number {
     return this.byDistrict.size
   }

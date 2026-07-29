@@ -361,6 +361,37 @@ på skarp 2026-data; last testas separat på 2026-koder (ovan).
 
 ---
 
+## Presentation (efter faserna — allt utom kartan)
+
+Egen arbetsström för presentationslagret ovanpå datan. **Klientsidig** aggregering
+som återanvänder den verifierade mandatmodulen (advisor) — ingen aggregering/mandat
+i SQL-vyer (skulle forka den modul Fas 4/6 verifierade).
+
+**Increment 1 — resultattabell (klar).** `<ResultTable>` + ren aggregering
+(`lib/aggregate.ts`) driver alla nivåer (rike/region/kommun/valkrets); låst radmodell
+där ej wirade fält är `null` → renderas "–". Visar alla partier ≥ 1 %, resten i en
+`Övriga partier (N st)`-rad (kollaps vid RENDER; andel/spärr räknas på hela
+uppsättningen), med spärr-linje och giltiga-fot. Verifierad mot 2022-facit
+(`npm run verify:aggregate`): nationellt aggregat (giltiga 6 477 970, de 8 partierna
+över 4 %, S ≈ 30,3 %), Övriga-kollaps, och områdesfiltrering. `ResultPanel` (höger
+panel) laddar snapshot + distriktsmetadata och drilldownar Riket → kommun.
+
+**Återstår:**
+- **Increment 2 — mandatkolumn:** wire `computeAssembly` per församling (RD = ett
+  349-organ; RF/KF = summa av per-region/-kommun-organ, som replayens aggregat).
+  Kräver 2026 platsantal/fasta valkretsmandat som referensdata (fasta-2026-filen).
+- **Increment 3 — ±2022:** ladda 2022 områdesaggregat som referens, joina 1:1 på
+  områdeskod (rike/region/kommun är kod-stabila; bara valkretsgränser skiftar);
+  `ny` för parti utan 2022-motsvarighet.
+- **Live + delad state:** tabellen läser snapshot nu (ej Realtime). Lyft result-
+  flödet till en gemensam provider som både kartan och tabellen delar, och koppla
+  kartklick → drilldown.
+- **Övriga presentationsdelar** (arkitektur §7): mandatprojektion/riksdagssoffa,
+  departure board-ticker, aggregat-paneler, drill-down rike→län→kommun, partilegend,
+  status/tidsstämpel.
+
+---
+
 ## Öppna punkter att lösa under resans gång
 
 - Den exakta JSON-endpoint som `resultat.val.se`-SPA:n pollar på själva kvällen är
