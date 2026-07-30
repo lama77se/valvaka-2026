@@ -19,9 +19,12 @@ export interface MandatSoffaProps {
   seats: SoffaSeat[]
   total: number
   caption?: string
+  // Ungefärlig procent-soffa (ej fördelade mandat): ihåliga ringar, ingen
+  // majoritetsmarkör, tydlig "≈"-etikett — så den aldrig förväxlas med räknade mandat.
+  approx?: boolean
 }
 
-export function MandatSoffa({ seats, total, caption }: MandatSoffaProps) {
+export function MandatSoffa({ seats, total, caption, approx = false }: MandatSoffaProps) {
   if (total <= 0) return null
   const ordered = [...seats]
     .filter((s) => s.mandat > 0)
@@ -37,23 +40,44 @@ export function MandatSoffa({ seats, total, caption }: MandatSoffaProps) {
 
   return (
     <div className="flex flex-col items-center">
+      {approx && (
+        <span className="mb-1 rounded-full border border-slate-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+          ≈ Ungefärlig · röstandel
+        </span>
+      )}
       <svg
         viewBox={`${-RPX - PAD} ${-RPX - PAD} ${2 * (RPX + PAD)} ${RPX + 2 * PAD}`}
         className="w-full"
         role="img"
-        aria-label={`Mandatfördelning, ${total} mandat`}
+        aria-label={approx ? `Ungefärlig fördelning efter röstandel, ${total} platser` : `Mandatfördelning, ${total} mandat`}
       >
-        {positions.map((p, i) => (
-          <circle key={i} cx={p.x * RPX} cy={-p.y * RPX} r={dotR} fill={seatColor[i] ?? NEUTRAL} />
-        ))}
+        {positions.map((p, i) => {
+          const c = seatColor[i] ?? NEUTRAL
+          return approx ? (
+            <circle
+              key={i}
+              cx={p.x * RPX}
+              cy={-p.y * RPX}
+              r={dotR}
+              fill="none"
+              stroke={c}
+              strokeWidth={Math.max(1.25, dotR * 0.55)}
+              opacity={0.85}
+            />
+          ) : (
+            <circle key={i} cx={p.x * RPX} cy={-p.y * RPX} r={dotR} fill={c} />
+          )
+        })}
         <text x={0} y={-6} textAnchor="middle" className="fill-slate-100" style={{ fontSize: 34, fontWeight: 700 }}>
-          {total}
+          {approx ? `~${total}` : total}
         </text>
         <text x={0} y={16} textAnchor="middle" className="fill-slate-400" style={{ fontSize: 12 }}>
-          mandat
+          {approx ? 'procent' : 'mandat'}
         </text>
       </svg>
-      <p className="-mt-1 text-xs text-slate-400">{caption ?? `${majoritet} för egen majoritet`}</p>
+      <p className="-mt-1 text-xs text-slate-400">
+        {caption ?? (approx ? 'baserad på röstandel — ej fördelade mandat' : `${majoritet} för egen majoritet`)}
+      </p>
     </div>
   )
 }

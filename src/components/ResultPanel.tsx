@@ -16,6 +16,7 @@ import {
 import { RIKET, defaultAreaFor, useResults, type Area } from '@/components/ResultsProvider'
 import { ResultTable } from '@/components/ResultTable'
 import { MandatSoffa } from '@/components/MandatSoffa'
+import { hareSeats } from '@/lib/soffa'
 
 const ELECTION: Record<Valtyp, string> = {
   RD: 'Riksdagsvalet',
@@ -78,12 +79,26 @@ export function ResultPanel() {
     const seats = areaResult.rows
       .filter((r) => (r.mandat ?? 0) > 0)
       .map((r) => ({ forkortning: r.forkortning, farg: r.farg, mandat: r.mandat as number }))
+    // Ungefärlig procent-soffa (100 platser) där inget organ fördelas — RD@län/kommun,
+    // distriktsklick. Ren proportion (largest-remainder), ingen spärr; tydligt märkt.
+    const approxSeats =
+      areaResult.totalMandat == null && areaResult.giltiga > 0
+        ? (() => {
+            const weights: Record<string, number> = {}
+            for (const r of areaResult.rows) weights[r.partikod] = r.roster
+            const alloc = hareSeats(weights, 100)
+            return areaResult.rows
+              .filter((r) => (alloc[r.partikod] ?? 0) > 0)
+              .map((r) => ({ forkortning: r.forkortning, farg: r.farg, mandat: alloc[r.partikod] }))
+          })()
+        : []
     return {
       display,
       giltiga: areaResult.giltiga,
       totalMandat: areaResult.totalMandat,
       totalMandat2022: areaResult.totalMandat2022,
       seats,
+      approxSeats,
       has2022,
       reported,
       total: codes.length,
@@ -154,11 +169,15 @@ export function ResultPanel() {
           </p>
         ) : (
           <>
-            {view.totalMandat != null && view.totalMandat > 0 && view.seats.length > 0 && (
+            {view.totalMandat != null && view.totalMandat > 0 && view.seats.length > 0 ? (
               <div className="mb-3 border-b border-slate-800 pb-3">
                 <MandatSoffa seats={view.seats} total={view.totalMandat} />
               </div>
-            )}
+            ) : view.approxSeats.length > 0 ? (
+              <div className="mb-3 border-b border-slate-800 pb-3">
+                <MandatSoffa seats={view.approxSeats} total={100} approx />
+              </div>
+            ) : null}
             <ResultTable
               title={`${ELECTION[valtyp]} — ${areaName}`}
               subtitle={`${view.reported.toLocaleString('sv-SE')} av ${view.total.toLocaleString('sv-SE')} distrikt räknade (${pct} %)`}

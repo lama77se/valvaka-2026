@@ -65,7 +65,12 @@ Under uppbyggnad. Klart hittills:
   ordnad vänster→höger på politisk skala, med majoritetsmarkör. Den visas bara där
   ett organ faktiskt fördelas (RD@riket, RF@region, KF@kommun) och matar från samma
   facit-verifierade mandat som tabellen; sittplatsgeometrin (`seatPositions`) är
-  också täckt av `npm run verify:aggregate`.
+  också täckt av `npm run verify:aggregate`. På nivåer där inget organ fördelas
+  (RD-nedbrytning till län/kommun, distriktsklick) ritas i stället en **ungefärlig
+  procent-soffa** — 100 platser = procent, ren proportion (largest-remainder, ingen
+  spärr) ur röstandelarna, tydligt märkt som ungefärlig (ihåliga ringar, `≈`-etikett,
+  ingen majoritetsmarkör) så den aldrig förväxlas med räknade mandat. Den fylls i
+  från första rösten och byts mot den riktiga soffan så fort ett organ fördelas.
 
 Återstår:
 

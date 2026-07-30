@@ -6,7 +6,7 @@
 import { readFileSync } from 'node:fs'
 import XLSX from 'xlsx'
 import { applyComparison, buildRows, collapseForDisplay, districtsInArea, proportionalSeats, type Comparison2022, type DistrictMeta, type PartyMeta } from '../src/lib/aggregate.ts'
-import { seatPositions } from '../src/lib/soffa.ts'
+import { seatPositions, hareSeats } from '../src/lib/soffa.ts'
 import { SEAT_CONFIG_2026 } from '../src/lib/seatConfig2026.ts'
 
 const t = (v: unknown) => String(v ?? '').trim()
@@ -163,6 +163,18 @@ for (const n of [349, 149, 101, 61, 21, 3, 2, 1]) {
   if (!okN) soffaOk = false
 }
 check(soffaOk, 'seatPositions ger exakt N platser i övre halvcirkeln (349/149/101/61/21/3/2/1)')
+
+// 9) Ungefärlig procent-soffa (hareSeats): fördelar exakt `total` platser, ren proportion.
+console.log('\n--- 9. Ungefärlig procent-soffa (hareSeats) ---')
+let hareOk = true
+for (const w of [{ A: 303, B: 205, C: 190, D: 100, E: 30, F: 5 }, { A: 50, B: 50 }, { A: 1, B: 1, C: 1 }]) {
+  const alloc = hareSeats(w, 100)
+  const sum = Object.values(alloc).reduce((a, b) => a + b, 0)
+  if (sum !== 100) hareOk = false
+}
+const single = hareSeats({ X: 42 }, 100) // ett parti tar alla platser
+const empty = Object.keys(hareSeats({}, 100)).length // inga röster → tom (ingen soffa)
+check(hareOk && single.X === 100 && empty === 0, 'hareSeats fördelar exakt 100 platser proportionellt (ren %, ingen spärr)')
 
 console.log(ok ? '\n✅ AGGREGAT + MANDAT + ±2022 MATCHAR FACIT / FÖRVÄNTAT' : '\n❌ se FEL ovan')
 process.exit(ok ? 0 : 1)

@@ -45,3 +45,27 @@ export function seatPositions(total: number): { x: number; y: number }[] {
   seats.sort((a, b) => b.ang - a.ang) // π (vänster) → 0 (höger)
   return seats.map((s) => ({ x: Math.cos(s.ang) * s.r, y: Math.sin(s.ang) * s.r }))
 }
+
+// Largest-remainder (Hare) — fördela `total` platser rent proportionellt mot
+// rösterna, UTAN spärr. Driver den UNGEFÄRLIGA procent-soffan (100 platser =
+// procent) på nivåer där inga verkliga mandat fördelas. Summerar alltid till
+// exakt `total`. INTE mandatmetoden (jämkade uddatalsmetoden) — medvetet enklare
+// och tydligt märkt som ungefärlig i UI.
+export function hareSeats(weights: Record<string, number>, total = 100): Record<string, number> {
+  const out: Record<string, number> = {}
+  const sum = Object.values(weights).reduce((a, b) => a + b, 0)
+  if (sum <= 0 || total <= 0) return out
+  const quota = sum / total
+  const rem: { k: string; r: number }[] = []
+  let assigned = 0
+  for (const [k, w] of Object.entries(weights)) {
+    const q = w / quota
+    const base = Math.floor(q)
+    out[k] = base
+    assigned += base
+    rem.push({ k, r: q - base })
+  }
+  rem.sort((a, b) => b.r - a.r) // störst rest får rest-platserna först
+  for (let i = 0; assigned < total; i++, assigned++) out[rem[i % rem.length].k]++
+  return out
+}
