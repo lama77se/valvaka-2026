@@ -57,6 +57,7 @@ export interface ResultsContextValue {
   subscribeChanges: (fn: ChangeListener) => () => void
   revision: number
   snapshotVersion: number
+  realtimeConnected: boolean // Realtime-kanalens status (SUBSCRIBED) → live-indikator
 }
 
 const ResultsContext = createContext<ResultsContextValue | null>(null)
@@ -84,6 +85,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
   const [kommuner, setKommuner] = useState<NamedCode[]>([])
   const [regioner, setRegioner] = useState<NamedCode[]>([])
   const [totalByValtyp, setTotalByValtyp] = useState<Record<Valtyp, number>>(emptyCounts)
+  const [realtimeConnected, setRealtimeConnected] = useState(false)
 
   const storesRef = useRef<Record<Valtyp, ResultStore>>(null!)
   if (!storesRef.current) {
@@ -137,7 +139,9 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
         bumpRevisionThrottled()
       })
       .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
+        const ok = status === 'SUBSCRIBED'
+        setRealtimeConnected(ok)
+        if (ok) {
           ;(window as unknown as { __realtimeReady?: boolean }).__realtimeReady = true
         }
       })
@@ -292,6 +296,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     subscribeChanges,
     revision,
     snapshotVersion,
+    realtimeConnected,
   }
 
   return <ResultsContext.Provider value={value}>{children}</ResultsContext.Provider>

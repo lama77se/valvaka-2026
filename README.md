@@ -93,6 +93,12 @@ Under uppbyggnad. Klart hittills:
   t.ex. lokala partier i region/kommun) och "Ej rapporterat" (mörkgrå). Färgerna
   importeras från kartan (en sanningskälla, ingen drift).
 
+- **Status + tidsstämpel (klar).** Kartans rapporteringsgrad-HUD (överst) fick en
+  live-status: en pulsande **Live/Offline**-prick som speglar Realtime-kanalens
+  faktiska anslutning (`realtimeConnected` ur providerns `subscribe`-status), och en
+  **"uppdaterad HH:MM:SS"**-stämpel som sätts när data ändras (piggybackar på kartans
+  rAF-flush → inga extra renders).
+
 Återstår:
 
 - **Fas 7 (resten)** — det fullständiga generalrepet mot den skarpa resultat-

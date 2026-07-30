@@ -456,8 +456,11 @@ Demonstrerat: RD/Riket och KF/Kommun med färgkodade ±andel + ±mandat.
   distriktsfärger till parti: 8 riksdagspartier i politisk ordning (färg ur
   `party.color`) + "Lokalt parti" (grå) + "Ej rapporterat" (mörkgrå). Färgkonstanterna
   exporteras från `DistrictMap` (en sanningskälla). Dedupar förkortning över valtyper.
+- **Status + tidsstämpel (klar).** Kartans rapporteringsgrad-HUD fick en Live/Offline-
+  prick (speglar Realtime-kanalens `subscribe`-status via providern) + "uppdaterad
+  HH:MM:SS" (stämplas i kartans rAF-flush + vid snapshot → inga extra renders).
 - **Övriga presentationsdelar** (arkitektur §7): aggregat-paneler, drill-down
-  rike→län→kommun, status/tidsstämpel.
+  rike→län→kommun.
 
 ---
 

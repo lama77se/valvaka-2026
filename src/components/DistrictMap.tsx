@@ -24,6 +24,8 @@ const JAMFORBARHET_LABEL: Record<string, string> = {
 export const REPORTED_NEUTRAL = '#64748b'
 export const UNREPORTED_FILL = '#334155'
 
+const hhmmss = () => new Date().toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+
 // Tom bakgrundsstil utan extern basemap: inga API-nycklar, inga externa tiles.
 const BLANK_STYLE: StyleSpecification = {
   version: 8,
@@ -49,6 +51,7 @@ export function DistrictMap() {
     totalByValtyp,
     subscribeChanges,
     snapshotVersion,
+    realtimeConnected,
   } = useResults()
 
   const containerRef = useRef<HTMLDivElement>(null)
@@ -65,6 +68,7 @@ export function DistrictMap() {
 
   const [hoverResult, setHoverResult] = useState<HoverResult | null>(null)
   const [reportedCount, setReportedCount] = useState(0)
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null) // HH:MM:SS för senaste dataändring
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
@@ -114,6 +118,7 @@ export function DistrictMap() {
         pendingRef.current.clear()
         const n = storesRef.current[activeValtypRef.current].reportedCount
         setReportedCount(n)
+        setLastUpdated(hhmmss())
         ;(window as unknown as { __reportedCount?: number }).__reportedCount = n
       })
     }
@@ -253,7 +258,9 @@ export function DistrictMap() {
   // Bulkladdning (referens/snapshot) klar → full ompaint + färsk räknare.
   useEffect(() => {
     recolorRef.current?.()
-    setReportedCount(storesRef.current[activeValtypRef.current].reportedCount)
+    const n = storesRef.current[activeValtypRef.current].reportedCount
+    setReportedCount(n)
+    if (n > 0) setLastUpdated(hhmmss())
   }, [snapshotVersion, storesRef])
 
   // Valtyp-växling: uppdatera aktiv valtyp och färga om kartan från dess store.
@@ -307,9 +314,19 @@ export function DistrictMap() {
         </div>
         {total > 0 && (
           <div className="pointer-events-none rounded-md border border-slate-700 bg-slate-900/90 px-4 py-1.5 text-center text-sm text-slate-100 shadow-lg">
-            <span className="font-mono text-base font-semibold tabular-nums">{reportedCount}</span>
-            <span className="text-slate-400"> av {total.toLocaleString('sv-SE')} distrikt räknade</span>
-            <span className="ml-2 text-xs text-sky-300">{reportedPct}%</span>
+            <div>
+              <span className="font-mono text-base font-semibold tabular-nums">{reportedCount}</span>
+              <span className="text-slate-400"> av {total.toLocaleString('sv-SE')} distrikt räknade</span>
+              <span className="ml-2 text-xs text-sky-300">{reportedPct}%</span>
+            </div>
+            <div className="mt-0.5 flex items-center justify-center gap-1.5 text-[11px] text-slate-400">
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${realtimeConnected ? 'animate-pulse bg-emerald-400' : 'bg-slate-500'}`}
+                title={realtimeConnected ? 'Live — ansluten till realtidsflödet' : 'Ej ansluten till realtidsflödet'}
+              />
+              <span>{realtimeConnected ? 'Live' : 'Offline'}</span>
+              {lastUpdated && <span className="text-slate-500">· uppdaterad {lastUpdated}</span>}
+            </div>
           </div>
         )}
       </div>
