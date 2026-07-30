@@ -435,9 +435,18 @@ Demonstrerat: RD/Riket och KF/Kommun med färgkodade ±andel + ±mandat.
   RF-riket (de vore bara röstaggregat utan församling). Vid valtyp-byte nollställs
   området till valtypens native-default; RF/KF utan valt organ visar "välj region/
   kommun"-prompt. Kartklick drillar till native-nivån (RD→kommun, RF→region, KF→kommun).
-- **Övriga presentationsdelar** (arkitektur §7): mandatprojektion/riksdagssoffa,
-  departure board-ticker, aggregat-paneler, drill-down rike→län→kommun, partilegend,
-  status/tidsstämpel.
+- **Mandatprojektion / riksdagssoffa (klar).** Halvcirkel (parliament-arc) ovanför
+  tabellen: fylld soffa där ett organ fördelas (RD@riket 349, RF@region, KF@kommun)
+  ur den verifierade mandatmodulen, annars **ungefärlig procent-soffa** (100 platser
+  = procent, largest-remainder `hareSeats`, ingen spärr, ihåliga ringar + `≈`-etikett)
+  på nivåer utan organ (RD-nedbrytning, distrikt). **2026 och 2022 visas som två
+  bilder sida vid sida** — 2022 (förra valet) fungerar som baslinje och ligger kvar
+  även efter att 2026 börjat räknas, så innan första rösten syns förra valets soffa i
+  stället för tom yta. **50 %-linje** rakt genom valvet visar var egen majoritet skär.
+  Geometrin i `lib/soffa.ts` (ren/testbar); `seatPositions` + `hareSeats` täckta av
+  `npm run verify:aggregate` (steg 8–9). Bevisat headless (Playwright).
+- **Övriga presentationsdelar** (arkitektur §7): departure board-ticker,
+  aggregat-paneler, drill-down rike→län→kommun, partilegend, status/tidsstämpel.
 
 ---
 
