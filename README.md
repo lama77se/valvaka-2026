@@ -78,6 +78,14 @@ Under uppbyggnad. Klart hittills:
   inte läses som facit; 2022-baslinjen är alltid slutresultat och saknar den.
   `hareSeats` täcks också av `npm run verify:aggregate`.
 
+- **Departure board — live-ticker (klar).** Över kartan (nedre vänster) en
+  avgångstavla över inrapporterade valdistrikt, nyast överst: tid, distriktsnamn och
+  ledande parti (färgchip + andel), färgkodad vänsterkant per vinnare. Prenumererar på
+  samma per-distrikt-notis som kartan (`subscribeChanges`), rAF-koalescerad så den tål
+  valnattsburst; följer vald valtyp och seedas ur redan inrapporterade distrikt vid
+  laddning (snapshot fanar inte ut till listeners). Nya distrikt glider in med en kort
+  blänk; klick på en rad drillar tabellen till distriktet.
+
 Återstår:
 
 - **Fas 7 (resten)** — det fullständiga generalrepet mot den skarpa resultat-

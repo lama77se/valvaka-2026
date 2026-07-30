@@ -1,6 +1,7 @@
 import { DistrictMap } from '@/components/DistrictMap'
 import { ResultPanel } from '@/components/ResultPanel'
 import { ResultsProvider } from '@/components/ResultsProvider'
+import { DepartureBoard } from '@/components/DepartureBoard'
 
 function App() {
   return (
@@ -17,6 +18,9 @@ function App() {
             kommer i nästa steg.
           </p>
         </div>
+
+        {/* Departure board — live-ticker över inrapporterade distrikt (nedre vänster) */}
+        <DepartureBoard />
 
         {/* Resultattabell — höger panel (layout provisorisk) */}
         <aside className="absolute right-0 top-0 h-full w-[440px] border-l border-slate-800 bg-slate-950/90 p-4 shadow-2xl backdrop-blur">

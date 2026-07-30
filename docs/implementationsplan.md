@@ -445,8 +445,15 @@ Demonstrerat: RD/Riket och KF/Kommun med färgkodade ±andel + ±mandat.
   stället för tom yta. **50 %-linje** rakt genom valvet visar var egen majoritet skär.
   Geometrin i `lib/soffa.ts` (ren/testbar); `seatPositions` + `hareSeats` täckta av
   `npm run verify:aggregate` (steg 8–9). Bevisat headless (Playwright).
-- **Övriga presentationsdelar** (arkitektur §7): departure board-ticker,
-  aggregat-paneler, drill-down rike→län→kommun, partilegend, status/tidsstämpel.
+- **Departure board-ticker (klar).** `DepartureBoard.tsx` — avgångstavla över kartan
+  (nedre vänster) med inrapporterade valdistrikt, nyast överst: tid, distriktsnamn,
+  ledande parti (färgchip + andel), färgkodad kant. Tappar samma per-distrikt-notis
+  som kartan (`subscribeChanges`), rAF-koalescerad (burst-tålig), följer vald valtyp,
+  seedas ur store vid laddning (snapshot fanar ej ut till listeners → seed på
+  `snapshotVersion`). Radklick → distrikt-drilldown. Bevisat headless (ladda-först-
+  sedan-simulera): live-tickning + seed + vinnarchip.
+- **Övriga presentationsdelar** (arkitektur §7): aggregat-paneler, drill-down
+  rike→län→kommun, partilegend, status/tidsstämpel.
 
 ---
 

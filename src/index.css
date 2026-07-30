@@ -74,3 +74,22 @@
 .maplibregl-ctrl-bottom-right {
   margin-right: 456px; /* 440px panel + 16px luft */
 }
+
+/* Departure board — ny rad (nytt distrikt) glider in med en kort ljusblå blänk.
+   Körs EN gång när radens element monteras (rader keyas på valdistriktskod → bara
+   genuint nya distrikt får ett nytt element och animeras). */
+@keyframes boardIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+    background-color: rgba(56, 189, 248, 0.18);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    background-color: transparent;
+  }
+}
+.board-row {
+  animation: boardIn 0.5s ease-out;
+}
