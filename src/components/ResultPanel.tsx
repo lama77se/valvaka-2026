@@ -92,6 +92,25 @@ export function ResultPanel() {
               .map((r) => ({ forkortning: r.forkortning, farg: r.farg, mandat: alloc[r.partikod] }))
           })()
         : []
+    // 2022 som jämförelse-baslinje innan 2026 kommit in: fylld soffa ur mandat2022 där
+    // organet fördelades, annars ihålig procent-soffa ur andel2022 (län/distrikt).
+    const seats2022 =
+      areaResult.totalMandat2022 != null && areaResult.totalMandat2022 > 0
+        ? areaResult.rows
+            .filter((r) => (r.mandat2022 ?? 0) > 0)
+            .map((r) => ({ forkortning: r.forkortning, farg: r.farg, mandat: r.mandat2022 as number }))
+        : []
+    const approxSeats2022 =
+      seats2022.length === 0 && has2022
+        ? (() => {
+            const weights: Record<string, number> = {}
+            for (const r of areaResult.rows) if (r.andel2022 != null) weights[r.partikod] = r.andel2022
+            const alloc = hareSeats(weights, 100)
+            return areaResult.rows
+              .filter((r) => (alloc[r.partikod] ?? 0) > 0)
+              .map((r) => ({ forkortning: r.forkortning, farg: r.farg, mandat: alloc[r.partikod] }))
+          })()
+        : []
     return {
       display,
       giltiga: areaResult.giltiga,
@@ -99,6 +118,8 @@ export function ResultPanel() {
       totalMandat2022: areaResult.totalMandat2022,
       seats,
       approxSeats,
+      seats2022,
+      approxSeats2022,
       has2022,
       reported,
       total: codes.length,
@@ -107,6 +128,23 @@ export function ResultPanel() {
   }, [valtyp, selectedArea, revision])
 
   const pct = view.total > 0 ? Math.round((view.reported / view.total) * 100) : 0
+
+  // Två soffbilder sida vid sida: 2026 (live) OCH 2022 (förra valet, som jämförelse) —
+  // 2022 ligger kvar även efter att 2026 börjat räknas. Varje sida är fylld soffa där
+  // ett organ fördelas, annars ihålig procent-soffa (röstandel).
+  const show2026 = (view.totalMandat != null && view.totalMandat > 0 && view.seats.length > 0) || view.approxSeats.length > 0
+  const show2022 = view.seats2022.length > 0 || view.approxSeats2022.length > 0
+  const bothSoffor = show2026 && show2022
+  const node2026 = !show2026 ? null : view.totalMandat != null && view.totalMandat > 0 && view.seats.length > 0 ? (
+    <MandatSoffa seats={view.seats} total={view.totalMandat} badge={bothSoffor ? '2026' : undefined} />
+  ) : (
+    <MandatSoffa seats={view.approxSeats} total={100} approx badge={bothSoffor ? '2026 · ungefärlig' : undefined} />
+  )
+  const node2022 = !show2022 ? null : view.seats2022.length > 0 ? (
+    <MandatSoffa seats={view.seats2022} total={view.totalMandat2022 as number} badge="2022" />
+  ) : (
+    <MandatSoffa seats={view.approxSeats2022} total={100} approx badge="2022 · ungefärlig" />
+  )
 
   // Prompt-läge: RF/KF utan valt organ (ingen riksnivå finns för dem).
   const isPrompt = selectedArea.level !== 'riket' && selectedArea.code == null
@@ -169,15 +207,14 @@ export function ResultPanel() {
           </p>
         ) : (
           <>
-            {view.totalMandat != null && view.totalMandat > 0 && view.seats.length > 0 ? (
+            {(node2026 || node2022) && (
               <div className="mb-3 border-b border-slate-800 pb-3">
-                <MandatSoffa seats={view.seats} total={view.totalMandat} />
+                <div className={bothSoffor ? 'grid grid-cols-2 gap-2' : ''}>
+                  {node2026}
+                  {node2022}
+                </div>
               </div>
-            ) : view.approxSeats.length > 0 ? (
-              <div className="mb-3 border-b border-slate-800 pb-3">
-                <MandatSoffa seats={view.approxSeats} total={100} approx />
-              </div>
-            ) : null}
+            )}
             <ResultTable
               title={`${ELECTION[valtyp]} — ${areaName}`}
               subtitle={`${view.reported.toLocaleString('sv-SE')} av ${view.total.toLocaleString('sv-SE')} distrikt räknade (${pct} %)`}

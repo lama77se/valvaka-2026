@@ -62,15 +62,18 @@ Under uppbyggnad. Klart hittills:
   återanvänder den verifierade mandatmodulen och är kollat mot 2022-facit
   (`npm run verify:aggregate`). Ovanför tabellen ritas en **riksdagssoffa**
   (mandathalvcirkel, parliament-arc) — en prick per mandat, färgad per parti och
-  ordnad vänster→höger på politisk skala, med majoritetsmarkör. Den visas bara där
-  ett organ faktiskt fördelas (RD@riket, RF@region, KF@kommun) och matar från samma
-  facit-verifierade mandat som tabellen; sittplatsgeometrin (`seatPositions`) är
-  också täckt av `npm run verify:aggregate`. På nivåer där inget organ fördelas
-  (RD-nedbrytning till län/kommun, distriktsklick) ritas i stället en **ungefärlig
-  procent-soffa** — 100 platser = procent, ren proportion (largest-remainder, ingen
-  spärr) ur röstandelarna, tydligt märkt som ungefärlig (ihåliga ringar, `≈`-etikett,
-  ingen majoritetsmarkör) så den aldrig förväxlas med räknade mandat. Den fylls i
-  från första rösten och byts mot den riktiga soffan så fort ett organ fördelas.
+  ordnad vänster→höger på politisk skala, med en **50 %-linje** rakt genom valvet
+  som visar var egen majoritet skär. Där ett organ faktiskt fördelas (RD@riket,
+  RF@region, KF@kommun) är soffan fylld och matar från samma facit-verifierade mandat
+  som tabellen; sittplatsgeometrin (`seatPositions`) är täckt av
+  `npm run verify:aggregate`. Där inget organ fördelas (RD-nedbrytning till
+  län/kommun, distriktsklick) ritas i stället en **ungefärlig procent-soffa** —
+  100 platser = procent, ren proportion (largest-remainder `hareSeats`, ingen spärr)
+  ur röstandelarna, tydligt märkt som ungefärlig (ihåliga ringar, `≈`-etikett) så den
+  aldrig förväxlas med räknade mandat. **2026 och 2022 visas som två bilder sida vid
+  sida** (`2026`- resp. `2022`-etikett): 2022 fungerar som baslinje och ligger kvar
+  även efter att 2026 börjat räknas, så innan första rösten ser man ändå förra valets
+  soffa i stället för en tom yta. `hareSeats` täcks också av `npm run verify:aggregate`.
 
 Återstår:
 

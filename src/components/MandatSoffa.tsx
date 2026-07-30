@@ -8,6 +8,7 @@ import { rowsFor, seatPositions, spectrumRank, SOFFA_INNER, SOFFA_OUTER } from '
 const NEUTRAL = '#64748b'
 const RPX = 185
 const PAD = 8
+const TOPPAD = 22 // extra topmarginal för 50 %-etiketten ovanför valvet
 
 export interface SoffaSeat {
   forkortning: string | null
@@ -22,10 +23,14 @@ export interface MandatSoffaProps {
   // Ungefärlig procent-soffa (ej fördelade mandat): ihåliga ringar, ingen
   // majoritetsmarkör, tydlig "≈"-etikett — så den aldrig förväxlas med räknade mandat.
   approx?: boolean
+  // Etikett-pill överst (t.ex. "2022" för jämförelse-baslinjen). Faller tillbaka på
+  // "≈ Ungefärlig · röstandel" när approx utan egen badge.
+  badge?: string
 }
 
-export function MandatSoffa({ seats, total, caption, approx = false }: MandatSoffaProps) {
+export function MandatSoffa({ seats, total, caption, approx = false, badge }: MandatSoffaProps) {
   if (total <= 0) return null
+  const pill = badge ?? (approx ? '≈ Ungefärlig · röstandel' : null)
   const ordered = [...seats]
     .filter((s) => s.mandat > 0)
     .sort((a, b) => spectrumRank(a.forkortning) - spectrumRank(b.forkortning) || b.mandat - a.mandat)
@@ -40,13 +45,13 @@ export function MandatSoffa({ seats, total, caption, approx = false }: MandatSof
 
   return (
     <div className="flex flex-col items-center">
-      {approx && (
+      {pill && (
         <span className="mb-1 rounded-full border border-slate-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-          ≈ Ungefärlig · röstandel
+          {pill}
         </span>
       )}
       <svg
-        viewBox={`${-RPX - PAD} ${-RPX - PAD} ${2 * (RPX + PAD)} ${RPX + 2 * PAD}`}
+        viewBox={`${-RPX - PAD} ${-RPX - TOPPAD} ${2 * (RPX + PAD)} ${RPX + TOPPAD + PAD}`}
         className="w-full"
         role="img"
         aria-label={approx ? `Ungefärlig fördelning efter röstandel, ${total} platser` : `Mandatfördelning, ${total} mandat`}
@@ -68,6 +73,13 @@ export function MandatSoffa({ seats, total, caption, approx = false }: MandatSof
             <circle key={i} cx={p.x * RPX} cy={-p.y * RPX} r={dotR} fill={c} />
           )
         })}
+        {/* 50 %-linjen: valvet är symmetriskt och platserna ordnade runt bågen, så
+            mitten (x=0) är exakt halva mandaten — majoritet nås när ena sidan fyller
+            förbi den. Streckad linje + etikett så användaren ser var det skär. */}
+        <line x1={0} y1={-(RPX + 4)} x2={0} y2={-SOFFA_INNER * RPX * 0.6} stroke="#cbd5e1" strokeWidth={1.5} strokeDasharray="3 3" />
+        <text x={0} y={-(RPX + TOPPAD) + 11} textAnchor="middle" className="fill-slate-300" style={{ fontSize: 10, fontWeight: 600 }}>
+          50 %
+        </text>
         <text x={0} y={-6} textAnchor="middle" className="fill-slate-100" style={{ fontSize: 34, fontWeight: 700 }}>
           {approx ? `~${total}` : total}
         </text>
