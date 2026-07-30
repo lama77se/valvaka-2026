@@ -15,6 +15,7 @@ import {
 } from '@/lib/aggregate'
 import { RIKET, defaultAreaFor, useResults, type Area } from '@/components/ResultsProvider'
 import { ResultTable } from '@/components/ResultTable'
+import { MandatSoffa } from '@/components/MandatSoffa'
 
 const ELECTION: Record<Valtyp, string> = {
   RD: 'Riksdagsvalet',
@@ -74,11 +75,15 @@ export function ResultPanel() {
     const display = collapseForDisplay(areaResult)
     const reported = codes.reduce((n, c) => n + (store.has(c) ? 1 : 0), 0)
     const has2022 = areaResult.rows.some((r) => r.andel2022 != null)
+    const seats = areaResult.rows
+      .filter((r) => (r.mandat ?? 0) > 0)
+      .map((r) => ({ forkortning: r.forkortning, farg: r.farg, mandat: r.mandat as number }))
     return {
       display,
       giltiga: areaResult.giltiga,
       totalMandat: areaResult.totalMandat,
       totalMandat2022: areaResult.totalMandat2022,
+      seats,
       has2022,
       reported,
       total: codes.length,
@@ -149,6 +154,11 @@ export function ResultPanel() {
           </p>
         ) : (
           <>
+            {view.totalMandat != null && view.totalMandat > 0 && view.seats.length > 0 && (
+              <div className="mb-3 border-b border-slate-800 pb-3">
+                <MandatSoffa seats={view.seats} total={view.totalMandat} />
+              </div>
+            )}
             <ResultTable
               title={`${ELECTION[valtyp]} — ${areaName}`}
               subtitle={`${view.reported.toLocaleString('sv-SE')} av ${view.total.toLocaleString('sv-SE')} distrikt räknade (${pct} %)`}

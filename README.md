@@ -60,7 +60,12 @@ Under uppbyggnad. Klart hittills:
   distrikten (jämförbara) får 2022, övriga "–". Mandat och spärr-linjen döljs på
   distriktsnivå (församlingsvida bestämningar, inte per-distrikt). Aggregatet
   återanvänder den verifierade mandatmodulen och är kollat mot 2022-facit
-  (`npm run verify:aggregate`).
+  (`npm run verify:aggregate`). Ovanför tabellen ritas en **riksdagssoffa**
+  (mandathalvcirkel, parliament-arc) — en prick per mandat, färgad per parti och
+  ordnad vänster→höger på politisk skala, med majoritetsmarkör. Den visas bara där
+  ett organ faktiskt fördelas (RD@riket, RF@region, KF@kommun) och matar från samma
+  facit-verifierade mandat som tabellen; sittplatsgeometrin (`seatPositions`) är
+  också täckt av `npm run verify:aggregate`.
 
 Återstår:
 

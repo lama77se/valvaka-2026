@@ -6,6 +6,7 @@
 import { readFileSync } from 'node:fs'
 import XLSX from 'xlsx'
 import { applyComparison, buildRows, collapseForDisplay, districtsInArea, proportionalSeats, type Comparison2022, type DistrictMeta, type PartyMeta } from '../src/lib/aggregate.ts'
+import { seatPositions } from '../src/lib/soffa.ts'
 import { SEAT_CONFIG_2026 } from '../src/lib/seatConfig2026.ts'
 
 const t = (v: unknown) => String(v ?? '').trim()
@@ -152,6 +153,16 @@ try {
 } catch (e) {
   check(false, `2022-basläge-test kastade (${(e as Error).message})`)
 }
+
+// 8) Riksdagssoffan (parliament-arc): exakt `total` platser, alla inom halvcirkeln.
+console.log('\n--- 8. Riksdagssoffa (seatPositions) ---')
+let soffaOk = true
+for (const n of [349, 149, 101, 61, 21, 3, 2, 1]) {
+  const pos = seatPositions(n)
+  const okN = pos.length === n && pos.every((p) => p.y >= -1e-9 && p.x >= -1.0001 && p.x <= 1.0001)
+  if (!okN) soffaOk = false
+}
+check(soffaOk, 'seatPositions ger exakt N platser i övre halvcirkeln (349/149/101/61/21/3/2/1)')
 
 console.log(ok ? '\n✅ AGGREGAT + MANDAT + ±2022 MATCHAR FACIT / FÖRVÄNTAT' : '\n❌ se FEL ovan')
 process.exit(ok ? 0 : 1)
