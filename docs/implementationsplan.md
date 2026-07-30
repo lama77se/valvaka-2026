@@ -459,8 +459,11 @@ Demonstrerat: RD/Riket och KF/Kommun med färgkodade ±andel + ±mandat.
 - **Status + tidsstämpel (klar).** Kartans rapporteringsgrad-HUD fick en Live/Offline-
   prick (speglar Realtime-kanalens `subscribe`-status via providern) + "uppdaterad
   HH:MM:SS" (stämplas i kartans rAF-flush + vid snapshot → inga extra renders).
-- **Övriga presentationsdelar** (arkitektur §7): aggregat-paneler, drill-down
-  rike→län→kommun.
+- **Drill-down + aggregat-paneler (klar).** Breadcrumb (Riket › län › kommun ›
+  distrikt, klickbara förfäder → navigera upp) + "Bryt ner"-lista över barnen (ledande
+  parti + rapporteringsgrad, klick → drilla ned). Valtyp-medveten hierarki i ren,
+  testbar `lib/hierarchy.ts` (förfäder = kod-prefix, barn ur faktisk data, enhetlig
+  barn-summering) — `verify:aggregate` steg 10. Klick-navigation bevisad headless.
 
 ---
 

@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs'
 import XLSX from 'xlsx'
 import { applyComparison, buildRows, collapseForDisplay, districtsInArea, proportionalSeats, type Comparison2022, type DistrictMeta, type PartyMeta } from '../src/lib/aggregate.ts'
 import { seatPositions, hareSeats } from '../src/lib/soffa.ts'
+import { ancestorsOf, childGroupsOf, childLevelOf } from '../src/lib/hierarchy.ts'
 import { SEAT_CONFIG_2026 } from '../src/lib/seatConfig2026.ts'
 
 const t = (v: unknown) => String(v ?? '').trim()
@@ -175,6 +176,24 @@ for (const w of [{ A: 303, B: 205, C: 190, D: 100, E: 30, F: 5 }, { A: 50, B: 50
 const single = hareSeats({ X: 42 }, 100) // ett parti tar alla platser
 const empty = Object.keys(hareSeats({}, 100)).length // inga röster → tom (ingen soffa)
 check(hareOk && single.X === 100 && empty === 0, 'hareSeats fördelar exakt 100 platser proportionellt (ren %, ingen spärr)')
+
+// 10) Drill-down-hierarki (ancestorsOf/childGroupsOf): prefix-slicing ur faktisk data.
+console.log('\n--- 10. Drill-down-hierarki (hierarchy.ts) ---')
+const hcodes = ['01800142', '01800256', '01140099', '12800011'] // län 01,01,01,12 · kommun 0180,0180,0114,1280
+const anc = ancestorsOf('RD', { level: 'distrikt', code: '01800142' })
+const lan = childGroupsOf('RD', { level: 'riket', code: null }, hcodes) // → 2 län (01, 12)
+const komm = childGroupsOf('RF', { level: 'region', code: '01' }, hcodes) // → 2 kommuner i län 01
+const hOk =
+  anc.length === 4 &&
+  anc[0].level === 'riket' && anc[0].code === null &&
+  anc[1].code === '01' && anc[2].code === '0180' && anc[3].code === '01800142' &&
+  lan.length === 2 && lan.every((g) => g.level === 'region') &&
+  komm.length === 2 && komm.every((g) => g.code.startsWith('01') && g.level === 'kommun') &&
+  // kommun 0180 → 2 distriktsbarn, vart och ett med exakt 1 distrikt (lövnivå)
+  childGroupsOf('RD', { level: 'kommun', code: '0180' }, hcodes).length === 2 &&
+  childGroupsOf('RD', { level: 'kommun', code: '0180' }, hcodes).every((g) => g.level === 'distrikt' && g.districts.length === 1) &&
+  childLevelOf('KF', 'kommun') === 'distrikt' && childLevelOf('KF', 'distrikt') === null
+check(hOk, 'hierarchy: ancestorsOf ger 4-nivåpath + childGroupsOf enumererar barn ur data (län/kommun-prefix)')
 
 console.log(ok ? '\n✅ AGGREGAT + MANDAT + ±2022 MATCHAR FACIT / FÖRVÄNTAT' : '\n❌ se FEL ovan')
 process.exit(ok ? 0 : 1)

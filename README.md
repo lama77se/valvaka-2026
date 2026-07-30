@@ -99,6 +99,16 @@ Under uppbyggnad. Klart hittills:
   **"uppdaterad HH:MM:SS"**-stämpel som sätts när data ändras (piggybackar på kartans
   rAF-flush → inga extra renders).
 
+- **Drill-down + aggregat-paneler (klar).** Panelen har en **breadcrumb** (Riket ›
+  län › kommun › distrikt) med klickbara förfäder för att navigera uppåt, och en
+  **"Bryt ner"-lista** över det valda områdets barn (län/kommuner/distrikt) med
+  ledande parti + rapporteringsgrad (X/Y), klickbara för att drilla nedåt. Hierarkin
+  är valtyp-medveten (RD: riket→län→kommun→distrikt; RF: region→kommun→distrikt; KF:
+  kommun→distrikt) och ren/testbar (`lib/hierarchy.ts`): förfäder härleds som
+  kod-prefix, barn enumereras ur faktisk data, barn-summeringen är enhetlig för alla
+  nivåer (`npm run verify:aggregate` steg 10). Klick-navigationen (upp/ned) är bevisad
+  headless.
+
 Återstår:
 
 - **Fas 7 (resten)** — det fullständiga generalrepet mot den skarpa resultat-

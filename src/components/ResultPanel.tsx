@@ -2,7 +2,7 @@
 // delad state (valtyp, valt område) kommer från <ResultsProvider>. Panelen räknar
 // om områdesaggregatet när `revision` bumpas (strypt Realtime) och renderar
 // <ResultTable>. Områdesväljaren styr delad `selectedArea` (kartklick → drilldown).
-import { useMemo } from 'react'
+import { Fragment, useMemo } from 'react'
 import { VALTYP_LABEL, type Valtyp } from '@/lib/results'
 import {
   SPARR,
@@ -17,6 +17,10 @@ import { RIKET, defaultAreaFor, useResults, type Area } from '@/components/Resul
 import { ResultTable } from '@/components/ResultTable'
 import { MandatSoffa } from '@/components/MandatSoffa'
 import { hareSeats } from '@/lib/soffa'
+import { ancestorsOf, childGroupsOf, childLevelOf } from '@/lib/hierarchy'
+import { REPORTED_NEUTRAL, UNREPORTED_FILL } from '@/components/DistrictMap'
+
+const CHILD_LABEL: Record<string, string> = { region: 'Län', kommun: 'Kommuner', distrikt: 'Distrikt' }
 
 const ELECTION: Record<Valtyp, string> = {
   RD: 'Riksdagsvalet',
@@ -146,8 +150,48 @@ export function ResultPanel() {
     <MandatSoffa seats={view.approxSeats2022} total={100} approx badge="2022 · ungefärlig" />
   )
 
+  // Områdesnamn-uppslag för breadcrumb + barnlista.
+  const regionName = useMemo(() => new Map(regioner.map((r) => [r.code, r.name])), [regioner])
+  const kommunName = useMemo(() => new Map(kommuner.map((k) => [k.code, k.name])), [kommuner])
+  const nameOf = (a: { level: string; code: string | null }): string =>
+    a.level === 'riket'
+      ? 'Riket'
+      : a.level === 'region'
+        ? regionName.get(a.code ?? '') ?? a.code ?? ''
+        : a.level === 'kommun'
+          ? kommunName.get(a.code ?? '') ?? a.code ?? ''
+          : distriktNamnRef.current.get(a.code ?? '') ?? a.code ?? ''
+
+  // Drill-down: breadcrumb (uppåt) + barnens sammanfattning (nedåt). Barn-summeringen
+  // är enhetlig för alla nivåer: ledande parti = argmax(aggregat), rapporterat = andel
+  // av barnets distrikt som räknats. Nyckas på revision (strypt Realtime).
+  const drill = useMemo(() => {
+    void revision
+    const store = storesRef.current[valtyp]
+    const groups = childGroupsOf(valtyp, selectedArea, allCodesRef.current)
+    const items = groups.map((g) => {
+      const votes = store.aggregate(g.districts)
+      let winner: string | null = null
+      let top = -1
+      let sum = 0
+      for (const [p, v] of Object.entries(votes)) {
+        sum += v
+        if (v > top) {
+          top = v
+          winner = p
+        }
+      }
+      const reported = g.districts.reduce((n, c) => n + (store.has(c) ? 1 : 0), 0)
+      return { level: g.level, code: g.code, winner, share: sum > 0 ? top / sum : 0, reported, total: g.districts.length }
+    })
+    return { childLevel: childLevelOf(valtyp, selectedArea.level), items }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [valtyp, selectedArea, revision])
+
   // Prompt-läge: RF/KF utan valt organ (ingen riksnivå finns för dem).
   const isPrompt = selectedArea.level !== 'riket' && selectedArea.code == null
+  const crumbs = ancestorsOf(valtyp, selectedArea)
+  const drillItems = [...drill.items].sort((a, b) => nameOf(a).localeCompare(nameOf(b), 'sv'))
   const levels = LEVELS[valtyp]
   const selectValue = isPrompt
     ? ''
@@ -207,6 +251,29 @@ export function ResultPanel() {
           </p>
         ) : (
           <>
+            {crumbs.length > 1 && (
+              <nav className="mb-2 flex flex-wrap items-center gap-x-1 gap-y-0.5 text-xs text-slate-400">
+                {crumbs.map((c, i) => {
+                  const last = i === crumbs.length - 1
+                  return (
+                    <Fragment key={`${c.level}:${c.code}`}>
+                      {i > 0 && <span className="text-slate-600">›</span>}
+                      {last ? (
+                        <span className="font-semibold text-slate-200">{nameOf(c)}</span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="rounded hover:text-sky-300 hover:underline"
+                          onClick={() => setSelectedArea(c.level === 'riket' ? RIKET : { level: c.level, code: c.code })}
+                        >
+                          {nameOf(c)}
+                        </button>
+                      )}
+                    </Fragment>
+                  )
+                })}
+              </nav>
+            )}
             {(node2026 || node2022) && (
               <div className="mb-3 border-b border-slate-800 pb-3">
                 <div className={bothSoffor ? 'grid grid-cols-2 gap-2' : ''}>
@@ -236,6 +303,42 @@ export function ResultPanel() {
                   Inga resultat inrapporterade för {VALTYP_LABEL[valtyp].toLowerCase()} i {areaName} än.
                 </p>
               ))}
+
+            {drill.childLevel && drillItems.length > 0 && (
+              <div className="mt-3 border-t border-slate-800 pt-3">
+                <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-400">
+                  Bryt ner — {CHILD_LABEL[drill.childLevel] ?? drill.childLevel}
+                </p>
+                <ul className="max-h-56 space-y-0.5 overflow-auto pr-1">
+                  {drillItems.map((it) => {
+                    const p = it.winner ? partyRef.current.get(it.winner) : null
+                    const farg = p?.farg ?? REPORTED_NEUTRAL
+                    return (
+                      <li key={it.code}>
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-2 rounded px-2 py-1 text-left hover:bg-slate-800/50"
+                          style={{ borderLeft: `3px solid ${it.reported > 0 ? farg : UNREPORTED_FILL}` }}
+                          onClick={() => setSelectedArea({ level: it.level, code: it.code })}
+                        >
+                          <span className="flex-1 truncate text-xs text-slate-200">{nameOf(it)}</span>
+                          {p && it.reported > 0 ? (
+                            <span className="shrink-0 text-[11px] font-semibold" style={{ color: farg }}>
+                              {p.forkortning ?? '?'}
+                            </span>
+                          ) : (
+                            <span className="shrink-0 text-[11px] text-slate-600">—</span>
+                          )}
+                          <span className="w-12 shrink-0 text-right text-[11px] tabular-nums text-slate-500">
+                            {it.reported}/{it.total}
+                          </span>
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
+            )}
           </>
         )}
       </div>
