@@ -136,9 +136,9 @@ export function ResultPanel() {
   const show2022 = view.seats2022.length > 0 || view.approxSeats2022.length > 0
   const bothSoffor = show2026 && show2022
   const node2026 = !show2026 ? null : view.totalMandat != null && view.totalMandat > 0 && view.seats.length > 0 ? (
-    <MandatSoffa seats={view.seats} total={view.totalMandat} badge={bothSoffor ? '2026' : undefined} />
+    <MandatSoffa seats={view.seats} total={view.totalMandat} badge={bothSoffor ? '2026' : undefined} reportPct={pct} />
   ) : (
-    <MandatSoffa seats={view.approxSeats} total={100} approx badge={bothSoffor ? '2026 · ungefärlig' : undefined} />
+    <MandatSoffa seats={view.approxSeats} total={100} approx badge={bothSoffor ? '2026 · ungefärlig' : undefined} reportPct={pct} />
   )
   const node2022 = !show2022 ? null : view.seats2022.length > 0 ? (
     <MandatSoffa seats={view.seats2022} total={view.totalMandat2022 as number} badge="2022" />

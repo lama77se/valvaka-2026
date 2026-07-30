@@ -26,11 +26,16 @@ export interface MandatSoffaProps {
   // Etikett-pill överst (t.ex. "2022" för jämförelse-baslinjen). Faller tillbaka på
   // "≈ Ungefärlig · röstandel" när approx utan egen badge.
   badge?: string
+  // Rapporteringsgrad (% räknade distrikt) för LIVE-soffan. < 100 → amber
+  // "Prognos · X % räknat" så tidiga, volatila projektioner (runt spärren) inte
+  // läses som facit. Utelämnas för 2022-baslinjen (alltid slutresultat).
+  reportPct?: number | null
 }
 
-export function MandatSoffa({ seats, total, caption, approx = false, badge }: MandatSoffaProps) {
+export function MandatSoffa({ seats, total, caption, approx = false, badge, reportPct }: MandatSoffaProps) {
   if (total <= 0) return null
   const pill = badge ?? (approx ? '≈ Ungefärlig · röstandel' : null)
+  const prognos = reportPct != null && reportPct < 100 ? `Prognos · ${reportPct} % räknat` : null
   const ordered = [...seats]
     .filter((s) => s.mandat > 0)
     .sort((a, b) => spectrumRank(a.forkortning) - spectrumRank(b.forkortning) || b.mandat - a.mandat)
@@ -45,10 +50,19 @@ export function MandatSoffa({ seats, total, caption, approx = false, badge }: Ma
 
   return (
     <div className="flex flex-col items-center">
-      {pill && (
-        <span className="mb-1 rounded-full border border-slate-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-          {pill}
-        </span>
+      {(pill || prognos) && (
+        <div className="mb-1 flex flex-col items-center gap-0.5">
+          {pill && (
+            <span className="rounded-full border border-slate-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+              {pill}
+            </span>
+          )}
+          {prognos && (
+            <span className="rounded-full border border-amber-500/60 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-400">
+              {prognos}
+            </span>
+          )}
+        </div>
       )}
       <svg
         viewBox={`${-RPX - PAD} ${-RPX - TOPPAD} ${2 * (RPX + PAD)} ${RPX + TOPPAD + PAD}`}

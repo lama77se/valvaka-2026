@@ -73,7 +73,10 @@ Under uppbyggnad. Klart hittills:
   aldrig förväxlas med räknade mandat. **2026 och 2022 visas som två bilder sida vid
   sida** (`2026`- resp. `2022`-etikett): 2022 fungerar som baslinje och ligger kvar
   även efter att 2026 börjat räknas, så innan första rösten ser man ändå förra valets
-  soffa i stället för en tom yta. `hareSeats` täcks också av `npm run verify:aggregate`.
+  soffa i stället för en tom yta. 2026-soffan bär en amber **`Prognos · X % räknat`**-
+  markering tills allt är räknat, så tidiga och volatila projektioner (runt spärren)
+  inte läses som facit; 2022-baslinjen är alltid slutresultat och saknar den.
+  `hareSeats` täcks också av `npm run verify:aggregate`.
 
 Återstår:
 
