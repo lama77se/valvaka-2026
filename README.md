@@ -87,6 +87,12 @@ Under uppbyggnad. Klart hittills:
   laddning (snapshot fanar inte ut till listeners). Nya distrikt glider in med en kort
   blänk; klick på en rad drillar tabellen till distriktet.
 
+- **Partilegend (klar).** Uppe till vänster kopplar en legend kartans distriktsfärger
+  till parti: de 8 riksdagspartierna i politisk vänster→höger-ordning (färg ur
+  `party.color`), plus "Lokalt parti" (grå — rapporterad vinnare utan märkesfärg,
+  t.ex. lokala partier i region/kommun) och "Ej rapporterat" (mörkgrå). Färgerna
+  importeras från kartan (en sanningskälla, ingen drift).
+
 Återstår:
 
 - **Fas 7 (resten)** — det fullständiga generalrepet mot den skarpa resultat-

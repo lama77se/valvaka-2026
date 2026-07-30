@@ -20,8 +20,9 @@ const JAMFORBARHET_LABEL: Record<string, string> = {
 
 // Färg för distrikt som rapporterat men vars vinnarparti saknar märkesfärg
 // (lokalt parti utan hex i `party.color`). Orapporterade får null → UNREPORTED_FILL.
-const REPORTED_NEUTRAL = '#64748b'
-const UNREPORTED_FILL = '#334155'
+// Exporterade så partilegenden speglar exakt samma färger (en sanningskälla).
+export const REPORTED_NEUTRAL = '#64748b'
+export const UNREPORTED_FILL = '#334155'
 
 // Tom bakgrundsstil utan extern basemap: inga API-nycklar, inga externa tiles.
 const BLANK_STYLE: StyleSpecification = {

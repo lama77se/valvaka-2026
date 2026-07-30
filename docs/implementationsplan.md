@@ -452,8 +452,12 @@ Demonstrerat: RD/Riket och KF/Kommun med färgkodade ±andel + ±mandat.
   seedas ur store vid laddning (snapshot fanar ej ut till listeners → seed på
   `snapshotVersion`). Radklick → distrikt-drilldown. Bevisat headless (ladda-först-
   sedan-simulera): live-tickning + seed + vinnarchip.
+- **Partilegend (klar).** `PartyLegend.tsx` — uppe till vänster, kopplar kartans
+  distriktsfärger till parti: 8 riksdagspartier i politisk ordning (färg ur
+  `party.color`) + "Lokalt parti" (grå) + "Ej rapporterat" (mörkgrå). Färgkonstanterna
+  exporteras från `DistrictMap` (en sanningskälla). Dedupar förkortning över valtyper.
 - **Övriga presentationsdelar** (arkitektur §7): aggregat-paneler, drill-down
-  rike→län→kommun, partilegend, status/tidsstämpel.
+  rike→län→kommun, status/tidsstämpel.
 
 ---
 
