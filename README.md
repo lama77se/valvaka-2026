@@ -107,7 +107,11 @@ Under uppbyggnad. Klart hittills:
   kommun→distrikt) och ren/testbar (`lib/hierarchy.ts`): förfäder härleds som
   kod-prefix, barn enumereras ur faktisk data, barn-summeringen är enhetlig för alla
   nivåer (`npm run verify:aggregate` steg 10). Klick-navigationen (upp/ned) är bevisad
-  headless.
+  headless. Varje barn visar **både 2026 och 2022** som jämförelse: ledande parti 2026
+  (eller "räknat/ej räknat"-status) och **`'22`-vinnaren** — på aggregatnivå ur
+  `comparison-2022.json` (synkront), på distriktsnivå batch-hämtat per kommun ur
+  `district_result_2022`. Så man ser vem som ledde området förra valet även innan
+  2026-röster kommit in.
 
 Återstår:
 

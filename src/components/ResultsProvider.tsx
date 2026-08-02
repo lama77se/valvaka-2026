@@ -29,6 +29,7 @@ export const defaultAreaFor = (valtyp: Valtyp): Area => ({ level: NATIVE_LEVEL[v
 
 type NamedCode = { code: string; name: string }
 type ChangeListener = (vd: string, valtyp: Valtyp) => void
+export type WinnerParty = { forkortning: string | null; farg: string | null }
 
 export interface ResultsContextValue {
   // Delad UI-state
@@ -47,6 +48,9 @@ export interface ResultsContextValue {
   districtComparisonRef: RefObject<Map<string, string>>
   distriktNamnRef: RefObject<Map<string, string>>
   district2022Ref: RefObject<Map<string, AreaComparison | null>>
+  // 2022 års vinnarparti per distrikt (batch-hämtat per kommun för drill-down-listan).
+  districtWinners2022Ref: RefObject<Map<string, WinnerParty | null>>
+  ensureDistrictWinners2022: (valtyp: Valtyp, kommunCode: string) => void
 
   // Områdesväljar-listor + HUD-nämnare
   kommuner: NamedCode[]
@@ -100,6 +104,37 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
   const distriktNamnRef = useRef<Map<string, string>>(new Map()) // vd-kod → distriktsnamn (tabellrubrik vid kartklick)
   // 2022 per distrikt, lazy-hämtat på klick (`${valtyp}:${vd}` → löv, eller null om NEJ/inget).
   const district2022Ref = useRef<Map<string, AreaComparison | null>>(new Map())
+  // 2022 års vinnarparti per distrikt (vd → parti), batch-hämtat per kommun för drill-listan.
+  const districtWinners2022Ref = useRef<Map<string, WinnerParty | null>>(new Map())
+  const dw2022FetchedRef = useRef<Set<string>>(new Set()) // `${valtyp}:${kommunkod}` redan hämtade
+
+  // Hämta 2022 års vinnarparti för alla distrikt i en kommun (en gång, cache:at).
+  // Distriktsbarn i drill-listan har alltid en 4-siffrig kommun som förälder.
+  const ensureDistrictWinners2022 = useCallback((valtyp: Valtyp, kommunCode: string) => {
+    const key = `${valtyp}:${kommunCode}`
+    if (dw2022FetchedRef.current.has(key)) return
+    dw2022FetchedRef.current.add(key)
+    ;(async () => {
+      const { data, error } = await supabase
+        .from('district_result_2022')
+        .select('valdistriktskod,beteckning,andel')
+        .eq('valtyp', valtyp)
+        .like('valdistriktskod', `${kommunCode}%`)
+      if (error || !data) return
+      const top = new Map<string, { namn: string; andel: number }>()
+      for (const r of data) {
+        const cur = top.get(r.valdistriktskod)
+        if (!cur || r.andel > cur.andel) top.set(r.valdistriktskod, { namn: r.beteckning, andel: r.andel })
+      }
+      const nameToParty = new Map<string, PartyMeta>()
+      for (const p of partyRef.current.values()) if (p.beteckning) nameToParty.set(p.beteckning, p)
+      for (const [vd, t] of top) {
+        const p = nameToParty.get(t.namn)
+        districtWinners2022Ref.current.set(vd, p ? { forkortning: p.forkortning, farg: p.farg } : null)
+      }
+      setRevision((r) => r + 1)
+    })()
+  }, [])
 
   // Per-distrikt-lyssnare (kartan). Muteras utanför React-render.
   const listenersRef = useRef<Set<ChangeListener>>(new Set())
@@ -290,6 +325,8 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     districtComparisonRef,
     distriktNamnRef,
     district2022Ref,
+    districtWinners2022Ref,
+    ensureDistrictWinners2022,
     kommuner,
     regioner,
     totalByValtyp,

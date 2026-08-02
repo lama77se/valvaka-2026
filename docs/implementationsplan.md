@@ -464,6 +464,9 @@ Demonstrerat: RD/Riket och KF/Kommun med färgkodade ±andel + ±mandat.
   parti + rapporteringsgrad, klick → drilla ned). Valtyp-medveten hierarki i ren,
   testbar `lib/hierarchy.ts` (förfäder = kod-prefix, barn ur faktisk data, enhetlig
   barn-summering) — `verify:aggregate` steg 10. Klick-navigation bevisad headless.
+  Varje barn visar även **2022-vinnaren** som jämförelse (aggregatnivå ur
+  `comparison-2022.json`; distriktsnivå batch-hämtat per kommun ur
+  `district_result_2022`), så förra valets ledare syns även utan 2026-röster.
 
 ---
 

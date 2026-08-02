@@ -249,7 +249,7 @@ export interface Comparison2022 {
 // Vilken 2022-jämförelse gäller för (valtyp, nivå, område)? RD joinar på riket +
 // geografisk nedbrytning (län/kommun, andel); RF per region; KF per kommun.
 // Övriga aggregat (RF/KF-riket, KF-region) och valkrets → null (visar "–").
-function comparisonFor(
+export function comparisonFor(
   c: Comparison2022,
   valtyp: Valtyp,
   level: Level,

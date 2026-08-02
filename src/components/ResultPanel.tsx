@@ -2,7 +2,7 @@
 // delad state (valtyp, valt område) kommer från <ResultsProvider>. Panelen räknar
 // om områdesaggregatet när `revision` bumpas (strypt Realtime) och renderar
 // <ResultTable>. Områdesväljaren styr delad `selectedArea` (kartklick → drilldown).
-import { Fragment, useMemo } from 'react'
+import { Fragment, useEffect, useMemo } from 'react'
 import { VALTYP_LABEL, type Valtyp } from '@/lib/results'
 import {
   SPARR,
@@ -10,6 +10,7 @@ import {
   applyMandate,
   buildRows,
   collapseForDisplay,
+  comparisonFor,
   computeMandate,
   districtsInArea,
 } from '@/lib/aggregate'
@@ -53,6 +54,8 @@ export function ResultPanel() {
     regioner,
     distriktNamnRef,
     district2022Ref,
+    districtWinners2022Ref,
+    ensureDistrictWinners2022,
     revision,
   } = useResults()
 
@@ -169,6 +172,20 @@ export function ResultPanel() {
     void revision
     const store = storesRef.current[valtyp]
     const groups = childGroupsOf(valtyp, selectedArea, allCodesRef.current)
+    const comparison = comparisonRef.current
+    // Namn (beteckning) → parti, för att slå 2022-vinnaren (andel nycklas på partinamn).
+    const nameToParty = new Map<string, { forkortning: string | null; farg: string | null }>()
+    for (const p of partyRef.current.values()) if (p.beteckning) nameToParty.set(p.beteckning, p)
+    const winner2022Of = (level: string, code: string): { forkortning: string | null; farg: string | null } | null => {
+      if (level === 'distrikt') return districtWinners2022Ref.current.get(code) ?? null
+      // Aggregatnivåer: ur comparison-2022.json (RD län/kommun, RF kommun, KF kommun).
+      const ac = comparison ? comparisonFor(comparison, valtyp, level as never, code) : null
+      if (!ac) return null
+      let namn: string | null = null
+      let topA = -1
+      for (const [n, a] of Object.entries(ac.andel)) if (a > topA) { topA = a; namn = n }
+      return namn ? nameToParty.get(namn) ?? null : null
+    }
     const items = groups.map((g) => {
       const votes = store.aggregate(g.districts)
       let winner: string | null = null
@@ -182,11 +199,24 @@ export function ResultPanel() {
         }
       }
       const reported = g.districts.reduce((n, c) => n + (store.has(c) ? 1 : 0), 0)
-      return { level: g.level, code: g.code, winner, share: sum > 0 ? top / sum : 0, reported, total: g.districts.length }
+      return {
+        level: g.level,
+        code: g.code,
+        winner,
+        share: sum > 0 ? top / sum : 0,
+        reported,
+        total: g.districts.length,
+        winner2022: winner2022Of(g.level, g.code),
+      }
     })
     return { childLevel: childLevelOf(valtyp, selectedArea.level), items }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [valtyp, selectedArea, revision])
+
+  // Distriktsbarn: batch-hämta deras 2022-vinnare (aggregatnivåer har 2022 synkront).
+  useEffect(() => {
+    if (drill.childLevel === 'distrikt' && selectedArea.code) ensureDistrictWinners2022(valtyp, selectedArea.code)
+  }, [drill.childLevel, valtyp, selectedArea.code, ensureDistrictWinners2022])
 
   // Prompt-läge: RF/KF utan valt organ (ingen riksnivå finns för dem).
   const isPrompt = selectedArea.level !== 'riket' && selectedArea.code == null
@@ -322,12 +352,20 @@ export function ResultPanel() {
                           onClick={() => setSelectedArea({ level: it.level, code: it.code })}
                         >
                           <span className="flex-1 truncate text-xs text-slate-200">{nameOf(it)}</span>
+                          {it.winner2022 && (
+                            <span className="shrink-0 text-[10px] text-slate-500" title="Ledande parti 2022">
+                              ’22{' '}
+                              <span className="font-semibold" style={{ color: it.winner2022.farg ?? REPORTED_NEUTRAL }}>
+                                {it.winner2022.forkortning ?? '?'}
+                              </span>
+                            </span>
+                          )}
                           {p && it.reported > 0 ? (
-                            <span className="shrink-0 text-[11px] font-semibold" style={{ color: farg }}>
+                            <span className="shrink-0 text-[11px] font-semibold" style={{ color: farg }} title="Ledande parti 2026">
                               {p.forkortning ?? '?'}
                             </span>
                           ) : (
-                            <span className="shrink-0 text-[11px] text-slate-600">—</span>
+                            <span className="shrink-0 text-[11px] text-slate-600" title="Ledande parti 2026">—</span>
                           )}
                           {it.level === 'distrikt' ? (
                             // Lövnivå: nämnaren är alltid 1 → visa status i stället för "X/1".
