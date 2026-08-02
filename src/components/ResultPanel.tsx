@@ -329,9 +329,19 @@ export function ResultPanel() {
                           ) : (
                             <span className="shrink-0 text-[11px] text-slate-600">—</span>
                           )}
-                          <span className="w-12 shrink-0 text-right text-[11px] tabular-nums text-slate-500">
-                            {it.reported}/{it.total}
-                          </span>
+                          {it.level === 'distrikt' ? (
+                            // Lövnivå: nämnaren är alltid 1 → visa status i stället för "X/1".
+                            <span className={`w-16 shrink-0 text-right text-[11px] ${it.reported > 0 ? 'text-emerald-400' : 'text-slate-600'}`}>
+                              {it.reported > 0 ? 'räknat' : 'ej räknat'}
+                            </span>
+                          ) : (
+                            <span
+                              className="w-16 shrink-0 text-right text-[11px] tabular-nums text-slate-500"
+                              title={`${it.reported} av ${it.total} distrikt räknade`}
+                            >
+                              {it.reported}/{it.total}
+                            </span>
+                          )}
                         </button>
                       </li>
                     )
