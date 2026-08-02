@@ -100,10 +100,14 @@ try {
   check(cmp.RD.mandat[S] === 107, 'RD S-mandat 2022 = 107')
   check(Object.keys(cmp.RF).length === 20 && cmp.RF['01'].mandat[S] === 50, 'RF 20 regioner, Stockholm(01) S = 50 mandat')
   check(Object.keys(cmp.KF).length === 290 && cmp.KF['0180'].mandat[S] > 0, 'KF 290 kommuner, Stockholm(0180) S-mandat finns')
-  // RD geografisk nedbrytning (andel per län/kommun för drilldown-jämförelse).
-  const rdLan = Object.keys(cmp.RD_byLan ?? {}).length
+  // RD-nedbrytning: FAKTISKA 2022-mandat per VALKRETS (facit) + andel per kommun.
+  const rdVk = Object.keys(cmp.RD_byValkrets ?? {}).length
   const rdKommun = Object.keys(cmp.RD_byKommun ?? {}).length
-  check(rdLan >= 20 && rdKommun >= 290, 'RD-andel per län + kommun finns', `${rdLan} län / ${rdKommun} kommuner`)
+  check(rdVk === 29 && rdKommun >= 290, 'RD: 29 valkretsar + kommuner finns', `${rdVk} valkretsar / ${rdKommun} kommuner`)
+  check(cmp.RD_byValkrets?.['29']?.mandat[S] === 4, 'RD valkrets Norrbotten(29): S-mandat 2022 = 4 (facit, = val.se)')
+  const vkTotal = Object.values(cmp.RD_byValkrets ?? {}).reduce((a: number, o: any) => a + Object.values(o.mandat as Record<string, number>).reduce((x, y) => x + y, 0), 0)
+  check(vkTotal === 349, 'RD valkretsmandat summerar till 349 (alla 29)', String(vkTotal))
+  check(cmp.RD_valkretsNamn?.['29'] === 'Norrbottens län', 'RD valkretsnamn wirat (29 → Norrbottens län)')
   const sthlmRD = cmp.RD_byKommun?.['0180']?.andel[S]
   check(sthlmRD > 0 && sthlmRD < 1 && Math.abs(sthlmRD - cmp.RD.andel[S]) > 0.001, 'RD 0180 S-andel 2022 är kommun-specifik (≠ riks)', `${(sthlmRD * 100).toFixed(1)} %`)
   const rfKommun = Object.keys(cmp.RF_byKommun ?? {}).length
@@ -138,8 +142,10 @@ try {
   const rdK = applyComparison(buildRows({}, emptyParty, 0.04), 'RD', 'kommun', '0180', cmp, emptyParty)
   check(rdK.rows.length >= 1 && rdK.rows.every((r) => r.andel2022 != null), 'RD kommun 0180: 2022-andel wirad (ej "–")', `${rdK.rows.length} rader`)
   check(rdK.rows.every((r) => r.mandat2022 == null), 'RD kommun 0180: 2022-mandat = "–" (riksmandat bara nationellt)')
-  const rdL = applyComparison(buildRows({}, emptyParty, 0.04), 'RD', 'region', '01', cmp, emptyParty)
-  check(rdL.rows.length >= 1 && rdL.rows.every((r) => r.andel2022 != null), 'RD län 01: 2022-andel wirad')
+  // RD på VALKRETS: nu wiras BÅDE 2022-andel OCH faktiska 2022-mandat (facit).
+  const rdVkA = applyComparison(buildRows({}, emptyParty, 0.04), 'RD', 'valkrets', '29', cmp, emptyParty)
+  check(rdVkA.rows.length >= 1 && rdVkA.rows.every((r) => r.andel2022 != null), 'RD valkrets 29: 2022-andel wirad')
+  check(rdVkA.totalMandat2022 === 8, 'RD valkrets Norrbotten(29): 2022-MANDAT wirat (totalt 8)', String(rdVkA.totalMandat2022))
   // 7d: RF drillat till kommun jämförbart mot 2022 (andel; regionmandat per region → "–").
   const rfK = applyComparison(buildRows({}, emptyParty, 0.03), 'RF', 'kommun', '0180', cmp, emptyParty)
   check(rfK.rows.length >= 1 && rfK.rows.every((r) => r.andel2022 != null), 'RF kommun 0180: 2022-andel wirad (ej "–")', `${rfK.rows.length} rader`)
@@ -177,23 +183,28 @@ const single = hareSeats({ X: 42 }, 100) // ett parti tar alla platser
 const empty = Object.keys(hareSeats({}, 100)).length // inga röster → tom (ingen soffa)
 check(hareOk && single.X === 100 && empty === 0, 'hareSeats fördelar exakt 100 platser proportionellt (ren %, ingen spärr)')
 
-// 10) Drill-down-hierarki (ancestorsOf/childGroupsOf): prefix-slicing ur faktisk data.
-console.log('\n--- 10. Drill-down-hierarki (hierarchy.ts) ---')
-const hcodes = ['01800142', '01800256', '01140099', '12800011'] // län 01,01,01,12 · kommun 0180,0180,0114,1280
-const anc = ancestorsOf('RD', { level: 'distrikt', code: '01800142' })
-const lan = childGroupsOf('RD', { level: 'riket', code: null }, hcodes) // → 2 län (01, 12)
-const komm = childGroupsOf('RF', { level: 'region', code: '01' }, hcodes) // → 2 kommuner i län 01
+// 10) Drill-down-hierarki: RD:s nivå under Riket är VALKRETS (metadata, inte prefix).
+// Kritiskt fall (advisor): Stockholm-splitten — kommun 0180 och 0114 ligger i SAMMA
+// län (01) men OLIKA valkretsar (01 resp. 02). Prefix-logik skulle slå ihop dem.
+console.log('\n--- 10. Drill-down-hierarki (hierarchy.ts, RD-valkrets) ---')
+const hcodes = ['01800142', '01800256', '01140099', '25600011']
+const hIndex = {
+  kommunToVk: new Map([['0180', '01'], ['0114', '02'], ['2560', '29']]),
+  vkToDistricts: new Map([['01', ['01800142', '01800256']], ['02', ['01140099']], ['29', ['25600011']]]),
+}
+const vks = childGroupsOf('RD', { level: 'riket', code: null }, hcodes, hIndex) // → valkretsar 01,02,29
+const vk01komm = childGroupsOf('RD', { level: 'valkrets', code: '01' }, hcodes, hIndex) // → BARA kommun 0180
+const kdist = childGroupsOf('RD', { level: 'kommun', code: '0180' }, hcodes, hIndex) // → 2 distrikt (prefix)
+const anc = ancestorsOf('RD', { level: 'kommun', code: '0114' }, hIndex) // → riket › valkrets 02 › kommun 0114
+const rf = childGroupsOf('RF', { level: 'region', code: '01' }, hcodes) // RF oförändrad (prefix)
 const hOk =
-  anc.length === 4 &&
-  anc[0].level === 'riket' && anc[0].code === null &&
-  anc[1].code === '01' && anc[2].code === '0180' && anc[3].code === '01800142' &&
-  lan.length === 2 && lan.every((g) => g.level === 'region') &&
-  komm.length === 2 && komm.every((g) => g.code.startsWith('01') && g.level === 'kommun') &&
-  // kommun 0180 → 2 distriktsbarn, vart och ett med exakt 1 distrikt (lövnivå)
-  childGroupsOf('RD', { level: 'kommun', code: '0180' }, hcodes).length === 2 &&
-  childGroupsOf('RD', { level: 'kommun', code: '0180' }, hcodes).every((g) => g.level === 'distrikt' && g.districts.length === 1) &&
-  childLevelOf('KF', 'kommun') === 'distrikt' && childLevelOf('KF', 'distrikt') === null
-check(hOk, 'hierarchy: ancestorsOf ger 4-nivåpath + childGroupsOf enumererar barn ur data (län/kommun-prefix)')
+  vks.length === 3 && vks.every((g) => g.level === 'valkrets') &&
+  vk01komm.length === 1 && vk01komm[0].code === '0180' && vk01komm[0].level === 'kommun' && // 0114 hamnar EJ här
+  kdist.length === 2 && kdist.every((g) => g.level === 'distrikt' && g.districts.length === 1) &&
+  anc.length === 3 && anc[0].level === 'riket' && anc[1].level === 'valkrets' && anc[1].code === '02' && anc[2].code === '0114' &&
+  rf.length === 2 && rf.every((g) => g.code.startsWith('01') && g.level === 'kommun') &&
+  childLevelOf('RD', 'riket') === 'valkrets' && childLevelOf('KF', 'kommun') === 'distrikt' && childLevelOf('KF', 'distrikt') === null
+check(hOk, 'hierarchy: RD riket→valkrets (metadata, Stockholm-split 0180/0114 åtskilda), valkrets→kommun, ancestors via kommunToVk')
 
 console.log(ok ? '\n✅ AGGREGAT + MANDAT + ±2022 MATCHAR FACIT / FÖRVÄNTAT' : '\n❌ se FEL ovan')
 process.exit(ok ? 0 : 1)

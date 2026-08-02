@@ -55,6 +55,9 @@ export interface ResultsContextValue {
   // Områdesväljar-listor + HUD-nämnare
   kommuner: NamedCode[]
   regioner: NamedCode[]
+  valkretsar: NamedCode[] // RD:s nivå under Riket (29 valkretsar)
+  kommunToVkRef: RefObject<Map<string, string>>
+  vkToDistrictsRef: RefObject<Map<string, string[]>>
   totalByValtyp: Record<Valtyp, number>
 
   // Signalkanaler
@@ -88,6 +91,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
   const [snapshotVersion, setSnapshotVersion] = useState(0)
   const [kommuner, setKommuner] = useState<NamedCode[]>([])
   const [regioner, setRegioner] = useState<NamedCode[]>([])
+  const [valkretsar, setValkretsar] = useState<NamedCode[]>([]) // RD:s nivå under Riket
   const [totalByValtyp, setTotalByValtyp] = useState<Record<Valtyp, number>>(emptyCounts)
   const [realtimeConnected, setRealtimeConnected] = useState(false)
 
@@ -99,6 +103,10 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
   const metaRef = useRef<Map<string, DistrictMeta>>(new Map())
   const allCodesRef = useRef<string[]>([])
   const groupsRef = useRef<AreaGroups>(buildGroups([]))
+  // RD-valkretsindex (byggs av HELA kommuner → många-till-en): kommun4 → valkrets,
+  // och valkrets → distriktskoder. Valkretskod normaliserad till 2 siffror (padded).
+  const kommunToVkRef = useRef<Map<string, string>>(new Map())
+  const vkToDistrictsRef = useRef<Map<string, string[]>>(new Map())
   const comparisonRef = useRef<Comparison2022 | null>(null)
   const districtComparisonRef = useRef<Map<string, string>>(new Map())
   const distriktNamnRef = useRef<Map<string, string>>(new Map()) // vd-kod → distriktsnamn (tabellrubrik vid kartklick)
@@ -242,6 +250,8 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
       const codes: string[] = []
       const kommunMap = new Map<string, string>()
       const lanMap = new Map<string, string>()
+      const kommunToVk = new Map<string, string>()
+      const vkToDistricts = new Map<string, string[]>()
       const PAGE = 1000
       for (let from = 0; !cancelled; from += PAGE) {
         const { data, error } = await supabase
@@ -251,10 +261,18 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
         if (error || !data || data.length === 0) break
         for (const d of data) {
           codes.push(d.valdistriktskod)
-          meta.set(d.valdistriktskod, { vk_rd: d.vk_rd, vk_rf: d.vk_rf, vk_kf: d.vk_kf })
+          // Normalisera vk_rd till 2 siffror EN gång (opaddat i DB: "1".."29") så det
+          // matchar facit-/comparison-koderna — annars faller ensiffriga valkretsar
+          // (bl.a. båda Stockholms) tyst bort i join:en.
+          const vkRd = d.vk_rd != null ? String(d.vk_rd).padStart(2, '0') : null
+          meta.set(d.valdistriktskod, { vk_rd: vkRd, vk_rf: d.vk_rf, vk_kf: d.vk_kf })
           namn.set(d.valdistriktskod, d.namn ?? d.valdistriktskod)
           kommunMap.set(d.valdistriktskod.slice(0, 4), d.kommun ?? d.valdistriktskod.slice(0, 4))
           lanMap.set(d.valdistriktskod.slice(0, 2), d.lan ?? d.valdistriktskod.slice(0, 2))
+          if (vkRd) {
+            kommunToVk.set(d.valdistriktskod.slice(0, 4), vkRd) // kommun → valkrets (många-till-en)
+            ;(vkToDistricts.get(vkRd) ?? vkToDistricts.set(vkRd, []).get(vkRd)!).push(d.valdistriktskod)
+          }
         }
         if (data.length < PAGE) break
       }
@@ -273,9 +291,14 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
       allCodesRef.current = codes
       groupsRef.current = buildGroups(codes)
       districtComparisonRef.current = cmp
+      kommunToVkRef.current = kommunToVk
+      vkToDistrictsRef.current = vkToDistricts
       const bySv = (a: NamedCode, b: NamedCode) => a.name.localeCompare(b.name, 'sv')
       setKommuner([...kommunMap.entries()].map(([code, name]) => ({ code, name })).sort(bySv))
       setRegioner([...lanMap.entries()].map(([code, name]) => ({ code, name })).sort(bySv))
+      // Valkretslista (RD): koder ur datan, namn ur comparison-2022 (RD_valkretsNamn).
+      const vkNamn = comparisonRef.current?.RD_valkretsNamn ?? {}
+      setValkretsar([...vkToDistricts.keys()].map((code) => ({ code, name: vkNamn[code] ?? code })).sort(bySv))
       // Metadata redo → kartan får rätt färger (partyRef) och tabellen sitt aggregat.
       setSnapshotVersion((v) => v + 1)
       setRevision((r) => r + 1)
@@ -329,6 +352,9 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     ensureDistrictWinners2022,
     kommuner,
     regioner,
+    valkretsar,
+    kommunToVkRef,
+    vkToDistrictsRef,
     totalByValtyp,
     subscribeChanges,
     revision,

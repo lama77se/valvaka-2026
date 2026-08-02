@@ -21,7 +21,7 @@ import { hareSeats } from '@/lib/soffa'
 import { ancestorsOf, childGroupsOf, childLevelOf } from '@/lib/hierarchy'
 import { REPORTED_NEUTRAL, UNREPORTED_FILL } from '@/components/DistrictMap'
 
-const CHILD_LABEL: Record<string, string> = { region: 'Län', kommun: 'Kommuner', distrikt: 'Distrikt' }
+const CHILD_LABEL: Record<string, string> = { valkrets: 'Valkretsar', region: 'Län', kommun: 'Kommuner', distrikt: 'Distrikt' }
 
 const ELECTION: Record<Valtyp, string> = {
   RD: 'Riksdagsvalet',
@@ -30,10 +30,10 @@ const ELECTION: Record<Valtyp, string> = {
 }
 
 // Nivåer väljaren erbjuder per valtyp: den nativa nivån + geografisk nedbrytning
-// UNDER den (aldrig uppåt). RD kan visa riket/län/kommun; RF region + kommun inom;
-// KF bara kommun.
-const LEVELS: Record<Valtyp, ('riket' | 'region' | 'kommun')[]> = {
-  RD: ['riket', 'region', 'kommun'],
+// UNDER den (aldrig uppåt). RD: riket → VALKRETS (riksdagens riktiga nivå) → kommun;
+// RF region + kommun inom; KF bara kommun.
+const LEVELS: Record<Valtyp, ('riket' | 'valkrets' | 'region' | 'kommun')[]> = {
+  RD: ['riket', 'valkrets', 'kommun'],
   RF: ['region', 'kommun'],
   KF: ['kommun'],
 }
@@ -52,6 +52,9 @@ export function ResultPanel() {
     comparisonRef,
     kommuner,
     regioner,
+    valkretsar,
+    kommunToVkRef,
+    vkToDistrictsRef,
     distriktNamnRef,
     district2022Ref,
     districtWinners2022Ref,
@@ -59,14 +62,18 @@ export function ResultPanel() {
     revision,
   } = useResults()
 
+  const areaIndex = { kommunToVk: kommunToVkRef.current, vkToDistricts: vkToDistrictsRef.current }
+
   const areaName =
     selectedArea.level === 'riket'
       ? 'Riket'
       : selectedArea.level === 'distrikt'
         ? (distriktNamnRef.current.get(selectedArea.code ?? '') ?? selectedArea.code ?? '')
-        : selectedArea.level === 'region'
-          ? (regioner.find((r) => r.code === selectedArea.code)?.name ?? selectedArea.code ?? '')
-          : (kommuner.find((k) => k.code === selectedArea.code)?.name ?? selectedArea.code ?? '')
+        : selectedArea.level === 'valkrets'
+          ? (valkretsar.find((v) => v.code === selectedArea.code)?.name ?? selectedArea.code ?? '')
+          : selectedArea.level === 'region'
+            ? (regioner.find((r) => r.code === selectedArea.code)?.name ?? selectedArea.code ?? '')
+            : (kommuner.find((k) => k.code === selectedArea.code)?.name ?? selectedArea.code ?? '')
 
   const view = useMemo(() => {
     void revision // beroende: räkna om vid ny snapshot / strypt Realtime-bump
@@ -156,14 +163,17 @@ export function ResultPanel() {
   // Områdesnamn-uppslag för breadcrumb + barnlista.
   const regionName = useMemo(() => new Map(regioner.map((r) => [r.code, r.name])), [regioner])
   const kommunName = useMemo(() => new Map(kommuner.map((k) => [k.code, k.name])), [kommuner])
+  const valkretsName = useMemo(() => new Map(valkretsar.map((v) => [v.code, v.name])), [valkretsar])
   const nameOf = (a: { level: string; code: string | null }): string =>
     a.level === 'riket'
       ? 'Riket'
-      : a.level === 'region'
-        ? regionName.get(a.code ?? '') ?? a.code ?? ''
-        : a.level === 'kommun'
-          ? kommunName.get(a.code ?? '') ?? a.code ?? ''
-          : distriktNamnRef.current.get(a.code ?? '') ?? a.code ?? ''
+      : a.level === 'valkrets'
+        ? valkretsName.get(a.code ?? '') ?? a.code ?? ''
+        : a.level === 'region'
+          ? regionName.get(a.code ?? '') ?? a.code ?? ''
+          : a.level === 'kommun'
+            ? kommunName.get(a.code ?? '') ?? a.code ?? ''
+            : distriktNamnRef.current.get(a.code ?? '') ?? a.code ?? ''
 
   // Drill-down: breadcrumb (uppåt) + barnens sammanfattning (nedåt). Barn-summeringen
   // är enhetlig för alla nivåer: ledande parti = argmax(aggregat), rapporterat = andel
@@ -171,7 +181,7 @@ export function ResultPanel() {
   const drill = useMemo(() => {
     void revision
     const store = storesRef.current[valtyp]
-    const groups = childGroupsOf(valtyp, selectedArea, allCodesRef.current)
+    const groups = childGroupsOf(valtyp, selectedArea, allCodesRef.current, areaIndex)
     const comparison = comparisonRef.current
     // Namn (beteckning) → parti, för att slå 2022-vinnaren (andel nycklas på partinamn).
     const nameToParty = new Map<string, { forkortning: string | null; farg: string | null }>()
@@ -220,7 +230,7 @@ export function ResultPanel() {
 
   // Prompt-läge: RF/KF utan valt organ (ingen riksnivå finns för dem).
   const isPrompt = selectedArea.level !== 'riket' && selectedArea.code == null
-  const crumbs = ancestorsOf(valtyp, selectedArea)
+  const crumbs = ancestorsOf(valtyp, selectedArea, areaIndex)
   const drillItems = [...drill.items].sort((a, b) => nameOf(a).localeCompare(nameOf(b), 'sv'))
   const levels = LEVELS[valtyp]
   const selectValue = isPrompt
@@ -229,7 +239,9 @@ export function ResultPanel() {
       ? 'riket'
       : selectedArea.level === 'distrikt'
         ? `d:${selectedArea.code}`
-        : `${selectedArea.level === 'region' ? 'r' : 'k'}:${selectedArea.code}`
+        : selectedArea.level === 'valkrets'
+          ? `vk:${selectedArea.code}`
+          : `${selectedArea.level === 'region' ? 'r' : 'k'}:${selectedArea.code}`
 
   return (
     <div className="flex h-full flex-col gap-3 overflow-hidden">
@@ -246,7 +258,9 @@ export function ResultPanel() {
               ? defaultAreaFor(valtyp)
               : v === 'riket'
                 ? RIKET
-                : { level: v.startsWith('r:') ? 'region' : 'kommun', code: v.slice(2) }
+                : v.startsWith('vk:')
+                  ? { level: 'valkrets', code: v.slice(3) }
+                  : { level: v.startsWith('r:') ? 'region' : 'kommun', code: v.slice(2) }
           setSelectedArea(next)
         }}
       >
@@ -257,6 +271,13 @@ export function ResultPanel() {
           <option value="riket">Riket</option>
         ) : (
           <option value="">{PROMPT[valtyp]}</option>
+        )}
+        {levels.includes('valkrets') && (
+          <optgroup label="Valkrets">
+            {valkretsar.map((v) => (
+              <option key={v.code} value={`vk:${v.code}`}>{v.name}</option>
+            ))}
+          </optgroup>
         )}
         {levels.includes('region') && (
           <optgroup label="Region / län">

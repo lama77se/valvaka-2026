@@ -99,19 +99,27 @@ Under uppbyggnad. Klart hittills:
   **"uppdaterad HH:MM:SS"**-stämpel som sätts när data ändras (piggybackar på kartans
   rAF-flush → inga extra renders).
 
-- **Drill-down + aggregat-paneler (klar).** Panelen har en **breadcrumb** (Riket ›
-  län › kommun › distrikt) med klickbara förfäder för att navigera uppåt, och en
-  **"Bryt ner"-lista** över det valda områdets barn (län/kommuner/distrikt) med
-  ledande parti + rapporteringsgrad (X/Y), klickbara för att drilla nedåt. Hierarkin
-  är valtyp-medveten (RD: riket→län→kommun→distrikt; RF: region→kommun→distrikt; KF:
-  kommun→distrikt) och ren/testbar (`lib/hierarchy.ts`): förfäder härleds som
-  kod-prefix, barn enumereras ur faktisk data, barn-summeringen är enhetlig för alla
-  nivåer (`npm run verify:aggregate` steg 10). Klick-navigationen (upp/ned) är bevisad
-  headless. Varje barn visar **både 2026 och 2022** som jämförelse: ledande parti 2026
-  (eller "räknat/ej räknat"-status) och **`'22`-vinnaren** — på aggregatnivå ur
-  `comparison-2022.json` (synkront), på distriktsnivå batch-hämtat per kommun ur
-  `district_result_2022`. Så man ser vem som ledde området förra valet även innan
-  2026-röster kommit in.
+- **Drill-down + aggregat-paneler (klar).** Panelen har en **breadcrumb** med
+  klickbara förfäder (navigera uppåt) och en **"Bryt ner"-lista** över det valda
+  områdets barn (ledande parti + rapporteringsgrad, klick → drilla nedåt). Hierarkin
+  är valtyp-medveten: **RD: riket → valkrets → kommun → distrikt** (riksdagens riktiga
+  nivå under Riket är de **29 valkretsarna**, inte län — mandaten delas ut per valkrets
+  och val.se bryter ner RD så); RF: region → kommun → distrikt; KF: kommun → distrikt.
+  Valkrets är inte ett kod-prefix (Stockholm/Skåne/VG delas i flera valkretsar inom
+  samma län), så providern förberäknar `kommunToVk`/`vkToDistricts` ur distrikt­metadata
+  (`vk_rd` normaliserat till 2 siffror — annars faller Stockholms två ensiffriga
+  valkretsar tyst bort); övriga hopp är prefix-rena (`lib/hierarchy.ts`, testat i
+  `verify:aggregate` steg 10 inkl. Stockholm-splitten). Klick-navigation bevisad
+  headless. Varje barn visar **både 2026 och 2022** som jämförelse (ledande parti 2026 /
+  räknat-status + `'22`-vinnaren).
+
+- **Riksdagsmandat per valkrets — 2022 (klar).** På valkretsnivå visar tabellen 2022 års
+  **faktiska riksdagsmandat** per parti (ur Valmyndighetens officiella facit, matchar
+  val.se exakt — t.ex. Norrbottens län S 4 · SD 2 · M 1 · V 1 = 8; alla 29 valkretsar
+  summerar till 349), och 2022-soffan blir en riktig fylld mandatbåge. 2026-mandaten
+  projiceras nationellt (349) och lämnas "–" per valkrets (per-valkrets-placering av
+  utjämningsmandaten är knivseggs-känslig och beräknas medvetet inte live). Genereras av
+  `npm run comparison` (`RD_byValkrets` i `comparison-2022.json`).
 
 Återstår:
 

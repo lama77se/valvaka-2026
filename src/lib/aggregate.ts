@@ -239,8 +239,9 @@ export interface AreaComparison {
 }
 export interface Comparison2022 {
   RD: AreaComparison // riket
-  RD_byLan?: Record<string, AreaComparison> // RD-andel per län (mandat tomt — riksmandat finns bara nationellt)
-  RD_byKommun?: Record<string, AreaComparison> // RD-andel per kommun
+  RD_byValkrets?: Record<string, AreaComparison> // RD per valkrets (andel + FAKTISKA 2022-mandat ur facit)
+  RD_valkretsNamn?: Record<string, string> // valkretskod → namn (för väljare/breadcrumb)
+  RD_byKommun?: Record<string, AreaComparison> // RD-andel per kommun (mandat tomt — riksmandat per valkrets)
   RF: Record<string, AreaComparison> // per region
   RF_byKommun?: Record<string, AreaComparison> // RF-andel per kommun (mandat tomt — regionmandat per region)
   KF: Record<string, AreaComparison>
@@ -257,7 +258,7 @@ export function comparisonFor(
 ): AreaComparison | null {
   if (valtyp === 'RD') {
     if (level === 'riket') return c.RD
-    if (level === 'region' && areaCode) return c.RD_byLan?.[areaCode] ?? null
+    if (level === 'valkrets' && areaCode) return c.RD_byValkrets?.[areaCode] ?? null
     if (level === 'kommun' && areaCode) return c.RD_byKommun?.[areaCode] ?? null
     return null
   }
