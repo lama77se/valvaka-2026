@@ -26,8 +26,9 @@ function App() {
         {/* Departure board — live-ticker över inrapporterade distrikt (nedre vänster) */}
         <DepartureBoard />
 
-        {/* Resultattabell — höger panel (layout provisorisk) */}
-        <aside className="absolute right-0 top-0 h-full w-[440px] border-l border-slate-800 bg-slate-950/90 p-4 shadow-2xl backdrop-blur">
+        {/* Resultattabell — höger panel. Bredden styrs av --panel-w (index.css), delad med
+            kartkontrollernas offset så zoom-knapparna aldrig hamnar under panelen. */}
+        <aside className="absolute right-0 top-0 h-full w-[var(--panel-w)] border-l border-slate-800 bg-slate-950/90 p-4 shadow-2xl backdrop-blur">
           <ResultPanel />
         </aside>
       </main>

@@ -68,11 +68,14 @@
   }
 }
 
-/* Kartkontroller får inte hamna under den 440px breda resultatpanelen (höger).
-   Skjut zoom-kontrollen till vänster om panelen så den går att nå/se.
-   OBS: håll i synk med panelbredden (w-[440px]) i App.tsx. */
+/* Resultatpanelens bredd (höger) — EN källa som delas mellan panelen (App.tsx:
+   w-[var(--panel-w)]) och kartkontrollernas offset nedan, så zoom-knapparna aldrig
+   hamnar under panelen oavsett hur bred den är. Ändra bredden HÄR. */
+:root {
+  --panel-w: clamp(480px, 36vw, 680px);
+}
 .maplibregl-ctrl-bottom-right {
-  margin-right: 456px; /* 440px panel + 16px luft */
+  margin-right: calc(var(--panel-w) + 16px); /* skjut zoom-kontrollen vänster om panelen */
 }
 
 /* Departure board — ny rad (nytt distrikt) glider in med en kort ljusblå blänk.
