@@ -199,13 +199,16 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
 
     let cancelled = false
     ;(async () => {
-      // Per-valtyp nämnare: distrikt som deltar (vk_<valtyp> ej null) — härled ur data.
+      // Per-valtyp nämnare: distrikt som deltar (vk_<valtyp> satt). OBS: kolumnen är
+      // TOMSTRÄNG (inte null) där valet inte hålls — t.ex. Gotland saknar regionval →
+      // vk_rf = '' — så både null OCH '' måste exkluderas, annars räknas Gotland in i RF.
       const counts = emptyCounts()
       for (const vt of VALTYPER) {
         const { count } = await supabase
           .from('district')
           .select('*', { count: 'exact', head: true })
           .not(VALTYP_VK_COLUMN[vt], 'is', null)
+          .neq(VALTYP_VK_COLUMN[vt], '')
         counts[vt] = count ?? 0
       }
       if (!cancelled) setTotalByValtyp(counts)

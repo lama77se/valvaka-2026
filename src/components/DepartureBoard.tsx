@@ -1,25 +1,26 @@
 // Departure board — en live-ticker över inrapporterade valdistrikt, nyast överst
 // (som en avgångstavla). Prenumererar på samma per-distrikt-notis som kartan
-// (ResultsProvider.subscribeChanges) och visar den aktiva valtypens distrikt med
-// ledande parti + andel. Ren presentation ovanpå ResultStore — ingen egen data.
+// (ResultsProvider.subscribeChanges) och visar EN valtyps distrikt (prop `valtyp`)
+// med ledande parti + andel. Tre tavlor (RD/RF/KF) renderas samtidigt i App så alla
+// tre valens rapportering syns hela tiden. Ren presentation ovanpå ResultStore.
 //
 // OBS (advisor): snapshot-laddningen fanar INTE ut till listeners, bara live
 // Realtime-events gör det. Tavlan seedas därför från store vid mount/valtyp-byte
 // (så den inte är tom efter omladdning); nya distrikt tickar in via events.
 import { useEffect, useRef, useState } from 'react'
 import { useResults } from '@/components/ResultsProvider'
-import { VALTYP_LABEL } from '@/lib/results'
+import { VALTYP_LABEL, type Valtyp } from '@/lib/results'
 
 const NEUTRAL = '#64748b'
 const BUFCAP = 60 // hur många distrikt vi minns
-const VISIBLE = 12 // hur många rader som visas
+const VISIBLE = 6 // hur många rader som visas (kompakt — tre tavlor staplas)
 
 type Row = { vd: string; time: string }
 
 const hhmmss = () => new Date().toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 
-export function DepartureBoard() {
-  const { valtyp, subscribeChanges, storesRef, partyRef, distriktNamnRef, totalByValtyp, setSelectedArea, revision, snapshotVersion } = useResults()
+export function DepartureBoard({ valtyp }: { valtyp: Valtyp }) {
+  const { subscribeChanges, storesRef, partyRef, distriktNamnRef, totalByValtyp, setSelectedArea, setValtyp, revision, snapshotVersion } = useResults()
   const [rows, setRows] = useState<Row[]>([])
 
   // Buffert utanför render: nyast-först-ordning + seen-set + tidsstämplar. Muteras
@@ -78,7 +79,7 @@ export function DepartureBoard() {
   const total = totalByValtyp[valtyp]
 
   return (
-    <div className="pointer-events-auto absolute bottom-4 left-4 w-[300px] overflow-hidden rounded-lg border border-slate-700 bg-slate-950/85 shadow-2xl backdrop-blur">
+    <div className="pointer-events-auto w-[300px] overflow-hidden rounded-lg border border-slate-700 bg-slate-950/85 shadow-2xl backdrop-blur">
       <div className="flex items-center justify-between border-b border-slate-800 px-3 py-2">
         <div className="flex items-center gap-2">
           <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
@@ -104,8 +105,8 @@ export function DepartureBoard() {
                 key={r.vd}
                 className="board-row flex cursor-pointer items-center gap-2 px-3 py-1.5 hover:bg-slate-800/50"
                 style={{ borderLeft: `3px solid ${farg}` }}
-                onClick={() => setSelectedArea({ level: 'distrikt', code: r.vd })}
-                title={`${name} — visa i tabellen`}
+                onClick={() => { setValtyp(valtyp); setSelectedArea({ level: 'distrikt', code: r.vd }) }}
+                title={`${name} — visa i tabellen (${VALTYP_LABEL[valtyp]})`}
               >
                 <span className="w-14 shrink-0 text-[11px] tabular-nums text-slate-500">{r.time || '—'}</span>
                 <span className="flex-1 truncate text-xs text-slate-200">{name}</span>

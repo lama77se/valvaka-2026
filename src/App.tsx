@@ -3,6 +3,7 @@ import { ResultPanel } from '@/components/ResultPanel'
 import { ResultsProvider } from '@/components/ResultsProvider'
 import { DepartureBoard } from '@/components/DepartureBoard'
 import { PartyLegend } from '@/components/PartyLegend'
+import { VALTYPER } from '@/lib/results'
 
 function App() {
   return (
@@ -19,12 +20,25 @@ function App() {
               Röster, andel och mandat per parti på alla nivåer — jämfört mot 2022,
               uppdaterat live per valdistrikt.
             </p>
+            {/* Källhänvisning — Valmyndighetens villkor: all data är fri att använda
+                förutsatt att Valmyndigheten anges som källa. */}
+            <p
+              className="mt-2 border-t border-slate-800 pt-2 text-[11px] text-slate-500"
+              title="All data är fri att använda, förutsatt att du anger Valmyndigheten som källa. Publiceras vartefter uppgifterna blir tillgängliga och datafilerna sammanställts."
+            >
+              Data från <span className="font-medium text-slate-400">Valmyndigheten</span>
+            </p>
           </div>
           <PartyLegend />
         </div>
 
-        {/* Departure board — live-ticker över inrapporterade distrikt (nedre vänster) */}
-        <DepartureBoard />
+        {/* Tre avgångstavlor — RD/RF/KF, alltid synliga (nedre vänster). Live-ticker
+            över inrapporterade distrikt + rapporteringsgrad per val. */}
+        <div className="pointer-events-none absolute bottom-4 left-4 flex flex-col gap-2">
+          {VALTYPER.map((vt) => (
+            <DepartureBoard key={vt} valtyp={vt} />
+          ))}
+        </div>
 
         {/* Resultattabell — höger panel. Bredden styrs av --panel-w (index.css), delad med
             kartkontrollernas offset så zoom-knapparna aldrig hamnar under panelen. */}
