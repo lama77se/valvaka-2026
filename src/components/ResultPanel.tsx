@@ -219,7 +219,10 @@ export function ResultPanel() {
         winner2022: winner2022Of(g.level, g.code),
       }
     })
-    return { childLevel: childLevelOf(valtyp, selectedArea.level), items }
+    // childLevel ur de FAKTISKA grupperna (inte den statiska kedjan) — en enkommuns-
+    // RD-valkrets kollapsar kommun-nivån → barnen är distrikt, inte kommuner.
+    const childLevel = (groups[0]?.level ?? childLevelOf(valtyp, selectedArea.level)) as ReturnType<typeof childLevelOf>
+    return { childLevel, items }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [valtyp, selectedArea, revision])
 
@@ -375,7 +378,10 @@ export function ResultPanel() {
                 <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-400">
                   Bryt ner — {CHILD_LABEL[drill.childLevel] ?? drill.childLevel}
                 </p>
-                <ul className="max-h-56 space-y-0.5 overflow-auto pr-1">
+                {/* Ingen egen max-höjd/scroll: listan växer och fyller panelen (inget
+                    ligger under den) — den yttre behållaren sköter ev. scroll (en scroll,
+                    inte nästlad). */}
+                <ul className="space-y-0.5 pr-1">
                   {drillItems.map((it) => {
                     const p = it.winner ? partyRef.current.get(it.winner) : null
                     const farg = p?.farg ?? REPORTED_NEUTRAL

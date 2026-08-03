@@ -498,16 +498,23 @@ Demonstrerat: RD/Riket och KF/Kommun med färgkodade ±andel + ±mandat.
   De exakta RF-mandaten ligger kvar på regionnivå (organet), verifierade 20/20.
 - **KF:s nivå under kommunen = VALKRETS (klar, omstrukturering).** Även kommunvalet delas
   per valkrets — men bara i **17 av 290 kommuner** (Stockholm 6, Linköping/Karlskrona/Borås
-  3, 14 st med 2); övriga 273 är EN valkrets = hela kommunen (kod "…00", namn = kommunnamn).
-  Nivån visas **enhetligt** (kommun → valkrets → distrikt) "eftersom nivån finns i datan"
-  (som RF:s 9 en-valkrets-regioner) — indelade kommuner får flera grupper, oindelade en.
-  Till skillnad mot RF ligger KF-valkretsen ALLTID inuti kommunen (koden är kommun-prefixad,
-  6 siffror) → ingen strukturell tvingande omstrukturering, men användaren ville ha
-  grupperingen. De 17 är exakt de med **3 %-spärr** i `seatConfig2026` (vallag: indelad →
-  3 %, oindelad → 2 %). `vk_kf` opaddat i DB ("88001") → `padStart(6)`. Samma mandat-läge
-  som RF: 2022-andel (`KF_byValkrets`, 314 st) + ungefärlig soffa, mandat "–"; exakta
-  KF-mandat ligger kvar på kommunnivå (289/290). Klick-navigation bevisad headless
-  (Stockholm → 6 valkretsar → distrikt, Olofström → 1). `verify:aggregate` steg 10c/10d.
+  3, 14 st med 2); övriga 273 är EN valkrets = hela kommunen (kod "…00"). KF-hierarkin är
+  kommun → valkrets → distrikt, men (se nedan, generell kollaps) syns valkretsnivån bara i
+  de 17 indelade; oindelade kommuner går direkt kommun → distrikt. De 17 är exakt de med
+  **3 %-spärr** i `seatConfig2026` (vallag: indelad → 3 %, oindelad → 2 %). `vk_kf` opaddat
+  i DB ("88001") → `padStart(6)`. Samma mandat-läge som RF: 2022-andel (`KF_byValkrets`,
+  314 st) + ungefärlig soffa, mandat "–"; exakta KF-mandat ligger kvar på kommunnivå
+  (289/290). `verify:aggregate` steg 10c/10d.
+- **Generell nivåkollaps i drill & breadcrumb (klar, användarprincip).** "Bryt ner" ska
+  ALLTID vara nästa FAKTISKT finare indelning. En mellannivå som inte delar sitt område i
+  ≥2 delar speglar bara föräldern och hoppas över — **enkommuns-valkrets** (RD Stockholms/
+  Göteborgs/Malmö kommun-valkrets → kommun-nivån utgår), **en oindelad kommuns enda valkrets**
+  (KF → valkretsnivån utgår), **en-valkrets-region** (RF Kronoberg m.fl. → valkretsnivån
+  utgår). Implementeras generellt: `childGroupsOf` descendar så länge en nivå ger exakt ETT
+  barn (= samma område) tills ≥2 barn eller distrikt; `ancestorsOf` släpper samma redundanta
+  mellannivåer via `splitCount` så breadcrumb matchar drillen. Bevisat headless för alla tre
+  valen (Sthlm-kommun-valkrets/Kronoberg/Olofström → distrikt; Norrbotten/Sthlm-region/Sthlm-
+  kommun → kommuner/valkretsar) + `verify:aggregate` steg 10a–c (kollaps + icke-kollaps).
 
 ---
 

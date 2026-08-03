@@ -187,67 +187,80 @@ check(hareOk && single.X === 100 && empty === 0, 'hareSeats fördelar exakt 100 
 // RD: riket → valkrets → kommun → distrikt. Kritiskt (advisor): Stockholm-splitten —
 // kommun 0180 och 0114 ligger i SAMMA län (01) men OLIKA valkretsar; prefix skulle slå ihop.
 console.log('\n--- 10a. Drill-down-hierarki RD (hierarchy.ts) ---')
-const hcodes = ['01800142', '01800256', '01140099', '25600011']
+// Stockholm-split: kommun 0180 (valkrets 01) och 0114 (valkrets 02) i SAMMA län men
+// olika valkretsar. Dessutom: valkrets 01 = EN kommun (Sthlm kommun) → kommun-nivån
+// kollapsar till distrikt; valkrets 29 = FLERA kommuner (län) → kommun-nivån behålls.
+const hcodes = ['01800142', '01800256', '01140099', '25600011', '25800011']
 const hIndex = {
-  districtToVk: new Map([['01800142', '01'], ['01800256', '01'], ['01140099', '02'], ['25600011', '29']]),
-  kommunToVk: new Map([['0180', '01'], ['0114', '02'], ['2560', '29']]),
-  vkToDistricts: new Map([['01', ['01800142', '01800256']], ['02', ['01140099']], ['29', ['25600011']]]),
+  districtToVk: new Map([['01800142', '01'], ['01800256', '01'], ['01140099', '02'], ['25600011', '29'], ['25800011', '29']]),
+  kommunToVk: new Map([['0180', '01'], ['0114', '02'], ['2560', '29'], ['2580', '29']]),
+  vkToDistricts: new Map([['01', ['01800142', '01800256']], ['02', ['01140099']], ['29', ['25600011', '25800011']]]),
 }
 const vks = childGroupsOf('RD', { level: 'riket', code: null }, hcodes, hIndex) // → valkretsar 01,02,29
-const vk01komm = childGroupsOf('RD', { level: 'valkrets', code: '01' }, hcodes, hIndex) // → BARA kommun 0180
-const kdist = childGroupsOf('RD', { level: 'kommun', code: '0180' }, hcodes, hIndex) // → 2 distrikt (prefix)
-const ancK = ancestorsOf('RD', { level: 'kommun', code: '0114' }, hIndex) // → riket › valkrets 02 › kommun 0114
-const ancD = ancestorsOf('RD', { level: 'distrikt', code: '01800256' }, hIndex) // distrikt → valkrets via districtToVk
+const vk01 = childGroupsOf('RD', { level: 'valkrets', code: '01' }, hcodes, hIndex) // enkommun → DISTRIKT (kollapsad)
+const vk29 = childGroupsOf('RD', { level: 'valkrets', code: '29' }, hcodes, hIndex) // läns-vk → KOMMUN (2560,2580)
+const kdist = childGroupsOf('RD', { level: 'kommun', code: '2560' }, hcodes, hIndex) // → distrikt (prefix)
+const ancDs = ancestorsOf('RD', { level: 'distrikt', code: '01800256' }, hIndex) // enkommuns-vk → kommun SLOPPAD
+const ancDm = ancestorsOf('RD', { level: 'distrikt', code: '25600011' }, hIndex) // läns-vk → kommun KVAR
+const ancK = ancestorsOf('RD', { level: 'kommun', code: '2560' }, hIndex) // → riket › valkrets 29 › kommun 2560
 const hRdOk =
   vks.length === 3 && vks.every((g) => g.level === 'valkrets') &&
-  vk01komm.length === 1 && vk01komm[0].code === '0180' && vk01komm[0].level === 'kommun' && // 0114 hamnar EJ här
-  kdist.length === 2 && kdist.every((g) => g.level === 'distrikt' && g.districts.length === 1) &&
-  ancK.length === 3 && ancK[0].level === 'riket' && ancK[1].level === 'valkrets' && ancK[1].code === '02' && ancK[2].code === '0114' &&
-  ancD.length === 4 && ancD[1].code === '01' && ancD[2].code === '0180' && ancD[3].code === '01800256' &&
+  vk01.length === 2 && vk01.every((g) => g.level === 'distrikt') && // enkommuns-valkrets → distrikt direkt
+  vk29.length === 2 && vk29.every((g) => g.level === 'kommun') && vk29.map((g) => g.code).sort().join() === '2560,2580' &&
+  kdist.length === 1 && kdist[0].level === 'distrikt' &&
+  ancDs.length === 3 && ancDs[1].level === 'valkrets' && ancDs[1].code === '01' && ancDs[2].level === 'distrikt' && // kommun slopad
+  ancDm.length === 4 && ancDm[1].code === '29' && ancDm[2].level === 'kommun' && ancDm[2].code === '2560' && ancDm[3].code === '25600011' &&
+  ancK.length === 3 && ancK[1].level === 'valkrets' && ancK[1].code === '29' && ancK[2].code === '2560' &&
   childLevelOf('RD', 'riket') === 'valkrets' && childLevelOf('KF', 'kommun') === 'valkrets' && childLevelOf('KF', 'distrikt') === null
-check(hRdOk, 'hierarchy RD: riket→valkrets (Stockholm-split åtskild), valkrets→kommun→distrikt, ancestors via kommun/districtToVk')
+check(hRdOk, 'hierarchy RD: enkommuns-valkrets (Sthlm) kollapsar kommun→distrikt; läns-valkrets (Norrbotten) behåller kommun; breadcrumb följer')
 
-// RF: region → VALKRETS → distrikt (kommun UTGÅR). Kritiskt: RF-valkretsen delar en
-// kommun — Sthlm kommun 0180 ligger i FLERA valkretsar (0101, 0104). Bevisas här med
-// två 0180-distrikt i olika valkretsar; region→valkrets filtreras på län-prefix.
-console.log('\n--- 10b. Drill-down-hierarki RF (region→valkrets→distrikt, Sthlm-split) ---')
+// RF: region → VALKRETS → distrikt (kommun UTGÅR). (1) RF-valkretsen delar en kommun —
+// Sthlm kommun 0180 ligger i FLERA valkretsar (0101, 0104). (2) GENERELL kollaps: en
+// region med bara EN valkrets (Norrbotten/2500) hoppar över valkretsnivån → distrikt.
+console.log('\n--- 10b. Drill-down-hierarki RF (region→valkrets→distrikt + en-vk-kollaps) ---')
 const rfCodes = ['01800142', '01800256', '01140099', '25600011']
 const rfIndex = {
   districtToVk: new Map([['01800142', '0101'], ['01800256', '0104'], ['01140099', '0112'], ['25600011', '2500']]),
   vkToDistricts: new Map([['0101', ['01800142']], ['0104', ['01800256']], ['0112', ['01140099']], ['2500', ['25600011']]]),
 }
-const rfVks = childGroupsOf('RF', { level: 'region', code: '01' }, rfCodes, rfIndex) // → 0101,0104,0112 (ej 2500)
+const rfVks = childGroupsOf('RF', { level: 'region', code: '01' }, rfCodes, rfIndex) // fler-vk → 0101,0104,0112
+const rfSingle = childGroupsOf('RF', { level: 'region', code: '25' }, rfCodes, rfIndex) // en-vk-region → DISTRIKT
 const rfVkDist = childGroupsOf('RF', { level: 'valkrets', code: '0101' }, rfCodes, rfIndex) // → distrikt 01800142
 const rfAnc = ancestorsOf('RF', { level: 'distrikt', code: '01800256' }, rfIndex) // → region 01 › valkrets 0104 › distrikt
+const rfAncSingle = ancestorsOf('RF', { level: 'distrikt', code: '25600011' }, rfIndex) // → region 25 › distrikt (vk slopad)
 const splitVk = rfIndex.districtToVk.get('01800142') !== rfIndex.districtToVk.get('01800256') // samma kommun, olika vk
 const hRfOk =
   rfVks.length === 3 && rfVks.every((g) => g.level === 'valkrets' && g.code.startsWith('01')) && // 2500 filtreras bort
+  rfSingle.length === 1 && rfSingle[0].level === 'distrikt' && rfSingle[0].code === '25600011' && // en-vk-region kollapsad
   rfVkDist.length === 1 && rfVkDist[0].level === 'distrikt' && rfVkDist[0].code === '01800142' &&
-  rfAnc.length === 3 && rfAnc[0].level === 'region' && rfAnc[0].code === '01' && rfAnc[1].level === 'valkrets' && rfAnc[1].code === '0104' && rfAnc[2].code === '01800256' &&
+  rfAnc.length === 3 && rfAnc[0].code === '01' && rfAnc[1].level === 'valkrets' && rfAnc[1].code === '0104' && rfAnc[2].code === '01800256' &&
+  rfAncSingle.length === 2 && rfAncSingle[0].level === 'region' && rfAncSingle[0].code === '25' && rfAncSingle[1].level === 'distrikt' && // vk slopad
   splitVk &&
   childLevelOf('RF', 'region') === 'valkrets' && childLevelOf('RF', 'valkrets') === 'distrikt' && childLevelOf('RF', 'distrikt') === null
-check(hRfOk, 'hierarchy RF: region→valkrets (prefix-filtrerat) →distrikt; Sthlm kommun 0180 i TVÅ valkretsar (0101≠0104)')
+check(hRfOk, 'hierarchy RF: fler-vk-region→valkrets (Sthlm 0180 i två vk); en-vk-region (Norrbotten) kollapsar → distrikt')
 
-// KF: kommun → VALKRETS → distrikt. Valkretsen ligger alltid INUTI kommunen; indelade
-// kommuner (Stockholm 0180 → 6) ger flera valkretsar, oindelade (Olofström 1060) EN
-// (kod "…00"). Nivån visas enhetligt "eftersom nivån finns" (som RF:s en-valkrets-regioner).
-console.log('\n--- 10c. Drill-down-hierarki KF (kommun→valkrets→distrikt) ---')
+// KF: kommun → VALKRETS → distrikt, MEN valkretsnivån syns bara där kommunen är indelad.
+// Indelad (Stockholm 0180 → flera vk) visar valkretsar; oindelad (Olofström 1060, EN vk
+// "…00") kollapsar → distrikt direkt (samma generella regel — "nästa finare indelning").
+console.log('\n--- 10c. Drill-down-hierarki KF (indelad → valkrets, oindelad → distrikt) ---')
 const kfCodes = ['01800142', '01800256', '10600011']
 const kfIndex = {
   districtToVk: new Map([['01800142', '018001'], ['01800256', '018004'], ['10600011', '106000']]),
   vkToDistricts: new Map([['018001', ['01800142']], ['018004', ['01800256']], ['106000', ['10600011']]]),
 }
-const kfDivided = childGroupsOf('KF', { level: 'kommun', code: '0180' }, kfCodes, kfIndex) // Sthlm → 2 valkretsar
-const kfSingle = childGroupsOf('KF', { level: 'kommun', code: '1060' }, kfCodes, kfIndex) // Olofström → 1 valkrets
+const kfDivided = childGroupsOf('KF', { level: 'kommun', code: '0180' }, kfCodes, kfIndex) // indelad → 2 valkretsar
+const kfSingle = childGroupsOf('KF', { level: 'kommun', code: '1060' }, kfCodes, kfIndex) // oindelad → DISTRIKT (kollaps)
 const kfVkDist = childGroupsOf('KF', { level: 'valkrets', code: '018001' }, kfCodes, kfIndex) // → distrikt
-const kfAnc = ancestorsOf('KF', { level: 'distrikt', code: '01800256' }, kfIndex) // → kommun 0180 › valkrets 018004 › distrikt
+const kfAncDiv = ancestorsOf('KF', { level: 'distrikt', code: '01800256' }, kfIndex) // → kommun › valkrets › distrikt
+const kfAncSingle = ancestorsOf('KF', { level: 'distrikt', code: '10600011' }, kfIndex) // → kommun › distrikt (vk slopad)
 const hKfOk =
   kfDivided.length === 2 && kfDivided.every((g) => g.level === 'valkrets' && g.code.startsWith('0180')) &&
-  kfSingle.length === 1 && kfSingle[0].code === '106000' && kfSingle[0].level === 'valkrets' &&
+  kfSingle.length === 1 && kfSingle[0].level === 'distrikt' && kfSingle[0].code === '10600011' && // oindelad kollapsad
   kfVkDist.length === 1 && kfVkDist[0].level === 'distrikt' && kfVkDist[0].code === '01800142' &&
-  kfAnc.length === 3 && kfAnc[0].level === 'kommun' && kfAnc[0].code === '0180' && kfAnc[1].level === 'valkrets' && kfAnc[1].code === '018004' && kfAnc[2].code === '01800256' &&
+  kfAncDiv.length === 3 && kfAncDiv[0].code === '0180' && kfAncDiv[1].level === 'valkrets' && kfAncDiv[1].code === '018004' && kfAncDiv[2].code === '01800256' &&
+  kfAncSingle.length === 2 && kfAncSingle[0].level === 'kommun' && kfAncSingle[0].code === '1060' && kfAncSingle[1].level === 'distrikt' && // vk slopad
   childLevelOf('KF', 'kommun') === 'valkrets' && childLevelOf('KF', 'valkrets') === 'distrikt'
-check(hKfOk, 'hierarchy KF: kommun→valkrets→distrikt; indelad Sthlm 0180 → 2 vk, oindelad 1060 → 1 vk (…00)')
+check(hKfOk, 'hierarchy KF: indelad kommun (Sthlm) → valkretsar; oindelad (Olofström) kollapsar → distrikt; breadcrumb följer')
 
 // 10d) RF/KF-valkretsjämförelse mot 2022: andel wirad, MANDAT tomt ("–").
 console.log('\n--- 10d. RF/KF-valkrets ±2022 (comparison-2022.json) ---')

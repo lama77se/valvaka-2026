@@ -14,6 +14,13 @@
 // ett rent prefix av valdistriktskoden → översätts via ett förberäknat index.
 // distrikt→valkrets är ALLTID entydigt; kommun→valkrets gäller bara RD (valkrets =
 // hela kommuner) — RF/KF härleder valkretsen ur distriktet i stället.
+//
+// GENERELL REGEL (både drill och breadcrumb): en nivå visas bara om den DELAR sitt
+// område i ≥2 delar. Nivåer som speglar föräldern (enkommuns-valkrets = kommun, en
+// oindelad kommuns enda valkrets = kommun, en-valkrets-region = region) hoppas över —
+// "Bryt ner" är alltid nästa FAKTISKT finare indelning. Alltså syns valkretsnivån bara
+// där den verkligen delar (RD läns-valkretsar, RF fler-vk-regioner, 17 indelade KF-
+// kommuner); annars går man direkt till distrikt.
 import type { Level } from './aggregate'
 import type { Valtyp } from './results'
 
@@ -56,15 +63,40 @@ function codeForLevel(level: Level, area: HArea, index?: AreaIndex): string | nu
   return len != null && area.code ? area.code.slice(0, len) : null
 }
 
-// Path top→current (inklusive). T.ex. RD kommun 2560 → [riket, valkrets 29, kommun 2560];
-// RF distrikt 0180xxxx → [region 01, valkrets 0101, distrikt 0180xxxx].
+// Hur många barn på `childLevel` området (`parent`) delas i? 1 ⇒ nivån speglar bara
+// föräldern (ingen riktig indelning) och ska hoppas över i både drill och breadcrumb.
+// valkrets: antal vk-koder under förälderns prefix (riket = alla). kommun: antal
+// distinkta kommuner i valkretsen (RD). Övriga nivåer delar alltid (returnera >1).
+function splitCount(parent: HArea, childLevel: Level, index?: AreaIndex): number {
+  if (!index) return 2
+  if (childLevel === 'valkrets') {
+    const prefix = parent.code ?? ''
+    let n = 0
+    for (const code of index.vkToDistricts.keys()) if (!prefix || code.startsWith(prefix)) n++
+    return n
+  }
+  if (childLevel === 'kommun') {
+    const ds = index.vkToDistricts.get(parent.code ?? '') ?? []
+    return new Set(ds.map((d) => d.slice(0, 4))).size
+  }
+  return 2
+}
+
+// Path top→current (inklusive), MED redundanta mellannivåer bortsläppta så breadcrumb
+// matchar drillen. En mellannivå som inte delar sin förälder (enkommuns-valkrets =
+// kommun, oindelad kommuns valkrets = kommun, en-valkrets-region = region) speglar bara
+// föräldern och utelämnas. Toppen och det valda området behålls alltid.
+// T.ex. RD Sthlm-distrikt → [riket, valkrets(Sthlms kommun), distrikt] (kommun slopad);
+// RD Norrbottens-distrikt → [riket, valkrets(Norrbotten), kommun, distrikt].
 export function ancestorsOf(valtyp: Valtyp, area: HArea, index?: AreaIndex): HArea[] {
   const chain = HIERARCHY[valtyp]
   const idx = chain.indexOf(area.level)
   if (idx < 0) return [area]
-  const out: HArea[] = []
-  for (let i = 0; i <= idx; i++) out.push({ level: chain[i], code: codeForLevel(chain[i], area, index) })
-  return out
+  const full: HArea[] = []
+  for (let i = 0; i <= idx; i++) full.push({ level: chain[i], code: codeForLevel(chain[i], area, index) })
+  return full.filter(
+    (node, i) => i === 0 || i === full.length - 1 || splitCount(full[i - 1], node.level, index) > 1,
+  )
 }
 
 // Nästa nivå ned i kedjan (barnnivån), eller null om lövet (distrikt).
@@ -90,14 +122,11 @@ function groupByPrefix(codes: Iterable<string>, len: number, level: Level) {
   return order.map((code) => ({ level, code, districts: map.get(code)! }))
 }
 
-// Barnen (på barnnivån) inom området, var och en med sina distrikt. Prefix-rent
-// utom valkretshoppen, som går via indexet.
-export function childGroupsOf(
-  valtyp: Valtyp,
-  area: HArea,
-  allCodes: Iterable<string>,
-  index?: AreaIndex,
-): { level: Level; code: string; districts: string[] }[] {
+type ChildGroup = { level: Level; code: string; districts: string[] }
+
+// Barnen på den OMEDELBARA barnnivån (en nivå ned i kedjan). Prefix-rent utom
+// valkretshoppen, som går via indexet.
+function immediateChildGroups(valtyp: Valtyp, area: HArea, allCodes: Iterable<string>, index?: AreaIndex): ChildGroup[] {
   const childLevel = childLevelOf(valtyp, area.level)
   if (!childLevel) return []
 
@@ -112,7 +141,7 @@ export function childGroupsOf(
       .map(([code, districts]) => ({ level: 'valkrets' as Level, code, districts }))
   }
   // valkrets → barn: distrikten i valkretsen, grupperade på barnnivåns prefixlängd
-  // (RD valkrets→kommun = 4, RF valkrets→distrikt = 8 → varje distrikt sin egen grupp).
+  // (RD valkrets→kommun = 4, RF/KF valkrets→distrikt = 8 → varje distrikt sin grupp).
   if (area.level === 'valkrets') {
     const len = CODE_LEN[childLevel]
     if (len == null) return []
@@ -125,4 +154,18 @@ export function childGroupsOf(
   const filtered: string[] = []
   for (const vd of allCodes) if (!prefix || vd.startsWith(prefix)) filtered.push(vd)
   return groupByPrefix(filtered, len, childLevel)
+}
+
+// "Bryt ner" = nästa MENINGSFULLA nivå ned. Regel (användarens princip): breakdown
+// är alltid nästa FAKTISKT finare indelning — hoppa över nivåer som inte delar
+// området (en valkrets som ÄR en kommun, en oindelad kommuns enda valkrets, en
+// en-valkrets-region: EXAKT ett barn = samma område, ingen nedbrytning). Descendar
+// tills ≥2 barn eller distrikt (lövet). Distrikt visas även om det bara är ett.
+export function childGroupsOf(valtyp: Valtyp, area: HArea, allCodes: Iterable<string>, index?: AreaIndex): ChildGroup[] {
+  let a = area
+  for (;;) {
+    const groups = immediateChildGroups(valtyp, a, allCodes, index)
+    if (groups.length !== 1 || groups[0].level === 'distrikt') return groups
+    a = { level: groups[0].level, code: groups[0].code } // enda barnet = samma område → descenda
+  }
 }
