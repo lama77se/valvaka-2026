@@ -100,8 +100,8 @@ Under uppbyggnad. Klart hittills:
   rAF-flush → inga extra renders).
 
 - **Drill-down + aggregat-paneler (klar).** Panelen har en **breadcrumb** med
-  klickbara förfäder (navigera uppåt) och en **"Bryt ner"-lista** över det valda
-  områdets barn (ledande parti + rapporteringsgrad, klick → drilla nedåt). Hierarkin
+  klickbara förfäder (navigera uppåt) och en **"Bryt ner"-matris** över det valda
+  områdets barn (klick på rad → drilla nedåt). Hierarkin
   är valtyp-medveten: **RD: riket → valkrets → kommun → distrikt** (riksdagens riktiga
   nivå under Riket är de **29 valkretsarna**, inte län — mandaten delas ut per valkrets
   och val.se bryter ner RD så); **RF: region → valkrets → distrikt** (regionvalet delas
@@ -119,8 +119,13 @@ Under uppbyggnad. Klart hittills:
   prefixade — tomma koder, t.ex. Gotland utan regionval, faller bort). Övriga hopp är
   prefix-rena (`lib/hierarchy.ts`, testat i `verify:aggregate` steg 10 inkl. Stockholm-
   splittarna + kollapsfallen). Klick-navigation bevisad headless (RD/RF/KF: enkommuns-/en-
-  vk-nivåer → distrikt; fler-dels → valkretsar/kommuner). Varje barn visar **både 2026 och
-  2022** som jämförelse (ledande parti 2026 / räknat-status + `'22`-vinnaren).
+  vk-nivåer → distrikt; fler-dels → valkretsar/kommuner). Varje barnrad är en **per-parti-
+  matris**: en kolumn per riksdagsparti (spektrumordning V·S·MP·C·L·KD·M·SD, färgade rubriker)
+  med **andel i en decimal** för live-året + **▲/▼-delta mot 2022** under; radens vänsterkant
+  färgas av ledande parti och en "Räkn."-kolumn visar rapporteringsgrad. Innan ett område
+  har 2026-röster visas 2022 års andel med en tydlig **"2022"-etikett**; när rösterna kommer
+  byts talet till 2026-andelen + deltat (område för område). 2022 per parti hämtas ur
+  `comparison-2022.json` (aggregatnivåer) resp. `district_result_2022` (distriktsnivå).
 
 - **Riksdagsmandat per valkrets — 2022 (klar).** På valkretsnivå visar tabellen 2022 års
   **faktiska riksdagsmandat** per parti (ur Valmyndighetens officiella facit, matchar
