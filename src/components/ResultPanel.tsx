@@ -410,7 +410,13 @@ export function ResultPanel() {
                     </tr>
                   </thead>
                   <tbody>
-                    {drillItems.map((it) => (
+                    {drillItems.map((it) => {
+                      // I en delvis inrapporterad lista (anyLive) visar rader utan egna
+                      // 2026-röster fortfarande 2022 års siffror. Utan markör ser de
+                      // identiska ut med live-2026-rader → ambertona siffrorna + '22-tagg
+                      // (samma språk som rubrikens "2022 års resultat"-badge).
+                      const stale = drill.anyLive && !it.live
+                      return (
                       <tr
                         key={it.code}
                         className="cursor-pointer hover:bg-slate-800/50"
@@ -422,16 +428,22 @@ export function ResultPanel() {
                           title={nameOf(it)}
                         >
                           {nameOf(it)}
+                          {stale && (
+                            <span className="ml-1 rounded bg-amber-500/15 px-1 text-[9px] font-semibold text-amber-300/90" title="Inga 2026-röster än — visar 2022 års resultat">
+                              ’22
+                            </span>
+                          )}
                         </td>
                         {drill.cols.map((c) => {
                           const v26 = it.a26[c.fork]
                           const v22 = it.a22[c.fork]
                           const main = it.live ? v26 : v22
                           const d = it.live && v26 != null && v22 != null ? (v26 - v22) * 100 : null
+                          const has = main && main > 0.0005
                           return (
                             <td key={c.fork} className="px-0.5 py-0.5 text-center align-top leading-tight">
-                              <div className={main && main > 0.0005 ? 'text-slate-200' : 'text-slate-600'}>
-                                {main && main > 0.0005 ? (main * 100).toFixed(1) : '·'}
+                              <div className={!has ? 'text-slate-600' : stale ? 'italic text-amber-300/70' : 'text-slate-200'}>
+                                {has ? (main * 100).toFixed(1) : '·'}
                               </div>
                               {d != null && Math.abs(d) >= 0.05 && (
                                 <div className={`text-[9px] leading-none ${d > 0 ? 'text-emerald-400/80' : 'text-rose-400/80'}`}>
@@ -452,7 +464,7 @@ export function ResultPanel() {
                           )}
                         </td>
                       </tr>
-                    ))}
+                    )})}
                   </tbody>
                 </table>
               </div>
