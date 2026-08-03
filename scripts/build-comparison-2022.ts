@@ -144,37 +144,39 @@ for (const [code, votes] of loadVotes('RF', 2)) {
   RF[code] = areaEntry(votes, rfSeats[code], 0.03)
 }
 
-// RF — per VALKRETS (regionvalets nivå under regionen). Till skillnad mot RD är
-// RF-valkretsen INTE hela kommuner — Stockholm delas i 12 valkretsar tvärs över
-// kommungränser — så nästa nivå under regionen MÅSTE vara valkrets, inte kommun.
-// Röster + namn ur rostern (vk-kod r[7], namn r[8]). Valkretskoden är län-prefixad
-// och PADDAS till 4 siffror så den matchar `district.vk_rf` (normaliseras likadant
-// i klienten). MANDAT lämnas tomt: regionfullmäktige är organet, inte valkretsen —
-// precis som RD-mandat inte fördelas per kommun. → "–" i tabellen, ungefärlig
-// procent-soffa i UI:t. Gotland (09) saknar RF och har tom vk_rf → faller bort.
-function loadRfValkrets() {
-  const wb = XLSX.readFile(`${DIR}/roster-rf-2022.xlsx`)
-  const rows = XLSX.utils.sheet_to_json<string[]>(wb.Sheets['roster_RF'], { header: 1, raw: false, defval: '' }).slice(1)
+// Röster + namn per VALKRETS ur en roster (vk-kod r[7], namn r[8]). Valkretskoden
+// PADDAS (padLen) så den matchar `district.vk_<valtyp>` (normaliseras likadant i
+// klienten) — annars faller koder med inledande nolla tyst bort. Används för både
+// RF och KF: bägge har valkretsnivå under sitt organ men publicerar INGEN per-parti-
+// per-valkrets-mandatfil (facit aggregerar till region/kommun), så mandat lämnas tomt
+// → "–" + ungefärlig procent-soffa i UI:t. Tom vk (t.ex. Gotland saknar RF) faller bort.
+function loadValkretsAndel(valtyp: 'RF' | 'KF', padLen: number) {
+  const wb = XLSX.readFile(`${DIR}/roster-${valtyp.toLowerCase()}-2022.xlsx`)
+  const rows = XLSX.utils.sheet_to_json<string[]>(wb.Sheets[`roster_${valtyp}`], { header: 1, raw: false, defval: '' }).slice(1)
   const votes = new Map<string, PartyVotes>()
   const namn = new Map<string, string>()
   for (const r of rows) {
     const raw = t(r[7])
-    if (!raw) continue // tom valkretskod (Gotland) → ingen RF-valkrets
-    const vk = raw.padStart(4, '0')
+    if (!raw) continue // tom valkretskod → ingen valkrets
+    const vk = raw.padStart(padLen, '0')
     const parti = t(r[9])
     const roster = Number(t(r[10])) || 0
     if (!parti || INVALID.has(parti)) continue
-    namn.set(vk, t(r[8]))
+    if (t(r[8])) namn.set(vk, t(r[8]))
     const pv = votes.get(vk) ?? votes.set(vk, {}).get(vk)!
     pv[parti] = (pv[parti] ?? 0) + roster
   }
   return { votes, namn }
 }
-const { votes: rfVkVotes, namn: rfVkNamn } = loadRfValkrets()
+
+// RF — per VALKRETS (regionvalets nivå under regionen). Till skillnad mot RD är
+// RF-valkretsen INTE hela kommuner (Stockholm delas i 12 valkretsar tvärs över
+// kommungränser). Län-prefixad, 4 siffror.
+const { votes: rfVkVotes, namn: rfVkNamn } = loadValkretsAndel('RF', 4)
 const RF_byValkrets: Record<string, ReturnType<typeof andelOnly>> = {}
 const RF_valkretsNamn: Record<string, string> = {}
 for (const [code, votes] of rfVkVotes) {
-  RF_byValkrets[code] = andelOnly(votes) // mandat tomt — organet är regionen
+  RF_byValkrets[code] = andelOnly(votes)
   RF_valkretsNamn[code] = rfVkNamn.get(code) ?? code
 }
 
@@ -185,11 +187,22 @@ for (const [code, votes] of loadVotes('KF', 4)) {
   KF[code] = areaEntry(votes, kfSeats[code], kfRows[code] > 1 ? 0.03 : 0.02)
 }
 
-const out = { RD, RD_byValkrets, RD_valkretsNamn, RD_byKommun, RF, RF_byValkrets, RF_valkretsNamn, KF }
+// KF — per VALKRETS. 17 kommuner är indelade i valkretsar (Stockholm 6, …); de 273
+// övriga är EN valkrets = hela kommunen (kod slutar "…00"). Koden är kommun-prefixad
+// (kommun4 + 2 siffror), 6 siffror. Organet är kommunen → mandat tomt (som RF).
+const { votes: kfVkVotes, namn: kfVkNamn } = loadValkretsAndel('KF', 6)
+const KF_byValkrets: Record<string, ReturnType<typeof andelOnly>> = {}
+const KF_valkretsNamn: Record<string, string> = {}
+for (const [code, votes] of kfVkVotes) {
+  KF_byValkrets[code] = andelOnly(votes)
+  KF_valkretsNamn[code] = kfVkNamn.get(code) ?? code
+}
+
+const out = { RD, RD_byValkrets, RD_valkretsNamn, RD_byKommun, RF, RF_byValkrets, RF_valkretsNamn, KF, KF_byValkrets, KF_valkretsNamn }
 writeFileSync('public/comparison-2022.json', JSON.stringify(out))
 const size = Math.round(JSON.stringify(out).length / 1024)
 console.log(
-  `[comparison] public/comparison-2022.json — RD (riket + ${Object.keys(RD_byValkrets).length} valkretsar + ${Object.keys(RD_byKommun).length} kommuner), RF (${Object.keys(RF).length} regioner + ${Object.keys(RF_byValkrets).length} valkretsar), KF ${Object.keys(KF).length} kommuner (~${size} kB)`,
+  `[comparison] public/comparison-2022.json — RD (riket + ${Object.keys(RD_byValkrets).length} valkretsar + ${Object.keys(RD_byKommun).length} kommuner), RF (${Object.keys(RF).length} regioner + ${Object.keys(RF_byValkrets).length} valkretsar), KF (${Object.keys(KF).length} kommuner + ${Object.keys(KF_byValkrets).length} valkretsar) (~${size} kB)`,
 )
 console.log('Stickprov RD: S andel', RD.andel['Arbetarepartiet-Socialdemokraterna'], 'mandat', RD.mandat['Arbetarepartiet-Socialdemokraterna'])
 console.log(
@@ -201,4 +214,9 @@ console.log(
   'Stickprov RF-valkrets:', Object.keys(RF_byValkrets).length, 'valkretsar |',
   '0112', RF_valkretsNamn['0112'], '→ S-andel', RF_byValkrets['0112']?.andel['Arbetarepartiet-Socialdemokraterna'],
   '| 2500', RF_valkretsNamn['2500'],
+)
+console.log(
+  'Stickprov KF-valkrets:', Object.keys(KF_byValkrets).length, 'valkretsar |',
+  'Sthlm 018001', KF_valkretsNamn['018001'], '→ S-andel', KF_byValkrets['018001']?.andel['Arbetarepartiet-Socialdemokraterna'],
+  '| enkel-vk 106000', KF_valkretsNamn['106000'],
 )

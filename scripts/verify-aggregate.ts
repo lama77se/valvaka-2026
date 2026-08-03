@@ -204,7 +204,7 @@ const hRdOk =
   kdist.length === 2 && kdist.every((g) => g.level === 'distrikt' && g.districts.length === 1) &&
   ancK.length === 3 && ancK[0].level === 'riket' && ancK[1].level === 'valkrets' && ancK[1].code === '02' && ancK[2].code === '0114' &&
   ancD.length === 4 && ancD[1].code === '01' && ancD[2].code === '0180' && ancD[3].code === '01800256' &&
-  childLevelOf('RD', 'riket') === 'valkrets' && childLevelOf('KF', 'kommun') === 'distrikt' && childLevelOf('KF', 'distrikt') === null
+  childLevelOf('RD', 'riket') === 'valkrets' && childLevelOf('KF', 'kommun') === 'valkrets' && childLevelOf('KF', 'distrikt') === null
 check(hRdOk, 'hierarchy RD: riket→valkrets (Stockholm-split åtskild), valkrets→kommun→distrikt, ancestors via kommun/districtToVk')
 
 // RF: region → VALKRETS → distrikt (kommun UTGÅR). Kritiskt: RF-valkretsen delar en
@@ -228,18 +228,45 @@ const hRfOk =
   childLevelOf('RF', 'region') === 'valkrets' && childLevelOf('RF', 'valkrets') === 'distrikt' && childLevelOf('RF', 'distrikt') === null
 check(hRfOk, 'hierarchy RF: region→valkrets (prefix-filtrerat) →distrikt; Sthlm kommun 0180 i TVÅ valkretsar (0101≠0104)')
 
-// 10c) RF-valkretsjämförelse mot 2022: 62 valkretsar, andel wirad, MANDAT tomt ("–").
-console.log('\n--- 10c. RF-valkrets ±2022 (comparison-2022.json) ---')
+// KF: kommun → VALKRETS → distrikt. Valkretsen ligger alltid INUTI kommunen; indelade
+// kommuner (Stockholm 0180 → 6) ger flera valkretsar, oindelade (Olofström 1060) EN
+// (kod "…00"). Nivån visas enhetligt "eftersom nivån finns" (som RF:s en-valkrets-regioner).
+console.log('\n--- 10c. Drill-down-hierarki KF (kommun→valkrets→distrikt) ---')
+const kfCodes = ['01800142', '01800256', '10600011']
+const kfIndex = {
+  districtToVk: new Map([['01800142', '018001'], ['01800256', '018004'], ['10600011', '106000']]),
+  vkToDistricts: new Map([['018001', ['01800142']], ['018004', ['01800256']], ['106000', ['10600011']]]),
+}
+const kfDivided = childGroupsOf('KF', { level: 'kommun', code: '0180' }, kfCodes, kfIndex) // Sthlm → 2 valkretsar
+const kfSingle = childGroupsOf('KF', { level: 'kommun', code: '1060' }, kfCodes, kfIndex) // Olofström → 1 valkrets
+const kfVkDist = childGroupsOf('KF', { level: 'valkrets', code: '018001' }, kfCodes, kfIndex) // → distrikt
+const kfAnc = ancestorsOf('KF', { level: 'distrikt', code: '01800256' }, kfIndex) // → kommun 0180 › valkrets 018004 › distrikt
+const hKfOk =
+  kfDivided.length === 2 && kfDivided.every((g) => g.level === 'valkrets' && g.code.startsWith('0180')) &&
+  kfSingle.length === 1 && kfSingle[0].code === '106000' && kfSingle[0].level === 'valkrets' &&
+  kfVkDist.length === 1 && kfVkDist[0].level === 'distrikt' && kfVkDist[0].code === '01800142' &&
+  kfAnc.length === 3 && kfAnc[0].level === 'kommun' && kfAnc[0].code === '0180' && kfAnc[1].level === 'valkrets' && kfAnc[1].code === '018004' && kfAnc[2].code === '01800256' &&
+  childLevelOf('KF', 'kommun') === 'valkrets' && childLevelOf('KF', 'valkrets') === 'distrikt'
+check(hKfOk, 'hierarchy KF: kommun→valkrets→distrikt; indelad Sthlm 0180 → 2 vk, oindelad 1060 → 1 vk (…00)')
+
+// 10d) RF/KF-valkretsjämförelse mot 2022: andel wirad, MANDAT tomt ("–").
+console.log('\n--- 10d. RF/KF-valkrets ±2022 (comparison-2022.json) ---')
 try {
-  const cmpRf = JSON.parse(readFileSync('public/comparison-2022.json', 'utf8')) as Comparison2022
-  const nVk = Object.keys(cmpRf.RF_byValkrets ?? {}).length
-  check(nVk === 62, 'RF_byValkrets: 62 valkretsar', String(nVk))
-  check(Object.keys(cmpRf.RF_valkretsNamn ?? {}).length === 62 && (cmpRf.RF_valkretsNamn?.['0112'] === 'Nordväst'), 'RF_valkretsNamn: 62 namn (0112 = Nordväst)')
-  const rfVkA = applyComparison(buildRows({}, emptyParty, 0.03), 'RF', 'valkrets', '0112', cmpRf, emptyParty)
+  const cmpVk = JSON.parse(readFileSync('public/comparison-2022.json', 'utf8')) as Comparison2022
+  const nRfVk = Object.keys(cmpVk.RF_byValkrets ?? {}).length
+  check(nRfVk === 62, 'RF_byValkrets: 62 valkretsar', String(nRfVk))
+  check(Object.keys(cmpVk.RF_valkretsNamn ?? {}).length === 62 && (cmpVk.RF_valkretsNamn?.['0112'] === 'Nordväst'), 'RF_valkretsNamn: 62 namn (0112 = Nordväst)')
+  const rfVkA = applyComparison(buildRows({}, emptyParty, 0.03), 'RF', 'valkrets', '0112', cmpVk, emptyParty)
   check(rfVkA.rows.length >= 1 && rfVkA.rows.every((r) => r.andel2022 != null), 'RF valkrets 0112: 2022-andel wirad', `${rfVkA.rows.length} rader`)
   check(rfVkA.rows.every((r) => r.mandat2022 == null) && rfVkA.totalMandat2022 == null, 'RF valkrets 0112: 2022-mandat "–" (organet är regionen)')
+  const nKfVk = Object.keys(cmpVk.KF_byValkrets ?? {}).length
+  check(nKfVk === 314, 'KF_byValkrets: 314 valkretsar (273 en-per-kommun + 41 i 17 indelade)', String(nKfVk))
+  check(cmpVk.KF_valkretsNamn?.['018001'] === '1 Södermalm-Enskede' && cmpVk.KF_valkretsNamn?.['106000'] === 'Olofström', 'KF_valkretsNamn: indelad + oindelad (…00 = kommunnamn)')
+  const kfVkA = applyComparison(buildRows({}, emptyParty, 0.03), 'KF', 'valkrets', '018001', cmpVk, emptyParty)
+  check(kfVkA.rows.length >= 1 && kfVkA.rows.every((r) => r.andel2022 != null), 'KF valkrets 018001: 2022-andel wirad', `${kfVkA.rows.length} rader`)
+  check(kfVkA.rows.every((r) => r.mandat2022 == null) && kfVkA.totalMandat2022 == null, 'KF valkrets 018001: 2022-mandat "–" (organet är kommunen)')
 } catch (e) {
-  check(false, `RF-valkrets-test kastade (${(e as Error).message})`)
+  check(false, `RF/KF-valkrets-test kastade (${(e as Error).message})`)
 }
 
 console.log(ok ? '\n✅ AGGREGAT + MANDAT + ±2022 MATCHAR FACIT / FÖRVÄNTAT' : '\n❌ se FEL ovan')

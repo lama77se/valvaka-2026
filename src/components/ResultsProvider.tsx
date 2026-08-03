@@ -253,6 +253,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
       const lanMap = new Map<string, string>()
       const idxRD: AreaIndex = { districtToVk: new Map(), vkToDistricts: new Map(), kommunToVk: new Map() }
       const idxRF: AreaIndex = { districtToVk: new Map(), vkToDistricts: new Map() }
+      const idxKF: AreaIndex = { districtToVk: new Map(), vkToDistricts: new Map() }
       const PAGE = 1000
       for (let from = 0; !cancelled; from += PAGE) {
         const { data, error } = await supabase
@@ -269,7 +270,8 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
           // ("112") och TOMSTRÄNG för Gotland (inget regionval) → 4 siffror, tomt = null.
           const vkRd = d.vk_rd != null && String(d.vk_rd).trim() !== '' ? String(d.vk_rd).padStart(2, '0') : null
           const vkRf = String(d.vk_rf ?? '').trim() !== '' ? String(d.vk_rf).padStart(4, '0') : null
-          meta.set(vd, { vk_rd: vkRd, vk_rf: vkRf, vk_kf: d.vk_kf })
+          const vkKf = String(d.vk_kf ?? '').trim() !== '' ? String(d.vk_kf).padStart(6, '0') : null
+          meta.set(vd, { vk_rd: vkRd, vk_rf: vkRf, vk_kf: vkKf })
           namn.set(vd, d.namn ?? vd)
           kommunMap.set(vd.slice(0, 4), d.kommun ?? vd.slice(0, 4))
           lanMap.set(vd.slice(0, 2), d.lan ?? vd.slice(0, 2))
@@ -281,6 +283,10 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
           if (vkRf) {
             idxRF.districtToVk.set(vd, vkRf) // RF: distrikt → valkrets (entydigt, kan dela en kommun)
             ;(idxRF.vkToDistricts.get(vkRf) ?? idxRF.vkToDistricts.set(vkRf, []).get(vkRf)!).push(vd)
+          }
+          if (vkKf) {
+            idxKF.districtToVk.set(vd, vkKf) // KF: distrikt → valkrets (alltid inuti kommunen)
+            ;(idxKF.vkToDistricts.get(vkKf) ?? idxKF.vkToDistricts.set(vkKf, []).get(vkKf)!).push(vd)
           }
         }
         if (data.length < PAGE) break
@@ -300,17 +306,18 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
       allCodesRef.current = codes
       groupsRef.current = buildGroups(codes)
       districtComparisonRef.current = cmp
-      areaIndexRef.current = { RD: idxRD, RF: idxRF, KF: emptyIndex() }
+      areaIndexRef.current = { RD: idxRD, RF: idxRF, KF: idxKF }
       const bySv = (a: NamedCode, b: NamedCode) => a.name.localeCompare(b.name, 'sv')
       setKommuner([...kommunMap.entries()].map(([code, name]) => ({ code, name })).sort(bySv))
       setRegioner([...lanMap.entries()].map(([code, name]) => ({ code, name })).sort(bySv))
-      // Valkretslistor per valtyp: koder ur datan, namn ur comparison-2022 (RD/RF).
+      // Valkretslistor per valtyp: koder ur datan, namn ur comparison-2022 (RD/RF/KF).
       const rdNamn = comparisonRef.current?.RD_valkretsNamn ?? {}
       const rfNamn = comparisonRef.current?.RF_valkretsNamn ?? {}
+      const kfNamn = comparisonRef.current?.KF_valkretsNamn ?? {}
       valkretsListRef.current = {
         RD: [...idxRD.vkToDistricts.keys()].map((code) => ({ code, name: rdNamn[code] ?? code })).sort(bySv),
         RF: [...idxRF.vkToDistricts.keys()].map((code) => ({ code, name: rfNamn[code] ?? code })).sort(bySv),
-        KF: [],
+        KF: [...idxKF.vkToDistricts.keys()].map((code) => ({ code, name: kfNamn[code] ?? code })).sort(bySv),
       }
       // Metadata redo → kartan får rätt färger (partyRef) och tabellen sitt aggregat.
       setSnapshotVersion((v) => v + 1)

@@ -1,23 +1,26 @@
 // Drill-down-hierarki för områdesnavigering (breadcrumb uppåt + barn-nedbrytning).
 // Ren logik (ingen IO/React) → testbar i verify-aggregate.
 //
-// Både RD och RF har VALKRETS som nivå under sitt topporgan, men de skiljer sig:
+// Alla tre valtyperna har VALKRETS som nivå under sitt topporgan, men de skiljer sig:
 //   • RD: riket → valkrets (29) → kommun → distrikt. Valkretsen byggs av HELA
 //     kommuner, så kommun4→valkrets är entydigt (kommunToVk). Riket → alla valkretsar.
 //   • RF: region → valkrets (62) → distrikt. Valkretsen är INTE hela kommuner —
 //     Stockholm delas i 12 valkretsar tvärs över kommungränser — så kommun-nivån
-//     UTGÅR; man går region → valkrets → distrikt. RF-valkretskoden är län-prefixad
-//     (4 siffror) så region→valkrets filtreras på prefix.
-// Valkrets är aldrig ett rent prefix av valdistriktskoden → översätts via ett
-// förberäknat index. distrikt→valkrets är ALLTID entydigt (ett distrikt hör till
-// exakt en valkrets); kommun→valkrets gäller bara RD (där valkrets = hela kommuner).
+//     UTGÅR; region → valkrets → distrikt. RF-valkretskoden är län-prefixad (4 siffror).
+//   • KF: kommun → valkrets → distrikt. Valkretsen ligger ALLTID inuti en kommun;
+//     17 kommuner är indelade (Stockholm 6, …), övriga 273 är EN valkrets = hela
+//     kommunen (kod "…00"). KF-valkretskoden är kommun-prefixad (6 siffror).
+// RF/KF filtrerar förälder→valkrets på prefix (län resp. kommun). Valkrets är aldrig
+// ett rent prefix av valdistriktskoden → översätts via ett förberäknat index.
+// distrikt→valkrets är ALLTID entydigt; kommun→valkrets gäller bara RD (valkrets =
+// hela kommuner) — RF/KF härleder valkretsen ur distriktet i stället.
 import type { Level } from './aggregate'
 import type { Valtyp } from './results'
 
 export const HIERARCHY: Record<Valtyp, Level[]> = {
   RD: ['riket', 'valkrets', 'kommun', 'distrikt'],
   RF: ['region', 'valkrets', 'distrikt'],
-  KF: ['kommun', 'distrikt'],
+  KF: ['kommun', 'valkrets', 'distrikt'],
 }
 
 // Kodlängd (prefix av valdistriktskod) per nivå. riket = hela landet; valkrets är
@@ -98,11 +101,12 @@ export function childGroupsOf(
   const childLevel = childLevelOf(valtyp, area.level)
   if (!childLevel) return []
 
-  // → valkrets (RD riket→valkrets, RF region→valkrets): valkretsgrupperna ur indexet.
-  // RF-koden är län-prefixad → filtrera på regionens prefix; RD:s riket tar alla.
+  // → valkrets (RD riket→valkrets, RF region→valkrets, KF kommun→valkrets):
+  // valkretsgrupperna ur indexet. RF-koden är län-prefixad och KF-koden kommun-
+  // prefixad → filtrera på förälderns prefix; RD:s riket tar alla.
   if (childLevel === 'valkrets') {
     if (!index) return []
-    const prefix = area.level === 'region' ? area.code ?? '' : ''
+    const prefix = area.level === 'region' || area.level === 'kommun' ? area.code ?? '' : ''
     return [...index.vkToDistricts.entries()]
       .filter(([code]) => !prefix || code.startsWith(prefix))
       .map(([code, districts]) => ({ level: 'valkrets' as Level, code, districts }))

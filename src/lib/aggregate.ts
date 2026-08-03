@@ -246,6 +246,8 @@ export interface Comparison2022 {
   RF_byValkrets?: Record<string, AreaComparison> // RF-andel per valkrets (mandat tomt — organet är regionen)
   RF_valkretsNamn?: Record<string, string> // RF-valkretskod (län-prefixad, 4 siffror) → namn
   KF: Record<string, AreaComparison>
+  KF_byValkrets?: Record<string, AreaComparison> // KF-andel per valkrets (mandat tomt — organet är kommunen)
+  KF_valkretsNamn?: Record<string, string> // KF-valkretskod (kommun-prefixad, 6 siffror) → namn
 }
 
 // Vilken 2022-jämförelse gäller för (valtyp, nivå, område)? RD joinar på riket +
@@ -268,7 +270,9 @@ export function comparisonFor(
     if (level === 'valkrets' && areaCode) return c.RF_byValkrets?.[areaCode] ?? null
     return null
   }
-  return level === 'kommun' && areaCode ? c.KF[areaCode] ?? null : null
+  if (level === 'kommun' && areaCode) return c.KF[areaCode] ?? null
+  if (level === 'valkrets' && areaCode) return c.KF_byValkrets?.[areaCode] ?? null
+  return null
 }
 
 // Fyll 2022 års andel + mandat som EGNA kolumner (visas alltid, bredvid 2026 —

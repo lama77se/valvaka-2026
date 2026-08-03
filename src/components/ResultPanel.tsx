@@ -223,10 +223,16 @@ export function ResultPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [valtyp, selectedArea, revision])
 
-  // Distriktsbarn: batch-hämta deras 2022-vinnare (aggregatnivåer har 2022 synkront).
+  // Distriktsbarn: batch-hämta deras 2022-vinnare per KOMMUN (aggregatnivåer har 2022
+  // synkront). Barnen kan spänna flera kommuner (RF/KF-valkrets skär ej alltid en enda
+  // kommun-prefix — t.ex. RF-valkretsen "Nordväst" täcker flera kommuner) → härled
+  // kommunkoderna ur barnens distriktskoder, inte ur det valda områdets kod (som kan
+  // vara en valkretskod, inte ett valdistrikts-prefix).
   useEffect(() => {
-    if (drill.childLevel === 'distrikt' && selectedArea.code) ensureDistrictWinners2022(valtyp, selectedArea.code)
-  }, [drill.childLevel, valtyp, selectedArea.code, ensureDistrictWinners2022])
+    if (drill.childLevel !== 'distrikt') return
+    const kommuner = new Set(drill.items.map((it) => it.code.slice(0, 4)))
+    for (const k of kommuner) ensureDistrictWinners2022(valtyp, k)
+  }, [drill, valtyp, ensureDistrictWinners2022])
 
   // Prompt-läge: RF/KF utan valt organ (ingen riksnivå finns för dem).
   const isPrompt = selectedArea.level !== 'riket' && selectedArea.code == null
@@ -266,6 +272,11 @@ export function ResultPanel() {
       >
         {selectedArea.level === 'distrikt' && (
           <option value={`d:${selectedArea.code}`}>Distrikt: {areaName}</option>
+        )}
+        {selectedArea.level === 'valkrets' && !levels.includes('valkrets') && (
+          // KF-valkrets når man via drill (kommun→valkrets), inte i den platta listan
+          // (~313 st, mest 1-per-kommun) → syntetisk nuvarande-option så select:en inte tappar värdet.
+          <option value={`vk:${selectedArea.code}`}>Valkrets: {areaName}</option>
         )}
         {levels.includes('riket') ? (
           <option value="riket">Riket</option>

@@ -496,6 +496,18 @@ Demonstrerat: RD/Riket och KF/Kommun med färgkodade ±andel + ±mandat.
   **regionnivå**. Att beräkna per-valkretsplaceringen är knivseggs-känsligt (±1 i tighta
   valkretsar, se `verify-mandate-rf` steg B/E) och ger ingen bättre precision än live-läget.
   De exakta RF-mandaten ligger kvar på regionnivå (organet), verifierade 20/20.
+- **KF:s nivå under kommunen = VALKRETS (klar, omstrukturering).** Även kommunvalet delas
+  per valkrets — men bara i **17 av 290 kommuner** (Stockholm 6, Linköping/Karlskrona/Borås
+  3, 14 st med 2); övriga 273 är EN valkrets = hela kommunen (kod "…00", namn = kommunnamn).
+  Nivån visas **enhetligt** (kommun → valkrets → distrikt) "eftersom nivån finns i datan"
+  (som RF:s 9 en-valkrets-regioner) — indelade kommuner får flera grupper, oindelade en.
+  Till skillnad mot RF ligger KF-valkretsen ALLTID inuti kommunen (koden är kommun-prefixad,
+  6 siffror) → ingen strukturell tvingande omstrukturering, men användaren ville ha
+  grupperingen. De 17 är exakt de med **3 %-spärr** i `seatConfig2026` (vallag: indelad →
+  3 %, oindelad → 2 %). `vk_kf` opaddat i DB ("88001") → `padStart(6)`. Samma mandat-läge
+  som RF: 2022-andel (`KF_byValkrets`, 314 st) + ungefärlig soffa, mandat "–"; exakta
+  KF-mandat ligger kvar på kommunnivå (289/290). Klick-navigation bevisad headless
+  (Stockholm → 6 valkretsar → distrikt, Olofström → 1). `verify:aggregate` steg 10c/10d.
 
 ---
 
