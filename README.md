@@ -104,14 +104,18 @@ Under uppbyggnad. Klart hittills:
   områdets barn (ledande parti + rapporteringsgrad, klick → drilla nedåt). Hierarkin
   är valtyp-medveten: **RD: riket → valkrets → kommun → distrikt** (riksdagens riktiga
   nivå under Riket är de **29 valkretsarna**, inte län — mandaten delas ut per valkrets
-  och val.se bryter ner RD så); RF: region → kommun → distrikt; KF: kommun → distrikt.
-  Valkrets är inte ett kod-prefix (Stockholm/Skåne/VG delas i flera valkretsar inom
-  samma län), så providern förberäknar `kommunToVk`/`vkToDistricts` ur distrikt­metadata
-  (`vk_rd` normaliserat till 2 siffror — annars faller Stockholms två ensiffriga
-  valkretsar tyst bort); övriga hopp är prefix-rena (`lib/hierarchy.ts`, testat i
-  `verify:aggregate` steg 10 inkl. Stockholm-splitten). Klick-navigation bevisad
-  headless. Varje barn visar **både 2026 och 2022** som jämförelse (ledande parti 2026 /
-  räknat-status + `'22`-vinnaren).
+  och val.se bryter ner RD så); **RF: region → valkrets → distrikt** (regionvalet delas
+  också per valkrets — Stockholm i 12 valkretsar tvärs över kommungränser, så kommun­nivån
+  utgår; 62 valkretsar totalt); KF: kommun → distrikt. Valkrets är inte ett kod-prefix
+  (Stockholm/Skåne/VG delas i flera valkretsar inom samma län), så providern förberäknar
+  ett valkretsindex per valtyp (`districtToVk`/`vkToDistricts`, plus `kommunToVk` för RD
+  där valkretsen är hela kommuner) ur distrikt­metadata (`vk_rd` normaliserat till 2
+  siffror, `vk_rf` till 4 län-prefixade siffror — tomma vk_rf, t.ex. Gotland utan
+  regionval, faller bort; annars faller koder med inledande nolla tyst bort). Övriga hopp
+  är prefix-rena (`lib/hierarchy.ts`, testat i `verify:aggregate` steg 10 inkl. båda
+  Stockholm-splittarna — RD kommun 0180/0114 i olika valkretsar, RF kommun 0180 i två RF-
+  valkretsar). Klick-navigation bevisad headless. Varje barn visar **både 2026 och 2022**
+  som jämförelse (ledande parti 2026 / räknat-status + `'22`-vinnaren).
 
 - **Riksdagsmandat per valkrets — 2022 (klar).** På valkretsnivå visar tabellen 2022 års
   **faktiska riksdagsmandat** per parti (ur Valmyndighetens officiella facit, matchar
@@ -120,6 +124,16 @@ Under uppbyggnad. Klart hittills:
   projiceras nationellt (349) och lämnas "–" per valkrets (per-valkrets-placering av
   utjämningsmandaten är knivseggs-känslig och beräknas medvetet inte live). Genereras av
   `npm run comparison` (`RD_byValkrets` i `comparison-2022.json`).
+
+- **Regionvalet per valkrets — 2022 (klar, andel).** RF drillas region → **valkrets** →
+  distrikt (62 valkretsar; `RF_byValkrets`/`RF_valkretsNamn`). Regionfullmäktige­mandaten
+  fördelas visserligen per valkrets (fasta valkretsmandat + utjämning), men den per-parti-
+  per-valkrets-uppdelningen publicerar Valmyndigheten **bara på resultat.val.se**, inte som
+  nedladdningsfil (de nedladdningsbara facit-filerna aggregerar RF till regionnivå — till
+  skillnad mot RD, vars per-valkretsmandat finns i officiellt facit). Valkretsnivån visar
+  därför **2022 års röstandel** + en tydligt märkt **ungefärlig procent-soffa** (mandat "–"),
+  precis som RD:s *live* valkretssoffa. De **exakta** RF-mandaten ligger kvar på regionnivå
+  (organet), verifierade 20/20 mot facit.
 
 Återstår:
 

@@ -478,6 +478,24 @@ Demonstrerat: RD/Riket och KF/Kommun med färgkodade ±andel + ±mandat.
   alla 29 → 349), och 2022-soffan blir en fylld mandatbåge. 2026 projiceras nationellt →
   "–" per valkrets (utjämningsmandatplacering beräknas ej live). Facit-fallgropar fångade:
   "Summa"-rad exkluderas (dubblade annars totalen), parti-rader tilldelas (ej summeras).
+- **RF:s nivå under regionen = VALKRETS (klar, omstrukturering).** Regionvalet fördelas
+  också per valkrets, men — till skillnad mot RD — är RF-valkretsen INTE hela kommuner:
+  Stockholm delas i 12 valkretsar tvärs över kommungränser. Därför utgår kommunnivån och
+  RF-hierarkin blir region → valkrets → distrikt (62 valkretsar). Indexet generaliserades
+  per valtyp: `districtToVk`/`vkToDistricts` (distrikt→valkrets är alltid entydigt) + för
+  RD dessutom `kommunToVk`. **Fälla (samma familj som `vk_rd`):** `vk_rf` är län-prefixat
+  men opaddat i DB ("112") och TOMSTRÄNG för Gotland (saknar regionval) → normaliseras till
+  4 siffror på EN plats, tomt = null. Verifierat med **set-likhet** mot rostern (exakt de 62
+  koderna, inte bara en Stockholm-stickprovskoll) + `verify:aggregate` steg 10b (Sthlm kommun
+  0180 i två RF-valkretsar 0101≠0104).
+- **2022 regionmandat per valkrets — medvetet EJ per valkrets.** RF-valkretsnivån visar
+  2022 års **röstandel** (`RF_byValkrets`) + ungefärlig procent-soffa, mandat "–". Den
+  per-parti-per-valkrets-uppdelningen (fasta valkretsmandat + utjämningsplacering) publicerar
+  Valmyndigheten bara på resultat.val.se, inte som nedladdningsfil — de nedladdningsbara
+  facit-filerna (`mandat-2018-2022` = `Mandatfordelning-jamforelser`) aggregerar RF till
+  **regionnivå**. Att beräkna per-valkretsplaceringen är knivseggs-känsligt (±1 i tighta
+  valkretsar, se `verify-mandate-rf` steg B/E) och ger ingen bättre precision än live-läget.
+  De exakta RF-mandaten ligger kvar på regionnivå (organet), verifierade 20/20.
 
 ---
 

@@ -30,11 +30,12 @@ const ELECTION: Record<Valtyp, string> = {
 }
 
 // Nivåer väljaren erbjuder per valtyp: den nativa nivån + geografisk nedbrytning
-// UNDER den (aldrig uppåt). RD: riket → VALKRETS (riksdagens riktiga nivå) → kommun;
-// RF region + kommun inom; KF bara kommun.
+// UNDER den (aldrig uppåt). RD: riket → VALKRETS (riksdagens nivå) → kommun; RF:
+// region → VALKRETS (regionens nivå — Stockholm delas tvärs kommuner) → distrikt;
+// KF bara kommun.
 const LEVELS: Record<Valtyp, ('riket' | 'valkrets' | 'region' | 'kommun')[]> = {
   RD: ['riket', 'valkrets', 'kommun'],
-  RF: ['region', 'kommun'],
+  RF: ['region', 'valkrets'],
   KF: ['kommun'],
 }
 const PROMPT: Record<Valtyp, string> = { RD: '', RF: 'Välj region…', KF: 'Välj kommun…' }
@@ -53,8 +54,7 @@ export function ResultPanel() {
     kommuner,
     regioner,
     valkretsar,
-    kommunToVkRef,
-    vkToDistrictsRef,
+    areaIndexRef,
     distriktNamnRef,
     district2022Ref,
     districtWinners2022Ref,
@@ -62,7 +62,7 @@ export function ResultPanel() {
     revision,
   } = useResults()
 
-  const areaIndex = { kommunToVk: kommunToVkRef.current, vkToDistricts: vkToDistrictsRef.current }
+  const areaIndex = areaIndexRef.current[valtyp]
 
   const areaName =
     selectedArea.level === 'riket'
@@ -275,7 +275,11 @@ export function ResultPanel() {
         {levels.includes('valkrets') && (
           <optgroup label="Valkrets">
             {valkretsar.map((v) => (
-              <option key={v.code} value={`vk:${v.code}`}>{v.name}</option>
+              // RF-valkretsnamn ("Nordväst") är region-lokala → prefixa med regionen i
+              // den platta listan; i breadcrumb/drill räcker namnet (regionen är förälder).
+              <option key={v.code} value={`vk:${v.code}`}>
+                {valtyp === 'RF' ? `${regionName.get(v.code.slice(0, 2)) ?? ''} · ${v.name}` : v.name}
+              </option>
             ))}
           </optgroup>
         )}

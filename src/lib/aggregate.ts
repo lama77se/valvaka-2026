@@ -243,7 +243,8 @@ export interface Comparison2022 {
   RD_valkretsNamn?: Record<string, string> // valkretskod → namn (för väljare/breadcrumb)
   RD_byKommun?: Record<string, AreaComparison> // RD-andel per kommun (mandat tomt — riksmandat per valkrets)
   RF: Record<string, AreaComparison> // per region
-  RF_byKommun?: Record<string, AreaComparison> // RF-andel per kommun (mandat tomt — regionmandat per region)
+  RF_byValkrets?: Record<string, AreaComparison> // RF-andel per valkrets (mandat tomt — organet är regionen)
+  RF_valkretsNamn?: Record<string, string> // RF-valkretskod (län-prefixad, 4 siffror) → namn
   KF: Record<string, AreaComparison>
 }
 
@@ -264,7 +265,7 @@ export function comparisonFor(
   }
   if (valtyp === 'RF') {
     if (level === 'region' && areaCode) return c.RF[areaCode] ?? null
-    if (level === 'kommun' && areaCode) return c.RF_byKommun?.[areaCode] ?? null
+    if (level === 'valkrets' && areaCode) return c.RF_byValkrets?.[areaCode] ?? null
     return null
   }
   return level === 'kommun' && areaCode ? c.KF[areaCode] ?? null : null

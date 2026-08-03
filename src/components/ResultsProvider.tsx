@@ -15,6 +15,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { supabase } from '@/lib/supabase'
 import { ResultStore, VALTYPER, VALTYP_VK_COLUMN, type Valtyp } from '@/lib/results'
 import { buildGroups, type AreaComparison, type AreaGroups, type Comparison2022, type DistrictMeta, type Level, type PartyMeta } from '@/lib/aggregate'
+import type { AreaIndex } from '@/lib/hierarchy'
 
 export type Area = { level: Level; code: string | null }
 export const RIKET: Area = { level: 'riket', code: null }
@@ -55,9 +56,8 @@ export interface ResultsContextValue {
   // Områdesväljar-listor + HUD-nämnare
   kommuner: NamedCode[]
   regioner: NamedCode[]
-  valkretsar: NamedCode[] // RD:s nivå under Riket (29 valkretsar)
-  kommunToVkRef: RefObject<Map<string, string>>
-  vkToDistrictsRef: RefObject<Map<string, string[]>>
+  valkretsar: NamedCode[] // valkretsar för AKTIV valtyp (RD 29 / RF 62; KF tom)
+  areaIndexRef: RefObject<Record<Valtyp, AreaIndex>> // valkretsindex per valtyp
   totalByValtyp: Record<Valtyp, number>
 
   // Signalkanaler
@@ -91,7 +91,6 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
   const [snapshotVersion, setSnapshotVersion] = useState(0)
   const [kommuner, setKommuner] = useState<NamedCode[]>([])
   const [regioner, setRegioner] = useState<NamedCode[]>([])
-  const [valkretsar, setValkretsar] = useState<NamedCode[]>([]) // RD:s nivå under Riket
   const [totalByValtyp, setTotalByValtyp] = useState<Record<Valtyp, number>>(emptyCounts)
   const [realtimeConnected, setRealtimeConnected] = useState(false)
 
@@ -103,10 +102,12 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
   const metaRef = useRef<Map<string, DistrictMeta>>(new Map())
   const allCodesRef = useRef<string[]>([])
   const groupsRef = useRef<AreaGroups>(buildGroups([]))
-  // RD-valkretsindex (byggs av HELA kommuner → många-till-en): kommun4 → valkrets,
-  // och valkrets → distriktskoder. Valkretskod normaliserad till 2 siffror (padded).
-  const kommunToVkRef = useRef<Map<string, string>>(new Map())
-  const vkToDistrictsRef = useRef<Map<string, string[]>>(new Map())
+  // Valkretsindex per valtyp (RD 2-siffrig vk_rd, RF 4-siffrig län-prefixad vk_rf).
+  // Byggs en gång ur distriktsmetadatan; KF har ingen valkretsnivå (tomt index).
+  const emptyIndex = (): AreaIndex => ({ districtToVk: new Map(), vkToDistricts: new Map(), kommunToVk: new Map() })
+  const areaIndexRef = useRef<Record<Valtyp, AreaIndex>>({ RD: emptyIndex(), RF: emptyIndex(), KF: emptyIndex() })
+  // Valkretslistor (kod+namn) per valtyp — resolveras till aktiv valtyp i värdet nedan.
+  const valkretsListRef = useRef<Record<Valtyp, NamedCode[]>>({ RD: [], RF: [], KF: [] })
   const comparisonRef = useRef<Comparison2022 | null>(null)
   const districtComparisonRef = useRef<Map<string, string>>(new Map())
   const distriktNamnRef = useRef<Map<string, string>>(new Map()) // vd-kod → distriktsnamn (tabellrubrik vid kartklick)
@@ -250,8 +251,8 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
       const codes: string[] = []
       const kommunMap = new Map<string, string>()
       const lanMap = new Map<string, string>()
-      const kommunToVk = new Map<string, string>()
-      const vkToDistricts = new Map<string, string[]>()
+      const idxRD: AreaIndex = { districtToVk: new Map(), vkToDistricts: new Map(), kommunToVk: new Map() }
+      const idxRF: AreaIndex = { districtToVk: new Map(), vkToDistricts: new Map() }
       const PAGE = 1000
       for (let from = 0; !cancelled; from += PAGE) {
         const { data, error } = await supabase
@@ -260,18 +261,26 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
           .range(from, from + PAGE - 1)
         if (error || !data || data.length === 0) break
         for (const d of data) {
-          codes.push(d.valdistriktskod)
-          // Normalisera vk_rd till 2 siffror EN gång (opaddat i DB: "1".."29") så det
-          // matchar facit-/comparison-koderna — annars faller ensiffriga valkretsar
-          // (bl.a. båda Stockholms) tyst bort i join:en.
-          const vkRd = d.vk_rd != null ? String(d.vk_rd).padStart(2, '0') : null
-          meta.set(d.valdistriktskod, { vk_rd: vkRd, vk_rf: d.vk_rf, vk_kf: d.vk_kf })
-          namn.set(d.valdistriktskod, d.namn ?? d.valdistriktskod)
-          kommunMap.set(d.valdistriktskod.slice(0, 4), d.kommun ?? d.valdistriktskod.slice(0, 4))
-          lanMap.set(d.valdistriktskod.slice(0, 2), d.lan ?? d.valdistriktskod.slice(0, 2))
+          const vd = d.valdistriktskod
+          codes.push(vd)
+          // Normalisera valkretskoder EN gång så de matchar facit-/comparison-koderna
+          // — annars faller koder med inledande nolla tyst bort i join:en. vk_rd är
+          // opaddat i DB ("1".."29") → 2 siffror; vk_rf är län-prefixat men opaddat
+          // ("112") och TOMSTRÄNG för Gotland (inget regionval) → 4 siffror, tomt = null.
+          const vkRd = d.vk_rd != null && String(d.vk_rd).trim() !== '' ? String(d.vk_rd).padStart(2, '0') : null
+          const vkRf = String(d.vk_rf ?? '').trim() !== '' ? String(d.vk_rf).padStart(4, '0') : null
+          meta.set(vd, { vk_rd: vkRd, vk_rf: vkRf, vk_kf: d.vk_kf })
+          namn.set(vd, d.namn ?? vd)
+          kommunMap.set(vd.slice(0, 4), d.kommun ?? vd.slice(0, 4))
+          lanMap.set(vd.slice(0, 2), d.lan ?? vd.slice(0, 2))
           if (vkRd) {
-            kommunToVk.set(d.valdistriktskod.slice(0, 4), vkRd) // kommun → valkrets (många-till-en)
-            ;(vkToDistricts.get(vkRd) ?? vkToDistricts.set(vkRd, []).get(vkRd)!).push(d.valdistriktskod)
+            idxRD.districtToVk.set(vd, vkRd)
+            idxRD.kommunToVk!.set(vd.slice(0, 4), vkRd) // RD: valkrets = hela kommuner (många-till-en)
+            ;(idxRD.vkToDistricts.get(vkRd) ?? idxRD.vkToDistricts.set(vkRd, []).get(vkRd)!).push(vd)
+          }
+          if (vkRf) {
+            idxRF.districtToVk.set(vd, vkRf) // RF: distrikt → valkrets (entydigt, kan dela en kommun)
+            ;(idxRF.vkToDistricts.get(vkRf) ?? idxRF.vkToDistricts.set(vkRf, []).get(vkRf)!).push(vd)
           }
         }
         if (data.length < PAGE) break
@@ -291,14 +300,18 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
       allCodesRef.current = codes
       groupsRef.current = buildGroups(codes)
       districtComparisonRef.current = cmp
-      kommunToVkRef.current = kommunToVk
-      vkToDistrictsRef.current = vkToDistricts
+      areaIndexRef.current = { RD: idxRD, RF: idxRF, KF: emptyIndex() }
       const bySv = (a: NamedCode, b: NamedCode) => a.name.localeCompare(b.name, 'sv')
       setKommuner([...kommunMap.entries()].map(([code, name]) => ({ code, name })).sort(bySv))
       setRegioner([...lanMap.entries()].map(([code, name]) => ({ code, name })).sort(bySv))
-      // Valkretslista (RD): koder ur datan, namn ur comparison-2022 (RD_valkretsNamn).
-      const vkNamn = comparisonRef.current?.RD_valkretsNamn ?? {}
-      setValkretsar([...vkToDistricts.keys()].map((code) => ({ code, name: vkNamn[code] ?? code })).sort(bySv))
+      // Valkretslistor per valtyp: koder ur datan, namn ur comparison-2022 (RD/RF).
+      const rdNamn = comparisonRef.current?.RD_valkretsNamn ?? {}
+      const rfNamn = comparisonRef.current?.RF_valkretsNamn ?? {}
+      valkretsListRef.current = {
+        RD: [...idxRD.vkToDistricts.keys()].map((code) => ({ code, name: rdNamn[code] ?? code })).sort(bySv),
+        RF: [...idxRF.vkToDistricts.keys()].map((code) => ({ code, name: rfNamn[code] ?? code })).sort(bySv),
+        KF: [],
+      }
       // Metadata redo → kartan får rätt färger (partyRef) och tabellen sitt aggregat.
       setSnapshotVersion((v) => v + 1)
       setRevision((r) => r + 1)
@@ -352,9 +365,8 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     ensureDistrictWinners2022,
     kommuner,
     regioner,
-    valkretsar,
-    kommunToVkRef,
-    vkToDistrictsRef,
+    valkretsar: valkretsListRef.current[valtyp], // resolveras till aktiv valtyp (re-render vid valtyp/snapshot)
+    areaIndexRef,
     totalByValtyp,
     subscribeChanges,
     revision,
