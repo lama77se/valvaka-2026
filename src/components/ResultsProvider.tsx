@@ -51,6 +51,7 @@ export interface ResultsContextValue {
   district2022Ref: RefObject<Map<string, AreaComparison | null>>
   // 2022 års vinnarparti per distrikt (batch-hämtat per kommun för drill-down-listan).
   districtWinners2022Ref: RefObject<Map<string, WinnerParty | null>>
+  districtAndel2022Ref: RefObject<Map<string, Record<string, number>>> // vd → beteckning → 2022-andel (per-parti-kolumner)
   ensureDistrictWinners2022: (valtyp: Valtyp, kommunCode: string) => void
 
   // Områdesväljar-listor + HUD-nämnare
@@ -115,6 +116,9 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
   const district2022Ref = useRef<Map<string, AreaComparison | null>>(new Map())
   // 2022 års vinnarparti per distrikt (vd → parti), batch-hämtat per kommun för drill-listan.
   const districtWinners2022Ref = useRef<Map<string, WinnerParty | null>>(new Map())
+  // 2022 års FULLA andel per distrikt (vd → beteckning → andel), samma batch-hämtning —
+  // driver per-parti-kolumnerna i "Bryt ner" på distriktsnivå.
+  const districtAndel2022Ref = useRef<Map<string, Record<string, number>>>(new Map())
   const dw2022FetchedRef = useRef<Set<string>>(new Set()) // `${valtyp}:${kommunkod}` redan hämtade
 
   // Hämta 2022 års vinnarparti för alla distrikt i en kommun (en gång, cache:at).
@@ -134,6 +138,9 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
       for (const r of data) {
         const cur = top.get(r.valdistriktskod)
         if (!cur || r.andel > cur.andel) top.set(r.valdistriktskod, { namn: r.beteckning, andel: r.andel })
+        // Full andel per distrikt (beteckning → andel) för per-parti-kolumnerna.
+        const full = districtAndel2022Ref.current.get(r.valdistriktskod) ?? districtAndel2022Ref.current.set(r.valdistriktskod, {}).get(r.valdistriktskod)!
+        full[r.beteckning] = r.andel
       }
       const nameToParty = new Map<string, PartyMeta>()
       for (const p of partyRef.current.values()) if (p.beteckning) nameToParty.set(p.beteckning, p)
@@ -369,6 +376,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     distriktNamnRef,
     district2022Ref,
     districtWinners2022Ref,
+    districtAndel2022Ref,
     ensureDistrictWinners2022,
     kommuner,
     regioner,

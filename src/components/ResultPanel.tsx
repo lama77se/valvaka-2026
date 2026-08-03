@@ -17,7 +17,7 @@ import {
 import { RIKET, defaultAreaFor, useResults, type Area } from '@/components/ResultsProvider'
 import { ResultTable } from '@/components/ResultTable'
 import { MandatSoffa } from '@/components/MandatSoffa'
-import { hareSeats } from '@/lib/soffa'
+import { hareSeats, SPECTRUM } from '@/lib/soffa'
 import { ancestorsOf, childGroupsOf, childLevelOf } from '@/lib/hierarchy'
 import { REPORTED_NEUTRAL, UNREPORTED_FILL } from '@/components/DistrictMap'
 
@@ -57,7 +57,7 @@ export function ResultPanel() {
     areaIndexRef,
     distriktNamnRef,
     district2022Ref,
-    districtWinners2022Ref,
+    districtAndel2022Ref,
     ensureDistrictWinners2022,
     revision,
   } = useResults()
@@ -183,46 +183,54 @@ export function ResultPanel() {
     const store = storesRef.current[valtyp]
     const groups = childGroupsOf(valtyp, selectedArea, allCodesRef.current, areaIndex)
     const comparison = comparisonRef.current
-    // Namn (beteckning) → parti, för att slå 2022-vinnaren (andel nycklas på partinamn).
-    const nameToParty = new Map<string, { forkortning: string | null; farg: string | null }>()
-    for (const p of partyRef.current.values()) if (p.beteckning) nameToParty.set(p.beteckning, p)
-    const winner2022Of = (level: string, code: string): { forkortning: string | null; farg: string | null } | null => {
-      if (level === 'distrikt') return districtWinners2022Ref.current.get(code) ?? null
-      // Aggregatnivåer: ur comparison-2022.json (RD län/kommun, RF kommun, KF kommun).
-      const ac = comparison ? comparisonFor(comparison, valtyp, level as never, code) : null
-      if (!ac) return null
-      let namn: string | null = null
-      let topA = -1
-      for (const [n, a] of Object.entries(ac.andel)) if (a > topA) { topA = a; namn = n }
-      return namn ? nameToParty.get(namn) ?? null : null
+    const pmap = partyRef.current
+    // Uppslag för per-parti-kolumnerna: beteckning→förkortning (2022 nycklas på namn),
+    // partikod→förkortning (2026-röster), förkortning→färg.
+    const betToFork = new Map<string, string>()
+    const forkFarg = new Map<string, string>()
+    for (const p of pmap.values()) {
+      if (p.beteckning && p.forkortning) betToFork.set(p.beteckning, p.forkortning)
+      if (p.forkortning && p.farg) forkFarg.set(p.forkortning, p.farg)
     }
+    const cols = SPECTRUM.map((fork) => ({ fork, farg: forkFarg.get(fork) ?? REPORTED_NEUTRAL }))
+
+    // 2022 års andel per förkortning för ett barn: aggregatnivåer ur comparison-2022.json,
+    // distrikt ur district_result_2022 (batch-hämtat, se effekt nedan).
+    const andel2022Of = (level: string, code: string): Record<string, number> => {
+      const bet =
+        level === 'distrikt'
+          ? districtAndel2022Ref.current.get(code)
+          : comparison
+            ? comparisonFor(comparison, valtyp, level as never, code)?.andel
+            : undefined
+      const out: Record<string, number> = {}
+      if (bet) for (const [b, a] of Object.entries(bet)) { const f = betToFork.get(b); if (f) out[f] = (out[f] ?? 0) + a }
+      return out
+    }
+
     const items = groups.map((g) => {
       const votes = store.aggregate(g.districts)
-      let winner: string | null = null
-      let top = -1
-      let sum = 0
-      for (const [p, v] of Object.entries(votes)) {
-        sum += v
-        if (v > top) {
-          top = v
-          winner = p
-        }
-      }
+      let total = 0
+      for (const v of Object.values(votes)) total += v
+      const a26: Record<string, number> = {} // förkortning → andel 2026 (0..1)
+      for (const [pk, v] of Object.entries(votes)) { const f = pmap.get(pk)?.forkortning; if (f) a26[f] = (a26[f] ?? 0) + v }
+      if (total > 0) for (const f in a26) a26[f] /= total
+      const a22 = andel2022Of(g.level, g.code)
       const reported = g.districts.reduce((n, c) => n + (store.has(c) ? 1 : 0), 0)
-      return {
-        level: g.level,
-        code: g.code,
-        winner,
-        share: sum > 0 ? top / sum : 0,
-        reported,
-        total: g.districts.length,
-        winner2022: winner2022Of(g.level, g.code),
-      }
+      const live = total > 0
+      // Ledande parti (radens färgmarkering) = största i live-året; grå om lokalt/okänt.
+      const src = live ? a26 : a22
+      let leadFork: string | null = null
+      let topA = 0
+      for (const [f, a] of Object.entries(src)) if (a > topA) { topA = a; leadFork = f }
+      const leadFarg = leadFork ? forkFarg.get(leadFork) ?? REPORTED_NEUTRAL : reported > 0 ? REPORTED_NEUTRAL : UNREPORTED_FILL
+      return { level: g.level, code: g.code, reported, total: g.districts.length, live, a26, a22, leadFarg }
     })
     // childLevel ur de FAKTISKA grupperna (inte den statiska kedjan) — en enkommuns-
     // RD-valkrets kollapsar kommun-nivån → barnen är distrikt, inte kommuner.
     const childLevel = (groups[0]?.level ?? childLevelOf(valtyp, selectedArea.level)) as ReturnType<typeof childLevelOf>
-    return { childLevel, items }
+    const anyLive = items.some((it) => it.live) // finns 2026-röster alls? annars visas 2022
+    return { childLevel, items, cols, anyLive }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [valtyp, selectedArea, revision])
 
@@ -375,58 +383,78 @@ export function ResultPanel() {
 
             {drill.childLevel && drillItems.length > 0 && (
               <div className="mt-3 border-t border-slate-800 pt-3">
-                <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-400">
+                <p className="mb-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400">
                   Bryt ner — {CHILD_LABEL[drill.childLevel] ?? drill.childLevel}
+                  {drill.anyLive ? (
+                    <span className="font-normal normal-case tracking-normal text-slate-500">
+                      2026 andel % · <span className="text-emerald-400/80">▲</span>/<span className="text-rose-400/80">▼</span> mot ’22
+                    </span>
+                  ) : (
+                    <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold normal-case tracking-normal text-amber-300/90">
+                      2022 års resultat — inga 2026-röster än
+                    </span>
+                  )}
                 </p>
-                {/* Ingen egen max-höjd/scroll: listan växer och fyller panelen (inget
-                    ligger under den) — den yttre behållaren sköter ev. scroll (en scroll,
-                    inte nästlad). */}
-                <ul className="space-y-0.5 pr-1">
-                  {drillItems.map((it) => {
-                    const p = it.winner ? partyRef.current.get(it.winner) : null
-                    const farg = p?.farg ?? REPORTED_NEUTRAL
-                    return (
-                      <li key={it.code}>
-                        <button
-                          type="button"
-                          className="flex w-full items-center gap-2 rounded px-2 py-1 text-left hover:bg-slate-800/50"
-                          style={{ borderLeft: `3px solid ${it.reported > 0 ? farg : UNREPORTED_FILL}` }}
-                          onClick={() => setSelectedArea({ level: it.level, code: it.code })}
+                {/* Per-parti-matris: en kolumn per riksdagsparti (spektrumordning), andel %
+                    för live-året + Δ mot 2022 under. Ingen egen max-höjd — listan fyller panelen. */}
+                <table className="w-full border-separate border-spacing-0 text-[11px] tabular-nums">
+                  <thead>
+                    <tr className="text-slate-400">
+                      <th className="pb-1 pr-1 text-left font-medium">Område</th>
+                      {drill.cols.map((c) => (
+                        <th key={c.fork} className="px-0.5 pb-1 text-center font-bold" style={{ color: c.farg }} title={c.fork}>
+                          {c.fork}
+                        </th>
+                      ))}
+                      <th className="pb-1 pl-1 text-right font-medium">Räkn.</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {drillItems.map((it) => (
+                      <tr
+                        key={it.code}
+                        className="cursor-pointer hover:bg-slate-800/50"
+                        onClick={() => setSelectedArea({ level: it.level, code: it.code })}
+                      >
+                        <td
+                          className="max-w-[104px] truncate border-l-2 py-0.5 pl-1.5 pr-1 text-left text-slate-200"
+                          style={{ borderColor: it.leadFarg }}
+                          title={nameOf(it)}
                         >
-                          <span className="flex-1 truncate text-xs text-slate-200">{nameOf(it)}</span>
-                          {it.winner2022 && (
-                            <span className="shrink-0 text-[10px] text-slate-500" title="Ledande parti 2022">
-                              ’22{' '}
-                              <span className="font-semibold" style={{ color: it.winner2022.farg ?? REPORTED_NEUTRAL }}>
-                                {it.winner2022.forkortning ?? '?'}
-                              </span>
-                            </span>
-                          )}
-                          {p && it.reported > 0 ? (
-                            <span className="shrink-0 text-[11px] font-semibold" style={{ color: farg }} title="Ledande parti 2026">
-                              {p.forkortning ?? '?'}
-                            </span>
-                          ) : (
-                            <span className="shrink-0 text-[11px] text-slate-600" title="Ledande parti 2026">—</span>
-                          )}
+                          {nameOf(it)}
+                        </td>
+                        {drill.cols.map((c) => {
+                          const v26 = it.a26[c.fork]
+                          const v22 = it.a22[c.fork]
+                          const main = it.live ? v26 : v22
+                          const d = it.live && v26 != null && v22 != null ? (v26 - v22) * 100 : null
+                          return (
+                            <td key={c.fork} className="px-0.5 py-0.5 text-center align-top leading-tight">
+                              <div className={main && main > 0.0005 ? 'text-slate-200' : 'text-slate-600'}>
+                                {main && main > 0.0005 ? (main * 100).toFixed(1) : '·'}
+                              </div>
+                              {d != null && Math.abs(d) >= 0.05 && (
+                                <div className={`text-[9px] leading-none ${d > 0 ? 'text-emerald-400/80' : 'text-rose-400/80'}`}>
+                                  {d > 0 ? '+' : '−'}
+                                  {Math.abs(d).toFixed(1)}
+                                </div>
+                              )}
+                            </td>
+                          )
+                        })}
+                        <td className="whitespace-nowrap py-0.5 pl-1 text-right text-slate-500">
                           {it.level === 'distrikt' ? (
-                            // Lövnivå: nämnaren är alltid 1 → visa status i stället för "X/1".
-                            <span className={`w-16 shrink-0 text-right text-[11px] ${it.reported > 0 ? 'text-emerald-400' : 'text-slate-600'}`}>
-                              {it.reported > 0 ? 'räknat' : 'ej räknat'}
-                            </span>
+                            it.reported > 0 ? <span className="text-emerald-400" title="räknat">✓</span> : <span title="ej räknat">·</span>
                           ) : (
-                            <span
-                              className="w-16 shrink-0 text-right text-[11px] tabular-nums text-slate-500"
-                              title={`${it.reported} av ${it.total} distrikt räknade`}
-                            >
+                            <span title={`${it.reported} av ${it.total} distrikt räknade`}>
                               {it.reported}/{it.total}
                             </span>
                           )}
-                        </button>
-                      </li>
-                    )
-                  })}
-                </ul>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </>
