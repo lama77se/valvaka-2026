@@ -1,0 +1,29 @@
+name: CI
+
+# Kvalitetsgrind: typkoll + prod-bygge + lint på varje PR mot main (och på main
+# efter merge). Kräver inga secrets — build/lint rör inte Supabase. De DB-beroende
+# verify:*-skripten körs medvetet inte här (de kräver service-role-nyckel).
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Avbryt tidigare körningar för samma PR/branch när nya commits pushas.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build & lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
