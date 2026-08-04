@@ -410,7 +410,13 @@ export function DistrictMap() {
       </div>
 
       {hover && (
-        <div className="pointer-events-none absolute bottom-4 left-4 rounded-md border border-slate-700 bg-slate-900/90 px-3 py-2 text-sm text-slate-100 shadow-lg">
+        // Centrerad i det FRIA fältet mellan avgångstavlorna (vänster, ~332px) och
+        // resultatpanelen (höger, --panel-w) så hover-rutan aldrig döljs av
+        // "Inrapporterat"-tavlorna oavsett skärmbredd.
+        <div
+          className="pointer-events-none absolute bottom-4 -translate-x-1/2 rounded-md border border-slate-700 bg-slate-900/90 px-3 py-2 text-sm text-slate-100 shadow-lg"
+          style={{ left: 'calc((332px + 100% - var(--panel-w)) / 2)' }}
+        >
           <div className="font-semibold">{hover.namn || '—'}</div>
           <div className="text-slate-400">
             {hover.kommun} · {hover.lan} · <span className="font-mono">{hover.kod}</span>
