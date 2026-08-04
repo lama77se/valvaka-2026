@@ -1,5 +1,10 @@
 name: DB migrations
 
+# Least-privilege GITHUB_TOKEN (CodeQL: actions/missing-workflow-permissions).
+# Migrationer körs mot Supabase via access-token + db-lösenord, inte GITHUB_TOKEN.
+permissions:
+  contents: read
+
 # Applicerar supabase/migrations mot moln-projektet vid push till main.
 # Speglar Vercel-modellen: bara main, ingen preview. Trigga bara när migrationer
 # faktiskt ändras. Secrets sätts i repo-inställningarna (Settings → Secrets → Actions):
