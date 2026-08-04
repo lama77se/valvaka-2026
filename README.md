@@ -205,7 +205,8 @@ decimalkomma), schema och 2022-replay-harness finns i
 npm install
 npm run dev                # dev-server på fast port http://localhost:5926
 npm run build              # typkoll + prod-bygge
-npm run geometry           # regenerera distriktsgeometrin från källan (mapshaper)
+npm run geometry           # regenerera distriktsgeometrin från källan (mapshaper) + district-bounds.json
+npm run bounds             # regenerera bara public/district-bounds.json ur befintlig geometri (fitBounds-underlag)
 npm run ingest:reference   # ladda referensdata till Supabase (service-role i .env.local)
 npm run ingest:district-2022 # 2022 per 2026-distrikt (koder_foreg-aggregat) → district_result_2022
 npm run verify:mandate     # mandatmodul mot 2022 RD-facit (riksdag)

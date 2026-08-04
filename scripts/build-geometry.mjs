@@ -13,6 +13,7 @@
 import { mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
 import { unzipSync } from 'fflate'
 import mapshaper from 'mapshaper'
+import { buildDistrictBounds } from './build-district-bounds.mjs'
 
 // CMS-länk från råvaru-sidan. Byt om den 404:ar (Optimizely-id/ts kan rotera):
 // https://www.val.se/valresultat-och-statistik/statistik-och-data/radata-val-2026
@@ -94,6 +95,11 @@ async function main() {
     `KLART: ${OUT} — ${outputCount} distrikt, ${outMb} MB, första koord [${lon.toFixed(3)}, ${lat.toFixed(3)}].`,
   )
   log('Kom ihåg: ladda upp filen till Supabase Storage (bucket `geometry`) för prod.')
+
+  // Härled distrikt-bboxar (public/district-bounds.json) ur samma output — klienten
+  // använder dem för att `fitBounds` på ett valt område. Committas (litet derivat).
+  const nBounds = buildDistrictBounds(OUT)
+  log(`district-bounds.json: ${nBounds} bboxar skrivna.`)
 
   // Städa den stora råfilen; den regenereras vid behov.
   rmSync(RAW_GEOJSON, { force: true })

@@ -9,6 +9,7 @@ import {
   SWEDEN_BOUNDS,
 } from '@/lib/geometry'
 import { VALTYPER, VALTYP_LABEL, type Valtyp } from '@/lib/results'
+import { districtsInArea } from '@/lib/aggregate'
 import { useResults } from '@/components/ResultsProvider'
 
 // Läsbar etikett för district_comparison.jamforbarhet (Fas 2-referensdata).
@@ -44,9 +45,12 @@ export function DistrictMap() {
   const {
     valtyp,
     setValtyp,
+    selectedArea,
     setSelectedArea,
     storesRef,
     partyRef,
+    metaRef,
+    allCodesRef,
     districtComparisonRef,
     totalByValtyp,
     subscribeChanges,
@@ -65,6 +69,13 @@ export function DistrictMap() {
   const sourceReadyRef = useRef(false)
   const activeValtypRef = useRef<Valtyp>(valtyp) // speglar `valtyp` för closures
   const recolorRef = useRef<(() => void) | null>(null)
+
+  // Fokus/zoom-läge: distrikt-bboxar för fitBounds + vakter. skipFocusRef = ett
+  // kartklick ska INTE zooma/dimma (beslut: klick inspekterar bara i tabellen).
+  const boundsRef = useRef<Record<string, [number, number, number, number]>>({})
+  const skipFocusRef = useRef(false)
+  const [boundsReady, setBoundsReady] = useState(false)
+  const [mapReady, setMapReady] = useState(false)
 
   const [hoverResult, setHoverResult] = useState<HoverResult | null>(null)
   const [reportedCount, setReportedCount] = useState(0)
@@ -153,10 +164,18 @@ export function DistrictMap() {
             'case',
             ['boolean', ['feature-state', 'hover'], false],
             '#38bdf8',
+            // Utanför valt område (fokusläge) → grått, oavsett resultatfärg.
+            ['boolean', ['feature-state', 'dimmed'], false],
+            '#1e293b',
             ['coalesce', ['feature-state', 'color'], UNREPORTED_FILL],
           ],
           'fill-opacity': [
             'case',
+            ['boolean', ['feature-state', 'hover'], false],
+            0.92,
+            // Dimmat (utanför fokus) tonas ned kraftigt så det valda området framträder.
+            ['boolean', ['feature-state', 'dimmed'], false],
+            0.12,
             ['boolean', ['feature-state', 'reported'], false],
             0.92,
             0.5,
@@ -176,6 +195,7 @@ export function DistrictMap() {
         if (sourceReadyRef.current) return
         sourceReadyRef.current = true
         recolorActive()
+        setMapReady(true) // källan biter nu → fokus/zoom-effekten får köra
       })
 
       const setHovered = (id: string | null) => {
@@ -233,6 +253,7 @@ export function DistrictMap() {
       map.on('click', 'district-fill', (e) => {
         const f = e.features?.[0]
         if (!f) return
+        skipFocusRef.current = true // klick ska inte zooma/dimma (beslut) — bara tabellval
         setSelectedArea({ level: 'distrikt', code: String(f.id) })
       })
     })
@@ -286,6 +307,63 @@ export function DistrictMap() {
       )
     }
   }, [valtyp, storesRef, partyRef])
+
+  // Ladda distrikt-bboxarna en gång (samma mönster som comparison-2022.json).
+  useEffect(() => {
+    let alive = true
+    fetch('/district-bounds.json')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (alive && data) {
+          boundsRef.current = data
+          setBoundsReady(true)
+        }
+      })
+      .catch((err) => console.error('[DistrictMap] district-bounds.json:', err))
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  // Fokusläge: när ett område väljs (via väljare/breadcrumb/avgångstavla — INTE
+  // kartklick) zoomas kartan till området och allt utanför gråas ut. Riket → zooma
+  // ut till hela Sverige + avdimma allt. Kartklick sätter distrikt men hoppas över.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady || !boundsReady) return
+    if (skipFocusRef.current) {
+      skipFocusRef.current = false // klick: lämna zoom/dimning orörd
+      return
+    }
+    const { level, code } = selectedArea
+    const codes =
+      level !== 'riket' && code != null
+        ? districtsInArea(allCodesRef.current, level, code, valtyp, metaRef.current)
+        : []
+    const on = codes.length > 0 // äkta fokus (undvik att gråa ut allt vid tomt urval)
+    const inSet = new Set(codes)
+    // Dimma varje distrikt utanför fokus; avdimma i fokus / alla vid Riket.
+    for (const vd of allCodesRef.current) {
+      map.setFeatureState({ source: 'districts', id: vd }, { dimmed: on && !inSet.has(vd) })
+    }
+    if (on) {
+      const box: [number, number, number, number] = [Infinity, Infinity, -Infinity, -Infinity]
+      for (const vd of codes) {
+        const b = boundsRef.current[vd]
+        if (!b) continue
+        if (b[0] < box[0]) box[0] = b[0]
+        if (b[1] < box[1]) box[1] = b[1]
+        if (b[2] > box[2]) box[2] = b[2]
+        if (b[3] > box[3]) box[3] = b[3]
+      }
+      if (Number.isFinite(box[0])) {
+        map.fitBounds(box, { padding: 48, maxZoom: level === 'distrikt' ? 13 : 10, duration: 700 })
+      }
+    } else if (level === 'riket') {
+      map.fitBounds(SWEDEN_BOUNDS, { padding: 24, duration: 600 })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedArea, valtyp, mapReady, boundsReady])
 
   const total = totalByValtyp[valtyp]
   const reportedPct = total > 0 ? Math.round((reportedCount / total) * 100) : 0
