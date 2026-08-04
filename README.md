@@ -230,3 +230,63 @@ All data kommer från Valmyndigheten; index är
 Källorna ligger på två ställen: parti-/röstmottagnings-CSV på
 `data.val.se/filer/val2026/...`, medan geometri-zip och de flesta xlsx ligger som
 CMS-länkar på `www.val.se/download/...`. Innehållet lyder under Valmyndighetens villkor.
+
+## Bidra
+
+Bidrag är välkomna. Projektet underhålls av en person på fritiden, så svarstiden
+kan variera — ha tålamod. Buggar och idéer: öppna gärna ett
+[GitHub Issue](https://github.com/lama77se/valvaka-2026/issues) först, så vi kan
+stämma av inriktningen innan du lägger tid på kod.
+
+Så här skickar du en ändring:
+
+1. **Forka** repot på GitHub (utomstående kan inte pusha direkt — allt går via
+   fork + pull request).
+2. **Brancha** på din fork: `git checkout -b fix/kort-beskrivning`
+   (eller `feat/...`, `docs/...`, `chore/...`).
+3. **Koda.** Håll varje commit fokuserad och beskrivande. Följ stilen i koden
+   omkring dig.
+4. **Verifiera lokalt** innan du öppnar PR:
+   ```sh
+   npm run build      # typkoll (tsc) + prod-bygge
+   npm run lint       # oxlint
+   ```
+   `verify:*`-skripten (mandat, aggregat, realtid) kräver en egen Supabase-instans
+   med service-role-nyckel i `.env.local` och behövs bara om du rör ingest-,
+   schema- eller mandatkod — se [Utveckling](#utveckling).
+5. **Öppna en pull request** mot `main` med en kort beskrivning av *vad* och *varför*.
+6. Vänta på granskning. `main` är skyddad (inga force-pushes, ingen radering);
+   ändringar landar via PR.
+
+Läs **[CLAUDE.md](./CLAUDE.md)** och **[docs/arkitektur.md](./docs/arkitektur.md)**
+innan du rör ingest, schema eller mandat — några projektspecifika regler som sparar
+tid:
+
+- **Datamodellens join-nyckel är alltid `valdistriktskod`** (8 siffror =
+  länskod + kommunkod + distriktskod). Bygg den själv vid ingest, ta den aldrig
+  rakt ur en enskild kolumn.
+- **val.se-filerna har en husstil med fallgropar** (verifierade mot 2022):
+  `;`-avgränsare trots `.csv`, UTF-8 med BOM, koder som `string` (ledande nollor),
+  decimalkomma i koordinater, versala svenska nyckelnamn. Bryt inte mot dem
+  (§1 i arkitektur.md).
+- **Mandatmodulen är en frikopplad ren TS-modul** (röster in → mandat ut), inte
+  SQL. Ändrar du den: kör `verify:mandate{,-rf,-kf}` mot 2022-facit och håll
+  RD 349 / RF 20/20 / KF exakt.
+- **Varje ny tabell i schemat `public` måste ha RLS aktiverat** — annars exponeras
+  den via PostgREST (se [SECURITY.md](./SECURITY.md)).
+- **Committa aldrig rådata eller genererade artefakter** (`.zip`/`.xlsx`/
+  `.geojson`/`.pmtiles` …) — de är gitignore:ade och regenereras från källan.
+- Kod och identifierare får vara på engelska, men **datamodellens fältnamn följer
+  doc:en** (`valdistriktskod`, `partikod`, …); docs och UI-text är svenska.
+
+## Säkerhet
+
+Rapportera **inte** säkerhetshål i publika issues. Använd GitHubs privata kanal
+(**Security → Report a vulnerability**) enligt **[SECURITY.md](./SECURITY.md)**,
+som också beskriver säkerhetsmodellen (publik anon-nyckel skyddad av RLS, inga
+hemligheter i repot).
+
+## Licens
+
+[MIT](./LICENSE) © Lars Månsson. Valresultat-datan kommer från Valmyndigheten och
+lyder under deras villkor (se [Datakälla](#datakälla)).
