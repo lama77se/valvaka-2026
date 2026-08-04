@@ -61,6 +61,7 @@ export function DistrictMap() {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const hoveredIdRef = useRef<string | null>(null)
+  const tooltipRef = useRef<HTMLDivElement>(null) // hover-rutan (positioneras vid pekaren via DOM)
   const [hover, setHover] = useState<HoverInfo | null>(null)
   const [jamforbarhet, setJamforbarhet] = useState<string | null>(null)
 
@@ -212,10 +213,30 @@ export function DistrictMap() {
         }
       }
 
+      // Placera hover-rutan vid pekaren: default ovanför-till-höger (täcker aldrig
+      // distriktet man pekar på), flippa vänster nära panelen och nedåt nära toppen.
+      // Ren DOM-positionering (transform) → ingen React-render per musrörelse.
+      const positionTooltip = (px: number, py: number) => {
+        const el = tooltipRef.current
+        if (!el) return
+        const pad = 14
+        const panelW = document.querySelector('aside')?.clientWidth ?? 0
+        const usableW = window.innerWidth - panelW
+        const w = el.offsetWidth || 220
+        const h = el.offsetHeight || 84
+        let x = px + pad
+        let y = py - h - pad
+        if (x + w > usableW - 8) x = px - pad - w // flippa vänster nära panelen
+        if (y < 8) y = py + pad // flippa nedåt nära toppen
+        if (x < 8) x = 8
+        el.style.transform = `translate(${x}px, ${y}px)`
+      }
+
       map.on('mousemove', 'district-fill', (e) => {
         const f = e.features?.[0]
         if (!f) return
         map.getCanvas().style.cursor = 'pointer'
+        positionTooltip(e.point.x, e.point.y) // följ pekaren varje rörelse
         const id = String(f.id)
         if (id === hoveredIdRef.current) return
         setHovered(id)
@@ -409,38 +430,40 @@ export function DistrictMap() {
         )}
       </div>
 
-      {hover && (
-        // Centrerad i det FRIA fältet mellan avgångstavlorna (vänster, ~332px) och
-        // resultatpanelen (höger, --panel-w) så hover-rutan aldrig döljs av
-        // "Inrapporterat"-tavlorna oavsett skärmbredd.
-        <div
-          className="pointer-events-none absolute bottom-4 -translate-x-1/2 rounded-md border border-slate-700 bg-slate-900/90 px-3 py-2 text-sm text-slate-100 shadow-lg"
-          style={{ left: 'calc((332px + 100% - var(--panel-w)) / 2)' }}
-        >
-          <div className="font-semibold">{hover.namn || '—'}</div>
-          <div className="text-slate-400">
-            {hover.kommun} · {hover.lan} · <span className="font-mono">{hover.kod}</span>
-          </div>
-          {hoverResult ? (
-            <div className="mt-1 text-xs text-emerald-300">
-              Ledare ({VALTYP_LABEL[valtyp]}):{' '}
-              <span className="font-semibold">{hoverResult.forkortning}</span>{' '}
-              <span className="font-semibold">{Math.round(hoverResult.share * 100)} %</span>
-              <span className="ml-1 text-slate-400">
-                (+{Math.round(hoverResult.margin * 100)} %-enh) · {hoverResult.total.toLocaleString('sv-SE')} röster
-              </span>
+      {/* Hover-ruta: ALLTID monterad (så tooltipRef finns för DOM-positioneringen),
+          dold tills man hovrar. Följer pekaren via positionTooltip (transform) → den
+          täcker aldrig distriktet man pekar på och krockar inte med någon fast panel. */}
+      <div
+        ref={tooltipRef}
+        className={`pointer-events-none absolute left-0 top-0 max-w-xs rounded-md border border-slate-700 bg-slate-900/90 px-3 py-2 text-sm text-slate-100 shadow-lg ${hover ? '' : 'hidden'}`}
+      >
+        {hover && (
+          <>
+            <div className="font-semibold">{hover.namn || '—'}</div>
+            <div className="text-slate-400">
+              {hover.kommun} · {hover.lan} · <span className="font-mono">{hover.kod}</span>
             </div>
-          ) : (
-            <div className="mt-1 text-xs text-slate-500">Ej räknat än ({VALTYP_LABEL[valtyp]})</div>
-          )}
-          {jamforbarhet && (
-            <div className="mt-1 text-xs text-sky-300">
-              {JAMFORBARHET_LABEL[jamforbarhet] ?? jamforbarhet}
-              <span className="ml-1 text-slate-500">· från Supabase</span>
-            </div>
-          )}
-        </div>
-      )}
+            {hoverResult ? (
+              <div className="mt-1 text-xs text-emerald-300">
+                Ledare ({VALTYP_LABEL[valtyp]}):{' '}
+                <span className="font-semibold">{hoverResult.forkortning}</span>{' '}
+                <span className="font-semibold">{Math.round(hoverResult.share * 100)} %</span>
+                <span className="ml-1 text-slate-400">
+                  (+{Math.round(hoverResult.margin * 100)} %-enh) · {hoverResult.total.toLocaleString('sv-SE')} röster
+                </span>
+              </div>
+            ) : (
+              <div className="mt-1 text-xs text-slate-500">Ej räknat än ({VALTYP_LABEL[valtyp]})</div>
+            )}
+            {jamforbarhet && (
+              <div className="mt-1 text-xs text-sky-300">
+                {JAMFORBARHET_LABEL[jamforbarhet] ?? jamforbarhet}
+                <span className="ml-1 text-slate-500">· från Supabase</span>
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   )
 }
