@@ -1,5 +1,10 @@
 name: Deploy edge functions
 
+# Least-privilege GITHUB_TOKEN (CodeQL: actions/missing-workflow-permissions).
+# Deploy sker mot Supabase via SUPABASE_ACCESS_TOKEN, inte GITHUB_TOKEN → bara läsa koden.
+permissions:
+  contents: read
+
 # Deployar Supabase edge functions vid push till main när supabase/functions ändras.
 # Samma token som db-migrate; ingen DB-lösenord behövs för functions deploy.
 on:

@@ -1,5 +1,10 @@
 name: CI
 
+# Least-privilege GITHUB_TOKEN (CodeQL: actions/missing-workflow-permissions).
+# CI behöver bara läsa koden.
+permissions:
+  contents: read
+
 # Kvalitetsgrind: typkoll + prod-bygge + lint på varje PR mot main (och på main
 # efter merge). Kräver inga secrets — build/lint rör inte Supabase. De DB-beroende
 # verify:*-skripten körs medvetet inte här (de kräver service-role-nyckel).
