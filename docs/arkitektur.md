@@ -300,6 +300,15 @@ Behandla nattens mandat som en *projektion* med tydlig "preliminärt"-flagga i U
 
 ## 6. Geometri-pipeline (engångs, före valet)
 
+> **Genomförd som ren offline-JS, INTE i DB:n.** Stegen nedan beskrevs
+> ursprungligen med PostGIS (`ST_Transform`/`ST_Simplify`), men implementationen
+> gör hela kedjan i `mapshaper` (`scripts/build-geometry.mjs`) och skriver en
+> statisk GeoJSON — ingen tabell har geom-kolumn. PostGIS-extensionen droppades
+> därför ur databasen 2026-08-04 (migration `…_drop_postgis`): den var oanvänd
+> och exponerade `spatial_ref_sys` via PostgREST (Supabase RLS-advisory). Behövs
+> DB-sidig geometri i framtiden → `create extension postgis with schema extensions`
+> (aldrig i `public`).
+
 1. Ladda läns-zip:arna. Källa för distriktsgränser: **SWEREF99 TM = EPSG:3006**.
    (Obs att vissa andra val.se-filer, t.ex. vallokaler.json, redan är i WGS84 med
    decimalkomma — koordinatsystem skiljer per fil, anta inget.)

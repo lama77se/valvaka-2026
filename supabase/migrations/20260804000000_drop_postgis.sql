@@ -1,0 +1,18 @@
+-- Säkerhetsfix (Supabase-advisory "rls_disabled_in_public", 2026-08-03):
+-- PostGIS-extensionen skapades i Fas 0 (20260728000000_enable_extensions.sql)
+-- i schemat `public`. Den drar med sig systemtabellen `public.spatial_ref_sys`,
+-- som PostgREST därför exponerar. Tabellen saknar RLS OCH ärver PostGIS default-
+-- grants → verifierat att anon-rollen kan SELECT/UPDATE/DELETE dess 8500 rader.
+--
+-- Ingen faktisk läcka (bara geodetiska SRID-konstanter, ingen väljardata) men en
+-- äkta skrivexponering. PostGIS används INTE i databasen: reprojiceringen
+-- SWEREF99 TM (3006) -> WGS84 (4326) sker offline i mapshaper (scripts/
+-- build-geometry.mjs), och ingen tabell har geom-kolumn (medvetet, se
+-- reference_tables-migrationen + arkitektur.md §6). Extensionen är alltså död
+-- vikt vars enda avtryck är den exponerade tabellen → droppa den.
+--
+-- RESTRICT (default): faller högljutt om något oväntat beror på postgis.
+-- Reversibelt: `create extension postgis;` återställer spatial_ref_sys.
+-- Går den här migrationen live ersätter den 20260728000000:s create — rör inte
+-- den redan applicerade filen (skulle ge migration-history-drift).
+drop extension if exists postgis;
