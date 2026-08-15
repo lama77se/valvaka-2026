@@ -1,3 +1,4 @@
+import { Analytics } from '@vercel/analytics/react'
 import { DistrictMap } from '@/components/DistrictMap'
 import { ResultPanel } from '@/components/ResultPanel'
 import { ResultsProvider } from '@/components/ResultsProvider'
@@ -61,6 +62,9 @@ function App() {
         <aside className="absolute right-0 top-0 h-full w-[var(--panel-w)] border-l border-slate-800 bg-slate-950/90 p-4 shadow-2xl backdrop-blur">
           <ResultPanel />
         </aside>
+        {/* Vercel Web Analytics — sidvisningar/besök. Vite/React-varianten (ej /next).
+            Samlar in data först i produktion på Vercel; no-op lokalt. */}
+        <Analytics />
       </main>
     </ResultsProvider>
   )

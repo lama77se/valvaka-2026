@@ -10,7 +10,7 @@ import {
 } from '@/lib/geometry'
 import { VALTYPER, VALTYP_LABEL, type Valtyp } from '@/lib/results'
 import { districtsInArea } from '@/lib/aggregate'
-import { useResults } from '@/components/ResultsProvider'
+import { defaultAreaFor, useResults } from '@/components/ResultsProvider'
 
 // Läsbar etikett för district_comparison.jamforbarhet (Fas 2-referensdata).
 const JAMFORBARHET_LABEL: Record<string, string> = {
@@ -71,10 +71,9 @@ export function DistrictMap() {
   const activeValtypRef = useRef<Valtyp>(valtyp) // speglar `valtyp` för closures
   const recolorRef = useRef<(() => void) | null>(null)
 
-  // Fokus/zoom-läge: distrikt-bboxar för fitBounds + vakter. skipFocusRef = ett
-  // kartklick ska INTE zooma/dimma (beslut: klick inspekterar bara i tabellen).
+  // Fokus/zoom-läge: distrikt-bboxar för fitBounds. Varje områdesval (kartklick,
+  // dropdown, breadcrumb, drill) zoomar in på området och dimmar allt utanför.
   const boundsRef = useRef<Record<string, [number, number, number, number]>>({})
-  const skipFocusRef = useRef(false)
   const [boundsReady, setBoundsReady] = useState(false)
   const [mapReady, setMapReady] = useState(false)
 
@@ -267,14 +266,14 @@ export function DistrictMap() {
         setHoverResult(null)
       })
 
-      // Klick på ett distrikt → visa DET distriktets fullständiga partibrytning i
-      // tabellen (röster + andel). Minsta kartdelen = minsta tabellnivån. Mandat
-      // och ±2022 saknas på distriktsnivå (inget organ fördelas; 2026-distrikt ≠
-      // 2022-distrikt) → "–". Distriktet är samma kod i alla tre valen.
+      // Klick på ett distrikt → zooma in på distriktet (via fokuseffekten) och visa
+      // DET distriktets fullständiga partibrytning i tabellen (röster + andel).
+      // Minsta kartdelen = minsta tabellnivån. Mandat och ±2022 saknas på distrikts-
+      // nivå (inget organ fördelas; 2026-distrikt ≠ 2022-distrikt) → "–". Distriktet
+      // är samma kod i alla tre valen.
       map.on('click', 'district-fill', (e) => {
         const f = e.features?.[0]
         if (!f) return
-        skipFocusRef.current = true // klick ska inte zooma/dimma (beslut) — bara tabellval
         setSelectedArea({ level: 'distrikt', code: String(f.id) })
       })
     })
@@ -346,16 +345,12 @@ export function DistrictMap() {
     }
   }, [])
 
-  // Fokusläge: när ett område väljs (via väljare/breadcrumb/avgångstavla — INTE
-  // kartklick) zoomas kartan till området och allt utanför gråas ut. Riket → zooma
-  // ut till hela Sverige + avdimma allt. Kartklick sätter distrikt men hoppas över.
+  // Fokusläge: när ett område väljs (kartklick, väljare, breadcrumb, avgångstavla)
+  // zoomas kartan till området och allt utanför gråas ut. Toppnivå (code == null:
+  // Riket resp. RF/KF-prompt) → zooma ut till hela Sverige + avdimma allt.
   useEffect(() => {
     const map = mapRef.current
     if (!map || !mapReady || !boundsReady) return
-    if (skipFocusRef.current) {
-      skipFocusRef.current = false // klick: lämna zoom/dimning orörd
-      return
-    }
     const { level, code } = selectedArea
     const codes =
       level !== 'riket' && code != null
@@ -367,9 +362,22 @@ export function DistrictMap() {
     for (const vd of allCodesRef.current) {
       map.setFeatureState({ source: 'districts', id: vd }, { dimmed: on && !inSet.has(vd) })
     }
+    // Ram att zooma till: ett distrikt zoomas till HELA sin kommun (samma 4-siffriga
+    // prefix) så kommunen syns runt det markerade distriktet — inte bara distriktet
+    // självt (annars blir det för snävt). Övriga nivåer zoomar till sitt fokusområde.
+    const boxCodes =
+      level === 'distrikt' && code
+        ? districtsInArea(allCodesRef.current, 'kommun', code.slice(0, 4), valtyp, metaRef.current)
+        : codes
+    // Resultatpanelen (aside, --panel-w) ligger ÖVER kartans högra del. fitBounds
+    // centrerar i HELA behållaren → reservera panelbredden som högerpadding, annars
+    // hamnar områdets högra del under panelen (och zoomen blir för djup). Topp-padding
+    // håller undan valtyp-väljaren; övriga sidor får en luftig marginal.
+    const panelW = document.querySelector('aside')?.clientWidth ?? 0
+    const pad = { top: 90, right: panelW + 24, bottom: 48, left: 48 }
     if (on) {
       const box: [number, number, number, number] = [Infinity, Infinity, -Infinity, -Infinity]
-      for (const vd of codes) {
+      for (const vd of boxCodes) {
         const b = boundsRef.current[vd]
         if (!b) continue
         if (b[0] < box[0]) box[0] = b[0]
@@ -378,10 +386,12 @@ export function DistrictMap() {
         if (b[3] > box[3]) box[3] = b[3]
       }
       if (Number.isFinite(box[0])) {
-        map.fitBounds(box, { padding: 48, maxZoom: level === 'distrikt' ? 13 : 10, duration: 700 })
+        // maxZoom kapar bara mycket små kommuner — annars fit:ar vi kommunens egen
+        // utsträckning. Distrikt något tightare (11) än större områden (10).
+        map.fitBounds(box, { padding: pad, maxZoom: level === 'distrikt' ? 11 : 10, duration: 700 })
       }
-    } else if (level === 'riket') {
-      map.fitBounds(SWEDEN_BOUNDS, { padding: 24, duration: 600 })
+    } else if (code == null) {
+      map.fitBounds(SWEDEN_BOUNDS, { padding: pad, duration: 600 })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedArea, valtyp, mapReady, boundsReady])
@@ -395,6 +405,22 @@ export function DistrictMap() {
 
       {/* Valtyp-väljare + rapporteringsgrad — en karta, tre val. */}
       <div className="absolute left-1/2 top-4 -translate-x-1/2 space-y-2">
+        {/* Snabb väg tillbaka till hela Sverige — visas bara när man zoomat in på ett
+            område (distrikt eller vald nivå). Nollställer till valtypens toppnivå
+            (RD → Riket, RF/KF → prompt) vilket via fokuseffekten zoomar ut + avdimmar. */}
+        {(selectedArea.level === 'distrikt' || selectedArea.code != null) && (
+          <button
+            type="button"
+            onClick={() => setSelectedArea(defaultAreaFor(valtyp))}
+            title="Zooma ut till hela Sverige"
+            className="mx-auto flex w-fit items-center gap-1.5 rounded-md border border-slate-700 bg-slate-900/90 px-3 py-1.5 text-sm font-medium text-slate-100 shadow-lg transition-colors hover:bg-slate-800"
+          >
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+            </svg>
+            Hela Sverige
+          </button>
+        )}
         <div className="flex overflow-hidden rounded-md border border-slate-700 bg-slate-900/90 text-sm shadow-lg">
           {VALTYPER.map((vt) => (
             <button
