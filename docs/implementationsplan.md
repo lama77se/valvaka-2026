@@ -27,7 +27,7 @@ Valdagen: **söndag 13 september 2026** (andra söndagen i september). Idag är 
 | Milstolpe | Tidpunkt | Åtgärd |
 |-----------|----------|--------|
 | Generalrep (§10-harness) | T‑minus ~3–4 veckor | Lastning av hela ingest→aggregat→mandat-kedjan på uppspelad 2022-data. Validera mot Valmyndighetens facit. |
-| Uppskalning Supabase | T‑minus ~1 vecka | Free → Pro: compute, Realtime-anslutningar, egress. Verifiera att preliminär mandatmodell håller under burst. |
+| Uppskalning Supabase | T‑minus ~1 vecka | Kontot är **redan på Pro** (tak: egress 250 GB, fler Realtime-anslutningar). Verklig hävstång är **compute-storleken** — `valvaka-2026` kör **micro** → bumpa compute (micro→small/medium) för valnattstoppen. **Större risk än compute:** klientens **snapshot-läsmönster** — varje besökare drar hela `result` (~160 paginerade requests) vid sidladdning → lasttesta samtidig läsning och överväg kompakt snapshot (vinnare/distrikt) + edge-cache **innan** compute-beslutet. |
 | Uppskalning Vercel | T‑minus ~1 vecka | Bandbreddsmarginal för trafiktopp; bekräfta tile-hosting (se nedan) klarar spiken. |
 | Skarp drift | Valnatten | Tätare cron-kadens (30–60 s) för resultatfiler; bevaka rapporteringsgrad. |
 
@@ -317,11 +317,16 @@ Supabase/Vercel efteråt baserat på observerad last.
 kart-paint och mandatprojektion triggas som skarpt; observerad resursförbrukning
 ligger till grund för uppskalningsbeslutet.
 
-**Status — generalrep-harness (delmängd); fullständig trohet väntar på skarp ingest.**
-Det *fullständiga* generalrepet delar "exakt samma ingest-kod som skarp drift"
-(§10). Den skarpa RESULTAT-ingesten finns inte än (blockerad på 2026 års opublicerade
-filschema; Fas 3 byggde parti-CSV-ingest, ej roster-per-distrikt). Byggt nu = den
-durabla, återanvändbara delmängden, uppdelad i två dataidentiteter (advisor):
+**Status — skarp resultat-ingest BYGGD (kör mot generalrepet); replay-harness klar.**
+Filschemat för 2026 var okänt men är nu bekräftat via Valmyndighetens **generalrep**:
+resultatfilerna är JSON-zip på `resultat.val.se/resultatfiler/<base>` (ej husstil-CSV).
+Den skarpa RESULTAT-ingesten finns nu — `supabase/functions/ingest-result` + `pg_cron`
+pollar manifestet, packar upp röstfördelnings-JSON och upsertar `result` → Realtime →
+kart-paint. Körs mot `genrep2026` (live testdata, badge:ad) för att verifiera hela
+kedjan; på valnatten byts en konstant till `val2026`. Full genomgång + kvarvarande
+punkter (compute-skalning, läslast, slutlig/stor-RD) i
+[resultat-ingest-genrep.md](./resultat-ingest-genrep.md). Utöver den skarpa ingesten
+finns den durabla replay-delmängden, uppdelad i två dataidentiteter (advisor):
 
 - **Korrekthet — replay + live mandatprojektion** (`npm run replay:2022 -- --valtyp
   RD|RF|KF`, `scripts/replay-2022.ts`): kör på ÄKTA 2022-geografi. Parsar rostern →
