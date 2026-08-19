@@ -86,6 +86,16 @@ Städa testdata ur `result` med `npm run results:reset` vid behov.
 - **Realtime:** rösterna upsertas i **≤100-radersbatchar** — Realtime tappar ändringar
   från stora transaktioner (>~100 rader), så större batchar skulle inte måla om
   live-kartan (snapshot vid omladdning fungerar ändå).
+- **🟠 Uppsamlingsröster ingår inte i aggregaten (upp till ~3 % sent på kvällen).**
+  De 314 uppsamlingsdistrikten (förtids-/reströster, koder ≠ 8 siffror) hoppas över, så
+  riks-/regions-/kommunsummorna underskattar med **~0 % tidigt → upp till ~3 % sent**
+  när reströsterna kommer in. Officiella `SomSkaRaknas` räknar IN dem (RD 6626 = 6312 +
+  314), men vår rapporteringsgrad + karta är geografisk (6312/6272) — det matchar det
+  kartan faktiskt kan måla. Att lägga in deras röster i riket/region/kommun-aggregaten
+  är billigt (prefix-aggregat), MEN **RD-valkrets förblir fel oavsett** (uppsamling
+  saknar valkrets), och `reportedCount` måste vaktas så den inte överstiger nämnaren.
+  Medvetet **ej gjort** — värderingsval (3 %-korrigering med en oreducerbar valkrets-
+  lucka). Beslut: dokumenterad känd begränsning tills annat bestäms.
 - **OS-/utlandsfiler ger 0 rader** (koderna är inte 8-siffriga geografiska distrikt),
   men markeras behandlade så de inte körs om i oändlighet.
 
