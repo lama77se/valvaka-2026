@@ -51,10 +51,20 @@ Deno.serve(async (req) => {
   if (files.length === 0) return json({ error: 'inga organ-zip i manifestet', base }, 502)
 
   // 2. Ändrade sedan sist? Manifest-md5 lagras i ingest_state.etag (val.se-ETag
-  //    honoreras ändå inte — se ingest_state-migrationen). Bounded per körning.
-  const { data: states } = await supabase.from('ingest_state').select('file_path,etag').in('file_path', files.map((f) => f.url))
+  //    honoreras ändå inte — se ingest_state-migrationen). Läs staten med ETT
+  //    prefix-filter på base — ALDRIG .in() med alla ~314 URL:er: det ger en överlång
+  //    request-URI → tom träff → funktionen "ser" aldrig sitt state och kör om samma
+  //    första 25 filer i evighet (RF/RD/övriga KF svälts). Ordna dessutom äldst/osedd
+  //    först så manifestets svans inte svälts när källan uppdateras kontinuerligt.
+  const { data: states } = await supabase
+    .from('ingest_state')
+    .select('file_path,etag,last_ok')
+    .like('file_path', `${base}/%`)
   const seen = new Map((states ?? []).map((s) => [s.file_path, s.etag]))
-  const allChanged = files.filter((f) => seen.get(f.url) !== f.md5)
+  const lastOk = new Map((states ?? []).map((s) => [s.file_path, s.last_ok as string | null]))
+  const allChanged = files
+    .filter((f) => seen.get(f.url) !== f.md5)
+    .sort((a, b) => (Date.parse(lastOk.get(a.url) ?? '') || 0) - (Date.parse(lastOk.get(b.url) ?? '') || 0))
   const changed = allChanged.slice(0, max)
   if (changed.length === 0) return json({ ok: true, changed: 0, total: files.length })
 
