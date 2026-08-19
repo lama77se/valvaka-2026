@@ -31,6 +31,15 @@ export const defaultAreaFor = (valtyp: Valtyp): Area => ({ level: NATIVE_LEVEL[v
 type NamedCode = { code: string; name: string }
 type ChangeListener = (vd: string, valtyp: Valtyp) => void
 export type WinnerParty = { forkortning: string | null; farg: string | null }
+// Dataset-provenance (dataset_meta, EN rad) — vilken källa färgar kartan. test=true &
+// source='genrep2026' under förvalsperioden → UI:t visar en "generalrep/testdata"-banner.
+export type DatasetMeta = {
+  source: string
+  valtillfalle: string | null
+  test: boolean
+  rakningstillfalle: string | null
+  kalla_uppdaterad: string | null
+}
 
 export interface ResultsContextValue {
   // Delad UI-state
@@ -66,6 +75,7 @@ export interface ResultsContextValue {
   revision: number
   snapshotVersion: number
   realtimeConnected: boolean // Realtime-kanalens status (SUBSCRIBED) → live-indikator
+  dataset: DatasetMeta | null // datakällans provenance (genrep/skarpt) → UI-banner
 }
 
 const ResultsContext = createContext<ResultsContextValue | null>(null)
@@ -94,6 +104,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
   const [regioner, setRegioner] = useState<NamedCode[]>([])
   const [totalByValtyp, setTotalByValtyp] = useState<Record<Valtyp, number>>(emptyCounts)
   const [realtimeConnected, setRealtimeConnected] = useState(false)
+  const [dataset, setDataset] = useState<DatasetMeta | null>(null)
 
   const storesRef = useRef<Record<Valtyp, ResultStore>>(null!)
   if (!storesRef.current) {
@@ -364,6 +375,23 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     }
   }, [valtyp, selectedArea])
 
+  // Dataset-provenance (genrep/skarpt) för UI-bannern. Hämtas vid mount + när en ny
+  // bulkladdning skett (snapshotVersion) så "källa uppdaterad"-tiden hålls färsk.
+  useEffect(() => {
+    let alive = true
+    supabase
+      .from('dataset_meta')
+      .select('source,valtillfalle,test,rakningstillfalle,kalla_uppdaterad')
+      .eq('id', 1)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (alive && data) setDataset(data as DatasetMeta)
+      })
+    return () => {
+      alive = false
+    }
+  }, [snapshotVersion])
+
   const value: ResultsContextValue = {
     valtyp,
     setValtyp,
@@ -390,6 +418,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     revision,
     snapshotVersion,
     realtimeConnected,
+    dataset,
   }
 
   return <ResultsContext.Provider value={value}>{children}</ResultsContext.Provider>

@@ -30,3 +30,5 @@ jobs:
           version: latest
       - name: Deploy ingest-parti
         run: supabase functions deploy ingest-parti --project-ref "$SUPABASE_PROJECT_REF"
+      - name: Deploy ingest-result
+        run: supabase functions deploy ingest-result --project-ref "$SUPABASE_PROJECT_REF"
