@@ -69,9 +69,21 @@ curl -XPOST localhost:54321/functions/v1/ingest-result -d '{"base":"https://resu
 
 Städa testdata ur `result` med `npm run results:reset` vid behov.
 
+## Kända begränsningar (att lösa före valnatten)
+
+- **Endast preliminära filer (`./p/…`) ingestas.** De slutliga (`./s/…`) hoppas över:
+  genrepets slutliga RD-fil är ~9 MB (~130 MB uppackad) och spränger edge-runtimens
+  minne (`WORKER_RESOURCE_LIMIT`). Den skarpa preliminära RD-filen (~2 MB) fungerar,
+  men vid full valnattsvolym kan även den växa nära taket. **Åtgärd före valnatten:**
+  streaming-parse av RD-JSON:en (ladda inte hela i minnet) eller mer minne (Supabase
+  Pro), och först då slå på slutlig-ingest för korrekta slutresultat.
+- **OS-/utlandsfiler ger 0 rader** (deras koder är inte 8-siffriga geografiska distrikt)
+  men markeras som behandlade så de inte körs om i all oändlighet.
+
 ## Checklista inför valnatten (13 sep 2026)
 
 1. Byt `RESULT_BASE_DEFAULT` → `…/val2026` i `ingest-result/index.ts`.
-2. Ny migration: tighta cron-kadensen (30–60 s) för `ingest-result-genrep` (döp om).
-3. Merge → CI deployar funktionen + applicerar migrationen. `dataset_meta` skrivs om
+2. Lös stor-RD/slutlig-parsningen (streaming eller mer minne) och släpp in `./s/…`.
+3. Ny migration: tighta cron-kadensen (30–60 s) för `ingest-result-genrep` (döp om).
+4. Merge → CI deployar funktionen + applicerar migrationen. `dataset_meta` skrivs om
    till `source='val2026', test=false` när första skarpa filen kommer → bannern släcks.

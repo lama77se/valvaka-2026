@@ -28,8 +28,9 @@ import { unzipSync } from 'https://esm.sh/fflate@0.8.2'
 // Generalrepet nu → byt till 'https://resultat.val.se/resultatfiler/val2026' på valnatten.
 const RESULT_BASE_DEFAULT = 'https://resultat.val.se/resultatfiler/genrep2026'
 // Organ-filer per körning; pg_cron plockar resten nästa varv (håller körningen inom
-// edge-runtimens tak även vid första fyllningen av alla ~314 filer).
-const MAX_FILES_DEFAULT = 25
+// edge-runtimens minnes-/CPU-tak). Lågt satt eftersom en enskild organ-fil kan vara
+// tung (preliminär RD ~2 MB / ~30 MB uppackad); pg_cron kör ofta nog för att hinna ikapp.
+const MAX_FILES_DEFAULT = 10
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -46,7 +47,11 @@ Deno.serve(async (req) => {
   const files = (await idxRes.text())
     .split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
     .map((l) => { const p = l.split(/\s+/); return { md5: p[0], rel: p[p.length - 1] } })
-    .filter((e) => /_(RD|RF|KF)\.zip$/i.test(e.rel))
+    // Bara PRELIMINÄRA organ-zip (`./p/…`). Slutliga (`./s/…`) hoppas över: genrepets
+    // slutliga RD-fil är ~9 MB (~130 MB uppackad) → spränger edge-runtimens minne
+    // (WORKER_RESOURCE_LIMIT). Stor/slutlig RD kräver streaming-parse eller mer minne
+    // — se valnatt-checklistan i docs/resultat-ingest-genrep.md.
+    .filter((e) => /_(RD|RF|KF)\.zip$/i.test(e.rel) && e.rel.includes('/p/'))
     .map((e) => ({ ...e, url: base + e.rel.replace(/^\./, '') }))
   if (files.length === 0) return json({ error: 'inga organ-zip i manifestet', base }, 502)
 
@@ -84,28 +89,32 @@ Deno.serve(async (req) => {
   let meta: { valtillfalle?: string; test?: boolean; rakningstillfalle?: string; senasteUppdateringstid?: string } | null = null
   for (const f of changed) {
     const zres = await fetch(f.url)
-    if (!zres.ok) continue
-    let unz: Record<string, Uint8Array>
-    try { unz = unzipSync(new Uint8Array(await zres.arrayBuffer())) } catch { continue }
-    const name = Object.keys(unz).find((n) => /rostfordelning.*\.json$/i.test(n))
-    if (!name) continue
-    const j = JSON.parse(new TextDecoder().decode(unz[name]))
-    meta = j
-    const status = String(j.rakningstillfalle ?? '').startsWith('prelimin') ? 'preliminar' : 'slutlig'
-    const rows: Record<string, unknown>[] = []
-    for (const vd of j.valdistrikt ?? []) {
-      const kod = vd.valdistriktskod
-      if (typeof kod !== 'string' || kod.length !== 8 || !districtSet.has(kod)) continue // uppsamling/okänd
-      for (const p of vd.rostfordelning?.rosterPaverkaMandat?.partiRoster ?? []) {
-        if (!partySet.has(p.partikod)) continue
-        rows.push({ valtyp: j.valtyp, valdistriktskod: kod, partikod: p.partikod, roster: p.antalRoster, status })
+    if (!zres.ok) continue // transient → försök igen nästa varv (markera INTE done)
+    try {
+      const unz = unzipSync(new Uint8Array(await zres.arrayBuffer()))
+      const name = Object.keys(unz).find((n) => /rostfordelning.*\.json$/i.test(n))
+      if (name) {
+        const j = JSON.parse(new TextDecoder().decode(unz[name]))
+        meta = j
+        const status = String(j.rakningstillfalle ?? '').startsWith('prelimin') ? 'preliminar' : 'slutlig'
+        const rows: Record<string, unknown>[] = []
+        for (const vd of j.valdistrikt ?? []) {
+          const kod = vd.valdistriktskod
+          if (typeof kod !== 'string' || kod.length !== 8 || !districtSet.has(kod)) continue // uppsamling/okänd
+          for (const p of vd.rostfordelning?.rosterPaverkaMandat?.partiRoster ?? []) {
+            if (!partySet.has(p.partikod)) continue
+            rows.push({ valtyp: j.valtyp, valdistriktskod: kod, partikod: p.partikod, roster: p.antalRoster, status })
+          }
+        }
+        for (let i = 0; i < rows.length; i += 1000) {
+          const { error } = await supabase.from('result').upsert(rows.slice(i, i + 1000), { onConflict: 'valtyp,valdistriktskod,partikod' })
+          if (error) break // blockera inte hela pipelinen på ett fel — filen markeras ändå done nedan
+          upserted += rows.slice(i, i + 1000).length
+        }
       }
-    }
-    for (let i = 0; i < rows.length; i += 1000) {
-      const { error } = await supabase.from('result').upsert(rows.slice(i, i + 1000), { onConflict: 'valtyp,valdistriktskod,partikod' })
-      if (error) return json({ error: error.message, file: name }, 500)
-    }
-    upserted += rows.length
+      // Markera filen behandlad ÄVEN utan röstfördelning / med 0 rader (t.ex. OS-/
+      // utlandsfiler) — annars väljs den om och om igen (äldst-först) och blockerar svansen.
+    } catch { /* korrupt/oväntad fil för denna md5 → markera done ändå, undvik oändlig omkörning */ }
     await supabase.from('ingest_state').upsert({ file_path: f.url, etag: f.md5, last_ok: new Date().toISOString(), last_status: 200 }, { onConflict: 'file_path' })
   }
 
