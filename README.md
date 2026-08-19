@@ -150,8 +150,12 @@ Under uppbyggnad. Klart hittills:
 
 Återstår:
 
-- **Fas 7 (resten)** — det fullständiga generalrepet mot den skarpa resultat-
-  ingesten (väntar på 2026 års opublicerade filschema).
+- **Skarp valnatt-drift.** Resultat-ingesten är byggd och kör mot Valmyndighetens
+  **generalrep** (`genrep2026`, live testdata) via samma edge-function + `pg_cron`
+  som valnatten; på valnatten byts källan till `val2026` (en konstant). Kvar inför
+  natten: skala Supabase-compute (micro→större) + lasttesta klientens läslast, samt
+  slutlig/stor-RD (post-valnatt: streaming eller Node-worker). Fullständig genomgång i
+  **[docs/resultat-ingest-genrep.md](./docs/resultat-ingest-genrep.md)**.
 
 Se **[docs/arkitektur.md](./docs/arkitektur.md)** för hela underlaget och
 **[docs/implementationsplan.md](./docs/implementationsplan.md)** för faser och
