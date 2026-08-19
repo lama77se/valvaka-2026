@@ -32,6 +32,14 @@ const RESULT_BASE_DEFAULT = 'https://resultat.val.se/resultatfiler/genrep2026'
 // tung (preliminär RD ~2 MB / ~30 MB uppackad); pg_cron kör ofta nog för att hinna ikapp.
 const MAX_FILES_DEFAULT = 10
 
+// STORLEKSVAKT: en organ-zip större än detta packas INTE upp — den skippas (men
+// markeras done). Edge-runtimen har 256 MB minne (EJ höjbart, inte ens på Pro) → en
+// ~9 MB slutlig RD-zip (~130 MB uppackad) spränger taket och dödar HELA invokeringen.
+// Det är INTE fångbart (try/catch räddar inte) → med äldst-först-ordningen skulle en
+// sådan fil krascha varje varv och svälta resten. ~2 MB preliminär RD ryms; tröskeln
+// lämnar marginal. Stor/slutlig RD kräver streaming-parse eller en Node-worker (docs).
+const MAX_ZIP_BYTES = 4_000_000
+
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 
@@ -84,38 +92,51 @@ Deno.serve(async (req) => {
   const { data: parties } = await supabase.from('party').select('partikod')
   const partySet = new Set((parties ?? []).map((p) => p.partikod))
 
-  // 4. Per ändrad organ-fil: hämta → unzip → parsa → upsert result.
+  // 4. Per ändrad organ-fil: hämta → (storleksvakt) → unzip → parsa → upsert result.
   let upserted = 0
+  let skipped = 0
   let meta: { valtillfalle?: string; test?: boolean; rakningstillfalle?: string; senasteUppdateringstid?: string } | null = null
   for (const f of changed) {
     const zres = await fetch(f.url)
     if (!zres.ok) continue // transient → försök igen nästa varv (markera INTE done)
-    try {
-      const unz = unzipSync(new Uint8Array(await zres.arrayBuffer()))
-      const name = Object.keys(unz).find((n) => /rostfordelning.*\.json$/i.test(n))
-      if (name) {
-        const j = JSON.parse(new TextDecoder().decode(unz[name]))
-        meta = j
-        const status = String(j.rakningstillfalle ?? '').startsWith('prelimin') ? 'preliminar' : 'slutlig'
-        const rows: Record<string, unknown>[] = []
-        for (const vd of j.valdistrikt ?? []) {
-          const kod = vd.valdistriktskod
-          if (typeof kod !== 'string' || kod.length !== 8 || !districtSet.has(kod)) continue // uppsamling/okänd
-          for (const p of vd.rostfordelning?.rosterPaverkaMandat?.partiRoster ?? []) {
-            if (!partySet.has(p.partikod)) continue
-            rows.push({ valtyp: j.valtyp, valdistriktskod: kod, partikod: p.partikod, roster: p.antalRoster, status })
+    const buf = new Uint8Array(await zres.arrayBuffer())
+    let lastStatus = 200
+    if (buf.byteLength > MAX_ZIP_BYTES) {
+      // För stor → hoppa uppackningen (annars OOM → död invokering → svält). Markeras
+      // done nedan (413) så äldst-först inte fastnar och kraschar på den varje varv.
+      skipped++
+      lastStatus = 413
+    } else {
+      try {
+        const unz = unzipSync(buf)
+        const name = Object.keys(unz).find((n) => /rostfordelning.*\.json$/i.test(n))
+        if (name) {
+          const j = JSON.parse(new TextDecoder().decode(unz[name]))
+          meta = j
+          const rakstatus = String(j.rakningstillfalle ?? '').startsWith('prelimin') ? 'preliminar' : 'slutlig'
+          const rows: Record<string, unknown>[] = []
+          for (const vd of j.valdistrikt ?? []) {
+            const kod = vd.valdistriktskod
+            if (typeof kod !== 'string' || kod.length !== 8 || !districtSet.has(kod)) continue // uppsamling/okänd
+            for (const p of vd.rostfordelning?.rosterPaverkaMandat?.partiRoster ?? []) {
+              if (!partySet.has(p.partikod)) continue
+              rows.push({ valtyp: j.valtyp, valdistriktskod: kod, partikod: p.partikod, roster: p.antalRoster, status: rakstatus })
+            }
+          }
+          // Små transaktioner (≤100 rader/upsert): Realtime tappar HELT ändringar från
+          // stora txns (>~100 rader) → live-kartan skulle inte målas om. Fler round-trips,
+          // men RD (~500 upserts, ~40 s) ryms väl inom väggtiden (150 s free / 400 s paid).
+          for (let i = 0; i < rows.length; i += 100) {
+            const { error } = await supabase.from('result').upsert(rows.slice(i, i + 100), { onConflict: 'valtyp,valdistriktskod,partikod' })
+            if (error) break // blockera inte hela pipelinen på ett fel — filen markeras ändå done nedan
+            upserted += Math.min(100, rows.length - i)
           }
         }
-        for (let i = 0; i < rows.length; i += 1000) {
-          const { error } = await supabase.from('result').upsert(rows.slice(i, i + 1000), { onConflict: 'valtyp,valdistriktskod,partikod' })
-          if (error) break // blockera inte hela pipelinen på ett fel — filen markeras ändå done nedan
-          upserted += rows.slice(i, i + 1000).length
-        }
-      }
-      // Markera filen behandlad ÄVEN utan röstfördelning / med 0 rader (t.ex. OS-/
-      // utlandsfiler) — annars väljs den om och om igen (äldst-först) och blockerar svansen.
-    } catch { /* korrupt/oväntad fil för denna md5 → markera done ändå, undvik oändlig omkörning */ }
-    await supabase.from('ingest_state').upsert({ file_path: f.url, etag: f.md5, last_ok: new Date().toISOString(), last_status: 200 }, { onConflict: 'file_path' })
+        // Markera filen behandlad ÄVEN utan röstfördelning / med 0 rader (t.ex. OS-/
+        // utlandsfiler) — annars väljs den om och om igen (äldst-först) och blockerar svansen.
+      } catch { lastStatus = 422 /* korrupt/oväntad fil för denna md5 → markera done ändå */ }
+    }
+    await supabase.from('ingest_state').upsert({ file_path: f.url, etag: f.md5, last_ok: new Date().toISOString(), last_status: lastStatus }, { onConflict: 'file_path' })
   }
 
   // 5. Provenance för UI-badgen (best-effort — funkar även innan dataset_meta-migrationen).
@@ -131,5 +152,5 @@ Deno.serve(async (req) => {
     }, { onConflict: 'id' })
   }
 
-  return json({ ok: true, source: base.includes('genrep') ? 'genrep2026' : 'val2026', changed: changed.length, upserted, remaining: allChanged.length - changed.length })
+  return json({ ok: true, source: base.includes('genrep') ? 'genrep2026' : 'val2026', changed: changed.length, upserted, skipped, remaining: allChanged.length - changed.length })
 })

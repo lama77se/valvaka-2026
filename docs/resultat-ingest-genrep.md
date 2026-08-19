@@ -71,14 +71,23 @@ Städa testdata ur `result` med `npm run results:reset` vid behov.
 
 ## Kända begränsningar (att lösa före valnatten)
 
-- **Endast preliminära filer (`./p/…`) ingestas.** De slutliga (`./s/…`) hoppas över:
-  genrepets slutliga RD-fil är ~9 MB (~130 MB uppackad) och spränger edge-runtimens
-  minne (`WORKER_RESOURCE_LIMIT`). Den skarpa preliminära RD-filen (~2 MB) fungerar,
-  men vid full valnattsvolym kan även den växa nära taket. **Åtgärd före valnatten:**
-  streaming-parse av RD-JSON:en (ladda inte hela i minnet) eller mer minne (Supabase
-  Pro), och först då slå på slutlig-ingest för korrekta slutresultat.
-- **OS-/utlandsfiler ger 0 rader** (deras koder är inte 8-siffriga geografiska distrikt)
-  men markeras som behandlade så de inte körs om i all oändlighet.
+- **Storleksvakt: organ-zip > 4 MB packas inte upp** (skippas + markeras done). Edge-
+  runtimen har **256 MB minne — EJ höjbart, inte ens på Pro** (och wall-time 150 s free
+  / 400 s paid). En ~9 MB slutlig RD-zip (~130 MB uppackad) spränger minnestaket och
+  dödar hela invokeringen (`WORKER_RESOURCE_LIMIT`, ej fångbart) → utan vakten skulle
+  den crash-loopa varje varv (äldst-först) och svälta resten. Preliminär RD (~2 MB) ryms.
+- **Endast preliminära filer (`./p/…`) ingestas**; slutliga (`./s/…`) hoppas över
+  (post-valnatt, ej tidskritiskt).
+- **🔴 Stor RD-fil är monolitisk.** RD kommer som EN riks-fil för alla ~6 600 distrikt.
+  Vid full valnattsvolym växer preliminär RD mot ~9 MB → passerar vakten → RD slutar
+  uppdateras sent på kvällen. **Åtgärd före valnatten:** streaming-parse av RD-JSON:en
+  (ladda inte hela i minnet) *eller* en Node-worker (utan 256 MB-taket) för just RD;
+  först då kan även slutlig-RD ingestas. Mät RD-filens storlekskurva under genrepet.
+- **Realtime:** rösterna upsertas i **≤100-radersbatchar** — Realtime tappar ändringar
+  från stora transaktioner (>~100 rader), så större batchar skulle inte måla om
+  live-kartan (snapshot vid omladdning fungerar ändå).
+- **OS-/utlandsfiler ger 0 rader** (koderna är inte 8-siffriga geografiska distrikt),
+  men markeras behandlade så de inte körs om i oändlighet.
 
 ## Checklista inför valnatten (13 sep 2026)
 
