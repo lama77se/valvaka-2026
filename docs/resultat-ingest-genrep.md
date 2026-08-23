@@ -39,6 +39,24 @@ dataset_meta (1 rad) ──────────►  provenance-banner (genre
 Bytet är **en konstant**: `RESULT_BASE_DEFAULT` i funktionen. (Funktionen tar även
 `{ "base": "…" }` i POST-body för lokal test mot en annan katalog.)
 
+## Generalrep-testfönster (17 aug – 2 sep 2026)
+
+Genrepet är **inte** en kontinuerlig feed — Valmyndigheten kör schemalagda simuleringar
+(tiderna är "mycket preliminära", och filerna raderas efter varje veckas körningar).
+Valnatts-simuleringen (preliminär valkväll — det som liknar skarpa natten mest) körs på
+måndagar; mellan körningarna hittar cron:en `changed:0` (no-op, korrekt).
+
+| Vecka | Valnatt (preliminär) | Uppsamling + slutlig |
+|---|---|---|
+| 1 | mån 17 aug 13–15 | tis 18 aug 10–12 / 13–15 · ons 19 aug 08–12 |
+| 2 | **mån 24 aug 13–15** | tis 25 aug 10–12 / 13–15 · ons 26 aug 08–12 |
+| 3 | **mån 31 aug 13–15** | tis 1 sep 10–12 / 13–15 · ons 2 sep 08–12 |
+
+Fönstret **stänger 2 sep**; sen är genrep troligen tyst tills `val2026` dyker upp ~13 sep.
+Kör ett **sista live end-to-end-test under en valnatts-simulering (mån 13–15)** — då
+pushas preliminär valkvällsdata så man ser kartan fyllas i realtid, precis som skarpa
+natten. Källa: `teknisk-beskrivning-av-resultatfiler` (val.se).
+
 ## Format (verifierat mot genrep 2026-08-18)
 
 Resultatfilerna är **JSON** (inte husstil-`;`-CSV som referensfilerna på `data.val.se`).
@@ -96,6 +114,12 @@ Städa testdata ur `result` med `npm run results:reset` vid behov.
   saknar valkrets), och `reportedCount` måste vaktas så den inte överstiger nämnaren.
   Medvetet **ej gjort** — värderingsval (3 %-korrigering med en oreducerbar valkrets-
   lucka). Beslut: dokumenterad känd begränsning tills annat bestäms.
+- **🟠 "Övriga" småpartier klumpas på valnatten.** Bara mandat-relevanta partier räknas
+  individuellt på valkvällen; övriga registrerade partier redovisas ihop och ligger i
+  `rosterEjPaverkaMandat` (som vi INTE tar per parti). Vår andel blir därför *andel av de
+  mandatpåverkande rösterna*, inte av alla giltiga → små partier saknas och de stora får
+  någon tiondels procent för hög andel (samma typ av liten avvikelse som uppsamlings-3%:an).
+  **Personröster** räknas inte alls i det preliminära — de kommer först i slutlig räkning.
 - **OS-/utlandsfiler ger 0 rader** (koderna är inte 8-siffriga geografiska distrikt),
   men markeras behandlade så de inte körs om i oändlighet.
 
@@ -104,5 +128,8 @@ Städa testdata ur `result` med `npm run results:reset` vid behov.
 1. Byt `RESULT_BASE_DEFAULT` → `…/val2026` i `ingest-result/index.ts`.
 2. Lös stor-RD/slutlig-parsningen (streaming eller mer minne) och släpp in `./s/…`.
 3. Ny migration: tighta cron-kadensen (30–60 s) för `ingest-result-genrep` (döp om).
-4. Merge → CI deployar funktionen + applicerar migrationen. `dataset_meta` skrivs om
-   till `source='val2026', test=false` när första skarpa filen kommer → bannern släcks.
+4. Merge → CI deployar funktionen + applicerar migrationen. På skarpa filerna
+   **FÖRSVINNER `test`-attributet helt** (val.se sätter det inte till `false`, det tas
+   bort) — vår `test: !!meta.test` ger då `false`, så `dataset_meta` skrivs om till
+   `source='val2026', test=false` när första skarpa filen kommer → **bannern släcks
+   automatiskt**. (Redan hanterat; inget att ändra.)
