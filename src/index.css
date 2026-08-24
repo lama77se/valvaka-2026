@@ -72,7 +72,7 @@
    w-[var(--panel-w)]) och kartkontrollernas offset nedan, så zoom-knapparna aldrig
    hamnar under panelen oavsett hur bred den är. Ändra bredden HÄR. */
 :root {
-  --panel-w: clamp(480px, 36vw, 680px);
+  --panel-w: clamp(662px, 49vw, 938px);
 }
 .maplibregl-ctrl-bottom-right {
   margin-right: calc(var(--panel-w) + 16px); /* skjut zoom-kontrollen vänster om panelen */

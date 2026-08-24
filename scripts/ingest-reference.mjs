@@ -31,9 +31,12 @@ const db = createClient(url, serviceKey, { auth: { persistSession: false } })
 
 // Riksdagspartiernas märkesfärger (choropleth). Övriga ~370 partier -> null (grå i UI).
 // Nyckel = PARTIFÖRKORTNING (stabil, igenkännbar). Fas 5-paint kan förfina.
+// V avviker medvetet från märkes-hexen #DA291C: den ligger på nästan samma ljushet
+// som S #E8112d och de två röda blev oskiljbara i staplar/karta. Vi fördjupar V till
+// en vinröd/bordeaux (tv-grafik-praxis: "mörkröd V, röd S") så åtskillnaden blir reell.
 const PARTY_COLORS = {
   S: '#E8112d', M: '#52BDEC', SD: '#DDDD00', C: '#009933',
-  V: '#DA291C', KD: '#231977', L: '#006AB3', MP: '#83CF39',
+  V: '#8B0016', KD: '#231977', L: '#006AB3', MP: '#83CF39',
 }
 
 const log = (m) => console.log(`[ingest-reference] ${m}`)
