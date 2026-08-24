@@ -16,8 +16,8 @@ import {
 } from '@/lib/aggregate'
 import { RIKET, defaultAreaFor, useResults, type Area } from '@/components/ResultsProvider'
 import { ResultTable } from '@/components/ResultTable'
-import { MandatSoffa } from '@/components/MandatSoffa'
-import { hareSeats, SPECTRUM } from '@/lib/soffa'
+import { MandatBars } from '@/components/MandatBars'
+import { SPECTRUM } from '@/lib/soffa'
 import { ancestorsOf, childGroupsOf, childLevelOf } from '@/lib/hierarchy'
 import { REPORTED_NEUTRAL, UNREPORTED_FILL } from '@/components/DistrictMap'
 
@@ -90,50 +90,11 @@ export function ResultPanel() {
     const display = collapseForDisplay(areaResult)
     const reported = codes.reduce((n, c) => n + (store.has(c) ? 1 : 0), 0)
     const has2022 = areaResult.rows.some((r) => r.andel2022 != null)
-    const seats = areaResult.rows
-      .filter((r) => (r.mandat ?? 0) > 0)
-      .map((r) => ({ forkortning: r.forkortning, farg: r.farg, mandat: r.mandat as number }))
-    // Ungefärlig procent-soffa (100 platser) där inget organ fördelas — RD@län/kommun,
-    // distriktsklick. Ren proportion (largest-remainder), ingen spärr; tydligt märkt.
-    const approxSeats =
-      areaResult.totalMandat == null && areaResult.giltiga > 0
-        ? (() => {
-            const weights: Record<string, number> = {}
-            for (const r of areaResult.rows) weights[r.partikod] = r.roster
-            const alloc = hareSeats(weights, 100)
-            return areaResult.rows
-              .filter((r) => (alloc[r.partikod] ?? 0) > 0)
-              .map((r) => ({ forkortning: r.forkortning, farg: r.farg, mandat: alloc[r.partikod] }))
-          })()
-        : []
-    // 2022 som jämförelse-baslinje innan 2026 kommit in: fylld soffa ur mandat2022 där
-    // organet fördelades, annars ihålig procent-soffa ur andel2022 (län/distrikt).
-    const seats2022 =
-      areaResult.totalMandat2022 != null && areaResult.totalMandat2022 > 0
-        ? areaResult.rows
-            .filter((r) => (r.mandat2022 ?? 0) > 0)
-            .map((r) => ({ forkortning: r.forkortning, farg: r.farg, mandat: r.mandat2022 as number }))
-        : []
-    const approxSeats2022 =
-      seats2022.length === 0 && has2022
-        ? (() => {
-            const weights: Record<string, number> = {}
-            for (const r of areaResult.rows) if (r.andel2022 != null) weights[r.partikod] = r.andel2022
-            const alloc = hareSeats(weights, 100)
-            return areaResult.rows
-              .filter((r) => (alloc[r.partikod] ?? 0) > 0)
-              .map((r) => ({ forkortning: r.forkortning, farg: r.farg, mandat: alloc[r.partikod] }))
-          })()
-        : []
     return {
       display,
       giltiga: areaResult.giltiga,
       totalMandat: areaResult.totalMandat,
       totalMandat2022: areaResult.totalMandat2022,
-      seats,
-      approxSeats,
-      seats2022,
-      approxSeats2022,
       has2022,
       reported,
       total: codes.length,
@@ -142,23 +103,6 @@ export function ResultPanel() {
   }, [valtyp, selectedArea, revision])
 
   const pct = view.total > 0 ? Math.round((view.reported / view.total) * 100) : 0
-
-  // Två soffbilder sida vid sida: 2026 (live) OCH 2022 (förra valet, som jämförelse) —
-  // 2022 ligger kvar även efter att 2026 börjat räknas. Varje sida är fylld soffa där
-  // ett organ fördelas, annars ihålig procent-soffa (röstandel).
-  const show2026 = (view.totalMandat != null && view.totalMandat > 0 && view.seats.length > 0) || view.approxSeats.length > 0
-  const show2022 = view.seats2022.length > 0 || view.approxSeats2022.length > 0
-  const bothSoffor = show2026 && show2022
-  const node2026 = !show2026 ? null : view.totalMandat != null && view.totalMandat > 0 && view.seats.length > 0 ? (
-    <MandatSoffa seats={view.seats} total={view.totalMandat} badge={bothSoffor ? '2026' : undefined} reportPct={pct} />
-  ) : (
-    <MandatSoffa seats={view.approxSeats} total={100} approx badge={bothSoffor ? '2026 · ungefärlig' : undefined} reportPct={pct} />
-  )
-  const node2022 = !show2022 ? null : view.seats2022.length > 0 ? (
-    <MandatSoffa seats={view.seats2022} total={view.totalMandat2022 as number} badge="2022" />
-  ) : (
-    <MandatSoffa seats={view.approxSeats2022} total={100} approx badge="2022 · ungefärlig" />
-  )
 
   // Områdesnamn-uppslag för breadcrumb + barnlista.
   const regionName = useMemo(() => new Map(regioner.map((r) => [r.code, r.name])), [regioner])
@@ -351,14 +295,17 @@ export function ResultPanel() {
                 })}
               </nav>
             )}
-            {(node2026 || node2022) && (
-              <div className="mb-3 border-b border-slate-800 pb-3">
-                <div className={bothSoffor ? 'grid grid-cols-2 gap-2' : ''}>
-                  {node2026}
-                  {node2022}
-                </div>
-              </div>
-            )}
+            <div className="mb-3 border-b border-slate-800 pb-3">
+              <MandatBars
+                shown={view.display.shown}
+                ovriga={view.display.ovriga}
+                totalMandat={view.totalMandat}
+                totalMandat2022={view.totalMandat2022}
+                giltiga={view.giltiga}
+                sparr={SPARR[valtyp]}
+                reportPct={pct}
+              />
+            </div>
             <ResultTable
               title={`${ELECTION[valtyp]} — ${areaName}`}
               subtitle={`${view.reported.toLocaleString('sv-SE')} av ${view.total.toLocaleString('sv-SE')} distrikt räknade (${pct} %)`}
@@ -383,21 +330,21 @@ export function ResultPanel() {
 
             {drill.childLevel && drillItems.length > 0 && (
               <div className="mt-3 border-t border-slate-800 pt-3">
-                <p className="mb-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400">
+                <p className="mb-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[11px] font-semibold uppercase tracking-widest text-slate-400">
                   Bryt ner — {CHILD_LABEL[drill.childLevel] ?? drill.childLevel}
                   {drill.anyLive ? (
                     <span className="font-normal normal-case tracking-normal text-slate-500">
                       2026 andel % · <span className="text-emerald-400/80">▲</span>/<span className="text-rose-400/80">▼</span> mot ’22
                     </span>
                   ) : (
-                    <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold normal-case tracking-normal text-amber-300/90">
+                    <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[11px] font-semibold normal-case tracking-normal text-amber-300/90">
                       2022 års resultat — inga 2026-röster än
                     </span>
                   )}
                 </p>
                 {/* Per-parti-matris: en kolumn per riksdagsparti (spektrumordning), andel %
                     för live-året + Δ mot 2022 under. Ingen egen max-höjd — listan fyller panelen. */}
-                <table className="w-full border-separate border-spacing-0 text-[11px] tabular-nums">
+                <table className="w-full border-separate border-spacing-0 text-[13px] tabular-nums">
                   <thead>
                     <tr className="text-slate-400">
                       <th className="pb-1 pr-1 text-left font-medium">Område</th>
@@ -423,13 +370,13 @@ export function ResultPanel() {
                         onClick={() => setSelectedArea({ level: it.level, code: it.code })}
                       >
                         <td
-                          className="max-w-[104px] truncate border-l-2 py-0.5 pl-1.5 pr-1 text-left text-slate-200"
+                          className="max-w-[150px] truncate border-l-2 py-0.5 pl-1.5 pr-1 text-left text-slate-200"
                           style={{ borderColor: it.leadFarg }}
                           title={nameOf(it)}
                         >
                           {nameOf(it)}
                           {stale && (
-                            <span className="ml-1 rounded bg-amber-500/15 px-1 text-[9px] font-semibold text-amber-300/90" title="Inga 2026-röster än — visar 2022 års resultat">
+                            <span className="ml-1 rounded bg-amber-500/15 px-1 text-[11px] font-semibold text-amber-300/90" title="Inga 2026-röster än — visar 2022 års resultat">
                               ’22
                             </span>
                           )}
@@ -446,7 +393,7 @@ export function ResultPanel() {
                                 {has ? (main * 100).toFixed(1) : '·'}
                               </div>
                               {d != null && Math.abs(d) >= 0.05 && (
-                                <div className={`text-[9px] leading-none ${d > 0 ? 'text-emerald-400/80' : 'text-rose-400/80'}`}>
+                                <div className={`text-[11px] leading-none ${d > 0 ? 'text-emerald-400/80' : 'text-rose-400/80'}`}>
                                   {d > 0 ? '+' : '−'}
                                   {Math.abs(d).toFixed(1)}
                                 </div>

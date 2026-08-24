@@ -11,7 +11,7 @@ function App() {
     <ResultsProvider>
       <main className="relative h-screen w-screen overflow-hidden bg-[#0b1020] text-slate-100">
         <DistrictMap />
-        <div className="absolute left-4 top-4 flex max-w-xs flex-col gap-3">
+        <div className="absolute left-4 top-4 flex max-w-[248px] flex-col gap-3">
           <div className="pointer-events-none relative rounded-lg border border-slate-700 bg-slate-900/85 p-4 shadow-lg backdrop-blur">
             {/* Källkodslänk — icon-only-länk (best practice: aria-label för
                 skärmläsare, target=_blank + rel=noopener noreferrer, pointer-events-auto

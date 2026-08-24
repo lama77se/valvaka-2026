@@ -31,7 +31,7 @@ export function PartyLegend() {
 
   return (
     <div className="pointer-events-auto max-w-xs rounded-lg border border-slate-700 bg-slate-900/85 px-3 py-2 shadow-lg backdrop-blur">
-      <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-400">Vinnande parti</p>
+      <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-widest text-slate-400">Vinnande parti</p>
       <div className="flex flex-wrap gap-x-3 gap-y-1.5">
         {uniq.map((p) => (
           <Swatch key={p.forkortning} farg={p.farg!} label={p.forkortning!} title={p.beteckning ?? p.forkortning!} />

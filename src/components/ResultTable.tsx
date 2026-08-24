@@ -36,7 +36,7 @@ export function ResultTable({ title, subtitle, status, display, giltiga, sparr, 
   const SparrLine = () => (
     <tr aria-hidden>
       <td colSpan={COLS} className="py-1">
-        <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-slate-500">
+        <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider text-slate-500">
           <span className="h-px flex-1 border-t border-dashed border-slate-600" />
           {sparrLabel}
           <span className="h-px flex-1 border-t border-dashed border-slate-600" />
@@ -55,13 +55,13 @@ export function ResultTable({ title, subtitle, status, display, giltiga, sparr, 
 
       <table className="w-full border-collapse text-sm tabular-nums">
         <thead>
-          <tr className="text-[10px] uppercase tracking-wider text-slate-500">
+          <tr className="text-[11px] uppercase tracking-wider text-slate-500">
             <th rowSpan={2} className="pr-2 text-left align-bottom font-medium">Parti</th>
             <th rowSpan={2} className="px-1 text-right align-bottom font-medium">Röster</th>
             <th colSpan={3} className="border-l border-slate-800 pb-0.5 text-center font-semibold text-slate-300">Andel</th>
             <th colSpan={3} className="border-l border-slate-800 pb-0.5 text-center font-semibold text-slate-300">Mandat</th>
           </tr>
-          <tr className="border-b border-slate-700 text-[10px] uppercase tracking-wide text-slate-400">
+          <tr className="border-b border-slate-700 text-[11px] uppercase tracking-wide text-slate-400">
             <th className="py-1 px-1 text-right font-medium border-l border-slate-800">2026</th>
             <th className="py-1 px-1 text-right font-medium">2022</th>
             <th className="py-1 px-1 text-right font-medium">±</th>

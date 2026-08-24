@@ -372,10 +372,11 @@ export function DistrictMap() {
         : codes
     // Resultatpanelen (aside, --panel-w) ligger ÖVER kartans högra del. fitBounds
     // centrerar i HELA behållaren → reservera panelbredden som högerpadding, annars
-    // hamnar områdets högra del under panelen (och zoomen blir för djup). Topp-padding
-    // håller undan valtyp-väljaren; övriga sidor får en luftig marginal.
+    // hamnar områdets högra del under panelen (och zoomen blir för djup). Topp-paddingen
+    // (150) trycker ner Sverige så valtyp-väljaren får ett eget luftigt fält OVANFÖR
+    // kartan i stället för att ligga ovanpå den; övriga sidor får luftig marginal.
     const panelW = document.querySelector('aside')?.clientWidth ?? 0
-    const pad = { top: 90, right: panelW + 24, bottom: 48, left: 48 }
+    const pad = { top: 150, right: panelW + 24, bottom: 48, left: 48 }
     if (on) {
       const box: [number, number, number, number] = [Infinity, Infinity, -Infinity, -Infinity]
       for (const vd of boxCodes) {
@@ -408,7 +409,9 @@ export function DistrictMap() {
           valresultat) tills ingest-result byter till val2026 på valnatten. Data-styrd
           (dataset.test) så den försvinner av sig själv när skarp data börjar flöda. */}
       {dataset?.test && (
-        <div className="pointer-events-none absolute left-1/2 top-0 z-10 -translate-x-1/2">
+        // Centrerad över den SYNLIGA kartan (samma uträkning som valtyp-väljaren), inte
+        // skärmens mitt som ligger en bit in under panelen.
+        <div className="pointer-events-none absolute left-[calc((100%-var(--panel-w))/2)] top-0 z-10 -translate-x-1/2">
           <div className="flex items-center gap-2 rounded-b-md border border-t-0 border-amber-500/60 bg-amber-500/15 px-4 py-1.5 text-sm font-semibold text-amber-200 shadow-lg backdrop-blur">
             <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
@@ -424,7 +427,10 @@ export function DistrictMap() {
 
       {/* Valtyp-väljare + rapporteringsgrad — en karta, tre val. Trycks ned när
           generalrep-bannern visas så de inte krockar. */}
-      <div className={`absolute left-1/2 ${dataset?.test ? 'top-14' : 'top-4'} -translate-x-1/2 space-y-2`}>
+      {/* Centrerad över den SYNLIGA kartan = mittpunkten av ytan till vänster om
+          resultatpanelen ((100vw − panelbredd) / 2), inte skärmens mitt (som ligger en
+          bit in under panelen och drog väljaren för långt åt höger). */}
+      <div className={`absolute left-[calc((100%-var(--panel-w))/2)] ${dataset?.test ? 'top-14' : 'top-4'} -translate-x-1/2 space-y-2`}>
         {/* Snabb väg tillbaka till hela Sverige — visas bara när man zoomat in på ett
             område (distrikt eller vald nivå). Nollställer till valtypens toppnivå
             (RD → Riket, RF/KF → prompt) vilket via fokuseffekten zoomar ut + avdimmar. */}

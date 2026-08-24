@@ -67,6 +67,7 @@ export interface ResultsContextValue {
   kommuner: NamedCode[]
   regioner: NamedCode[]
   valkretsar: NamedCode[] // valkretsar för AKTIV valtyp (RD 29 / RF 62; KF tom)
+  valkretsListRef: RefObject<Record<Valtyp, NamedCode[]>> // valkrets-namn PER valtyp (avgångstavlan visar en annan valtyp än den aktiva)
   areaIndexRef: RefObject<Record<Valtyp, AreaIndex>> // valkretsindex per valtyp
   totalByValtyp: Record<Valtyp, number>
 
@@ -412,6 +413,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     kommuner,
     regioner,
     valkretsar: valkretsListRef.current[valtyp], // resolveras till aktiv valtyp (re-render vid valtyp/snapshot)
+    valkretsListRef,
     areaIndexRef,
     totalByValtyp,
     subscribeChanges,
