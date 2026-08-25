@@ -8,6 +8,10 @@ normaliserar till Postgres, och Supabase Realtime pushar förändringar ut till
 kartklienten. På så vis byggs en egen realtidsfeed ovanpå en källa som bara
 publicerar platta filer på schema.
 
+**Live:** [valvaka-2026.vercel.app](https://valvaka-2026.vercel.app) — färgas just nu
+av Valmyndighetens **generalrepetition** (testdata) tills skarpa resultat flödar på
+valnatten 13 sep 2026.
+
 ## Status
 
 Under uppbyggnad. Klart hittills:
@@ -154,21 +158,23 @@ Under uppbyggnad. Klart hittills:
 
 - **Skarp valnatt-drift.** Resultat-ingesten är byggd och kör mot Valmyndighetens
   **generalrep** (`genrep2026`, live testdata) via samma edge-function + `pg_cron`
-  som valnatten; på valnatten byts källan till `val2026` (en konstant). Kvar inför
-  natten: skala Supabase-compute (micro→större) + lasttesta klientens läslast, samt
-  slutlig/stor-RD (post-valnatt: streaming eller Node-worker). Fullständig genomgång i
+  som valnatten; på valnatten byts källan till `val2026` (en konstant) + tightas
+  cron-kadensen (30–60 s). Kvar inför natten: lasttesta klientens läslast (den verkliga
+  skalningsrisken — DB:n ligger redan på Pro med micro-compute), samt den stora/slutliga
+  RD-filen (post-valnatt: streaming-parse eller Node-worker, då ~9 MB-zip:en spränger
+  edge-runtimens 256 MB-tak). Fullständig genomgång i
   **[docs/resultat-ingest-genrep.md](./docs/resultat-ingest-genrep.md)**.
 
 Se **[docs/arkitektur.md](./docs/arkitektur.md)** för hela underlaget och
 **[docs/implementationsplan.md](./docs/implementationsplan.md)** för faser och
 infrastruktur.
 
-## Tänkt stack
+## Stack
 
 | Lager | Val |
 |-------|-----|
 | Frontend | React 18 + TypeScript + Vite + Tailwind + shadcn/ui |
-| Karta | MapLibre GL JS (pinnad v5) — statisk GeoJSON via Supabase Storage |
+| Karta | MapLibre GL JS (pinnad v5.24) — statisk GeoJSON via Supabase Storage |
 | Realtid | Supabase Realtime |
 | Backend | Supabase edge functions (Deno), `pg_cron` + `pg_net` |
 | Databas | Postgres + PostGIS |
@@ -184,16 +190,18 @@ Ingest edge function (Deno) ──upsert──▶ Postgres + PostGIS
                                              ▼
                                        Supabase Realtime ──websocket──▶ React-klient (MapLibre)
 
-Statisk geometri (pmtiles) ─────────────── laddas en gång ──────────▶ React-klient
+Statisk geometri (GeoJSON) ─────────────── laddas en gång ──────────▶ React-klient
 ```
 
 Geometrin går vid sidan om databasflödet: distrikten är statiska och laddas en
-gång som vektortiles, medan bara resultatvärdena flödar i realtid.
+gång som statisk GeoJSON (hostad i Supabase Storage, utpekad via `VITE_GEOMETRY_URL`),
+medan bara resultatvärdena flödar i realtid. (Komprimering till vektortiles är en
+senare optimering; i dag räcker den förenklade GeoJSON:en.)
 
 ## Byggordning
 
 1. Geometri (statiskt, kan göras nu) — ladda, reprojicera SWEREF99 TM → WGS84,
-   förenkla, generera tiles.
+   förenkla, hosta som statisk GeoJSON i Supabase Storage.
 2. Referensdata — `party`, `district`, `district_comparison`.
 3. Ingestion mot parti/kandidat-CSV.
 4. Resultatschema + mandatmodul mot historisk 2022-data.
