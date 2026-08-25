@@ -118,9 +118,12 @@ Deno.serve(async (req) => {
           for (const vd of j.valdistrikt ?? []) {
             const kod = vd.valdistriktskod
             if (typeof kod !== 'string' || kod.length !== 8 || !districtSet.has(kod)) continue // uppsamling/okänd
+            // val.se:s egna rapporteringstid per distrikt (naiv svensk lokaltid, t.ex.
+            // "2026-08-25T10:21:59") → avgångstavlan visar riktigt klockslag på varje rad.
+            const rapporteringstid = typeof vd.rapporteringsTid === 'string' ? vd.rapporteringsTid : null
             for (const p of vd.rostfordelning?.rosterPaverkaMandat?.partiRoster ?? []) {
               if (!partySet.has(p.partikod)) continue
-              rows.push({ valtyp: j.valtyp, valdistriktskod: kod, partikod: p.partikod, roster: p.antalRoster, status: rakstatus })
+              rows.push({ valtyp: j.valtyp, valdistriktskod: kod, partikod: p.partikod, roster: p.antalRoster, status: rakstatus, rapporteringstid })
             }
           }
           // Små transaktioner (≤100 rader/upsert): Realtime tappar HELT ändringar från

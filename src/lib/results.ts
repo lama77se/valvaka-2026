@@ -36,14 +36,23 @@ const EMPTY: DistrictOutcome = { winner: null, share: 0, margin: 0, total: 0 }
 // Ackumulerar result-rader och räknar om vinnaren per distrikt on demand.
 export class ResultStore {
   private byDistrict = new Map<string, Map<string, number>>()
+  // val.se:s rapporteringstid per distrikt (naiv svensk lokaltid-sträng), för
+  // avgångstavlan. Sätts från valfri result-rad för distriktet (samma på alla partier).
+  private reportTimes = new Map<string, string>()
 
-  set(valdistriktskod: string, partikod: string, roster: number): void {
+  set(valdistriktskod: string, partikod: string, roster: number, rapporteringstid?: string | null): void {
     let parties = this.byDistrict.get(valdistriktskod)
     if (!parties) {
       parties = new Map()
       this.byDistrict.set(valdistriktskod, parties)
     }
     parties.set(partikod, roster)
+    if (rapporteringstid) this.reportTimes.set(valdistriktskod, rapporteringstid)
+  }
+
+  // Rapporteringstid (rå ISO-sträng "YYYY-MM-DDTHH:MM:SS") eller null om okänd.
+  reportTime(valdistriktskod: string): string | null {
+    return this.reportTimes.get(valdistriktskod) ?? null
   }
 
   outcome(valdistriktskod: string): DistrictOutcome {

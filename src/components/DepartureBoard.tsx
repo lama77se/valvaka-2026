@@ -16,31 +16,39 @@ const NEUTRAL = '#64748b'
 const BUFCAP = 60 // hur många distrikt vi minns
 const VISIBLE = 20 // hur många rader som visas (20 senaste inrapporterade per tavla)
 
-type Row = { vd: string; time: string }
+type Row = { vd: string }
 
-const hhmmss = () => new Date().toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+// val.se:s rapporteringstid "YYYY-MM-DDTHH:MM:SS" → "HH:MM". Naiv svensk lokaltid ur
+// strängen (ingen Date/tz-konvertering som skulle skifta klockslaget). "—" om okänd.
+const fmtTime = (iso: string | null): string => { const m = /[T ](\d{2}:\d{2})/.exec(iso ?? ''); return m ? m[1] : '—' }
 
 export function DepartureBoard({ valtyp }: { valtyp: Valtyp }) {
   const { subscribeChanges, storesRef, partyRef, distriktNamnRef, totalByValtyp, setSelectedArea, setValtyp, revision, snapshotVersion, areaIndexRef, kommuner, regioner, valkretsListRef } = useResults()
   const [rows, setRows] = useState<Row[]>([])
 
-  // Buffert utanför render: nyast-först-ordning + seen-set + tidsstämplar. Muteras
-  // synkront i lyssnaren, spolas till state rAF-koalescerat (tål valnattsburst).
-  const bufRef = useRef<{ order: string[]; seen: Set<string>; time: Map<string, string> }>({ order: [], seen: new Set(), time: new Map() })
+  // Buffert utanför render: nyast-först-ordning + seen-set. Muteras synkront i
+  // lyssnaren, spolas till state rAF-koalescerat (tål valnattsburst). Klockslaget läses
+  // vid render ur store.reportTime (val.se:s riktiga rapporteringstid).
+  const bufRef = useRef<{ order: string[]; seen: Set<string> }>({ order: [], seen: new Set() })
   const rafRef = useRef<number | null>(null)
 
   useEffect(() => {
-    // Seed ur redan inrapporterade distrikt (Map-insättningsordning ≈ rapport­ordning,
-    // nyast sist → vänd). Blank tid = seedad, inte live-tickad.
-    const seeded = [...storesRef.current[valtyp].districts()].reverse().slice(0, BUFCAP)
-    const buf = { order: seeded, seen: new Set(seeded), time: new Map<string, string>() }
+    const store = storesRef.current[valtyp]
+    // Seed: NYAST rapporterade först enligt val.se:s rapporteringstid (ISO-strängar
+    // sorterar kronologiskt); distrikt utan tid hamnar sist.
+    const seeded = [...store.districts()]
+      .map((vd) => [vd, store.reportTime(vd) ?? ''] as const)
+      .sort((a, b) => b[1].localeCompare(a[1]))
+      .slice(0, BUFCAP)
+      .map(([vd]) => vd)
+    const buf = { order: seeded, seen: new Set(seeded) }
     bufRef.current = buf
-    setRows(seeded.slice(0, VISIBLE).map((vd) => ({ vd, time: '' })))
+    setRows(seeded.slice(0, VISIBLE).map((vd) => ({ vd })))
 
     const flush = () => {
       rafRef.current = null
       const b = bufRef.current
-      setRows(b.order.slice(0, VISIBLE).map((vd) => ({ vd, time: b.time.get(vd) ?? '' })))
+      setRows(b.order.slice(0, VISIBLE).map((vd) => ({ vd })))
     }
     const scheduleFlush = () => {
       if (rafRef.current != null) return
@@ -52,13 +60,9 @@ export function DepartureBoard({ valtyp }: { valtyp: Valtyp }) {
       const b = bufRef.current
       if (!b.seen.has(vd)) {
         b.seen.add(vd)
-        b.order.unshift(vd)
-        b.time.set(vd, hhmmss())
+        b.order.unshift(vd) // nytt distrikt = nyaste rapporten → överst
         if (b.order.length > BUFCAP) {
-          for (const dropped of b.order.splice(BUFCAP)) {
-            b.seen.delete(dropped)
-            b.time.delete(dropped)
-          }
+          for (const dropped of b.order.splice(BUFCAP)) b.seen.delete(dropped)
         }
       }
       scheduleFlush() // även för redan sedda: ledande parti kan ha ändrats
@@ -104,7 +108,7 @@ export function DepartureBoard({ valtyp }: { valtyp: Valtyp }) {
       .join(' › ')
 
   return (
-    <div className="pointer-events-auto w-[390px] overflow-hidden rounded-lg border border-slate-700 bg-slate-950/85 shadow-2xl backdrop-blur">
+    <div className="pointer-events-auto w-[350px] overflow-hidden rounded-lg border border-slate-700 bg-slate-950/85 shadow-2xl backdrop-blur">
       <div className="flex items-center justify-between border-b border-slate-800 px-3 py-2">
         <div className="flex items-center gap-2">
           <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
@@ -142,10 +146,10 @@ export function DepartureBoard({ valtyp }: { valtyp: Valtyp }) {
                 title={`${path} — visa i tabellen (${VALTYP_LABEL[valtyp]})`}
               >
                 <div className="flex items-baseline gap-2">
-                  <span className="w-14 shrink-0 text-xs tabular-nums text-slate-400">{r.time || '—'}</span>
+                  <span className="w-11 shrink-0 text-xs tabular-nums text-slate-400">{fmtTime(store.reportTime(r.vd))}</span>
                   <span className="flex-1 truncate text-xs text-slate-200">{path}</span>
                 </div>
-                <div className="mt-0.5 flex items-center gap-3 pl-16 text-[11px] tabular-nums">
+                <div className="mt-0.5 flex items-center gap-3 pl-[52px] text-[11px] tabular-nums">
                   {w ? (
                     [0, 1, 2, 3, 4].map((i) => {
                       const rk = rank(i)
