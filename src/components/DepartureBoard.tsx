@@ -10,6 +10,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useResults } from '@/components/ResultsProvider'
 import { ancestorsOf } from '@/lib/hierarchy'
+import { onDark } from '@/lib/colors'
 import { VALTYP_LABEL, type Valtyp } from '@/lib/results'
 
 const NEUTRAL = '#64748b'
@@ -153,9 +154,12 @@ export function DepartureBoard({ valtyp }: { valtyp: Valtyp }) {
                   {w ? (
                     [0, 1, 2, 3, 4].map((i) => {
                       const rk = rank(i)
+                      // Förkortningen i partifärg (lightad så mörka V/KD syns mot den
+                      // mörka tavlan); procenttalet vitt som i resultatpanelen.
                       return rk ? (
-                        <span key={i} className={i === 0 ? 'font-semibold' : ''} style={{ color: rk.farg }}>
-                          {rk.fork} {rk.pct}%
+                        <span key={i} className={i === 0 ? 'font-semibold' : ''}>
+                          <span style={{ color: onDark(rk.farg) }}>{rk.fork}</span>{' '}
+                          <span className="text-slate-200">{rk.pct}%</span>
                         </span>
                       ) : null
                     })

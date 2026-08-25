@@ -18,6 +18,7 @@ import { RIKET, defaultAreaFor, useResults, type Area } from '@/components/Resul
 import { ResultTable } from '@/components/ResultTable'
 import { MandatBars } from '@/components/MandatBars'
 import { SPECTRUM } from '@/lib/soffa'
+import { onDark } from '@/lib/colors'
 import { ancestorsOf, childGroupsOf, childLevelOf } from '@/lib/hierarchy'
 import { REPORTED_NEUTRAL, UNREPORTED_FILL } from '@/components/DistrictMap'
 
@@ -353,7 +354,7 @@ export function ResultPanel() {
                     <tr className="text-slate-400">
                       <th className="pb-1 pr-1 text-left font-medium">Område</th>
                       {drill.cols.map((c) => (
-                        <th key={c.fork} className="px-0.5 pb-1 text-center font-bold" style={{ color: c.farg }} title={c.fork}>
+                        <th key={c.fork} className="px-0.5 pb-1 text-center font-bold" style={{ color: onDark(c.farg) }} title={c.fork}>
                           {c.fork}
                         </th>
                       ))}
@@ -409,7 +410,14 @@ export function ResultPanel() {
                           {it.level === 'distrikt' ? (
                             it.reported > 0 ? <span className="text-emerald-400" title="räknat">✓</span> : <span title="ej räknat">·</span>
                           ) : (
-                            <span title={`${it.reported} av ${it.total} distrikt räknade`}>
+                            // Färdigräknat område (alla distrikt inne) → grön bock + grön text,
+                            // annars neutral "X/Y". Understryker "ALLT räknat" på samma språk
+                            // som distriktsradernas bock.
+                            <span
+                              className={it.total > 0 && it.reported === it.total ? 'text-emerald-400' : ''}
+                              title={`${it.reported} av ${it.total} distrikt räknade`}
+                            >
+                              {it.total > 0 && it.reported === it.total && <span className="mr-0.5">✓</span>}
                               {it.reported}/{it.total}
                             </span>
                           )}
