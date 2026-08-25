@@ -47,7 +47,7 @@ Under uppbyggnad. Klart hittills:
     transaktioner (Realtime tappar jättebatchar).
 
 - **Presentation — resultatlager (pågår):** en delad `ResultsProvider` driver
-  kartan, en live resultattabell, mandatsoffan och en departure board-ticker från
+  kartan, en live resultattabell, resultatstaplar (mandat + röstandel) och en departure board-ticker från
   samma Realtime-flöde (delad valtyp + valt område). Tabellen visar parti · röster ·
   andel (2026/2022/±) · mandat (2026/2022/±)
   på alla nivåer — **2022 års slutresultat visas alltid** i egna kolumner bredvid
@@ -61,29 +61,28 @@ Under uppbyggnad. Klart hittills:
   distrikten (jämförbara) får 2022, övriga "–". Mandat och spärr-linjen döljs på
   distriktsnivå (församlingsvida bestämningar, inte per-distrikt). Aggregatet
   återanvänder den verifierade mandatmodulen och är kollat mot 2022-facit
-  (`npm run verify:aggregate`). Ovanför tabellen ritas en **riksdagssoffa**
-  (mandathalvcirkel, parliament-arc) — en prick per mandat, färgad per parti och
-  ordnad vänster→höger på politisk skala, med en **50 %-linje** rakt genom valvet
-  som visar var egen majoritet skär. Där ett organ faktiskt fördelas (RD@riket,
-  RF@region, KF@kommun) är soffan fylld och matar från samma facit-verifierade mandat
-  som tabellen; sittplatsgeometrin (`seatPositions`) är täckt av
-  `npm run verify:aggregate`. Där inget organ fördelas (RD-nedbrytning till
-  län/kommun, distriktsklick) ritas i stället en **ungefärlig procent-soffa** —
-  100 platser = procent, ren proportion (largest-remainder `hareSeats`, ingen spärr)
-  ur röstandelarna, tydligt märkt som ungefärlig (ihåliga ringar, `≈`-etikett) så den
-  aldrig förväxlas med räknade mandat. **2026 och 2022 visas som två bilder sida vid
-  sida** (`2026`- resp. `2022`-etikett): 2022 fungerar som baslinje och ligger kvar
-  även efter att 2026 börjat räknas, så innan första rösten ser man ändå förra valets
-  soffa i stället för en tom yta. 2026-soffan bär en amber **`Prognos · X % räknat`**-
-  markering tills allt är räknat, så tidiga och volatila projektioner (runt spärren)
-  inte läses som facit; 2022-baslinjen är alltid slutresultat och saknar den.
-  `hareSeats` täcks också av `npm run verify:aggregate`.
+  (`npm run verify:aggregate`). Ovanför tabellen ritas resultatet som **två liggande
+  staplar** (ersätter den tidigare mandatsoffan — kompaktare och mer lättläst): en
+  **röstandelsstapel** och en **mandatstapel**, båda med partierna vänster→höger i
+  politisk spektrumordning (V·S·MP·C·L·KD·M·SD) och en vit **50 %-linje** — halva
+  väljarkåren respektive egen majoritet. Röstandelsstapeln visar **bara partier över
+  spärren**; rösterna under spärren lämnas som ett tomt spår (bortkastade röster), så
+  den summerar medvetet till < 100 % och 50 %-linjen förblir sann. Mandatstapelns bredd
+  = totala mandat och matas, där ett organ faktiskt fördelas (RD@riket, RF@region,
+  KF@kommun), från samma facit-verifierade mandat som tabellen. Varje riksdagsparti
+  etiketteras inne i stapeln med läsbar textfärg mot bakgrunden. Under varje stapel
+  ligger en tunn **2022-spökstapel** som baslinje (då-vs-nu), och innan 2026 kommit in
+  faller stapeln tillbaka på 2022 så ytan aldrig står tom; medan det räknas bär
+  röstandelsstapeln en amber **`Prognos · X %`**-markering. Partifärgerna följer
+  `party.color` — V är medvetet en mörkare vinröd (`#8B0016`) än S så de två röda går
+  att skilja åt. Mandatmodulen som staplarna matas ur täcks av `npm run verify:aggregate`.
 
 - **Departure boards — live-tickers (klar).** Över kartan (nedre vänster) **tre**
   avgångstavlor, en per val (**Riksdag / Region / Kommun**), alltid synliga samtidigt:
-  var och en visar sitt vals inrapporterade valdistrikt nyast överst (tid, distriktsnamn,
-  ledande parti + andel, färgkodad vänsterkant) samt rapporteringsgrad (t.ex. RF exkl.
-  Gotland som saknar regionval). Prenumererar på samma per-distrikt-notis som kartan
+  var och en visar sitt vals inrapporterade valdistrikt nyast överst (tid, **full
+  hierarkiväg** i stället för bara distriktsnamnet — t.ex. kommun › valkrets › distrikt —,
+  de **fem största partierna** med andel, färgkodad vänsterkant) samt rapporteringsgrad
+  (t.ex. RF exkl. Gotland som saknar regionval). Prenumererar på samma per-distrikt-notis som kartan
   (`subscribeChanges`), rAF-koalescerad så den tål valnattsburst; seedas ur redan
   inrapporterade distrikt vid laddning (snapshot fanar inte ut till listeners). Nya
   distrikt glider in med en kort blänk; klick på en rad byter till det valet och drillar
@@ -99,7 +98,10 @@ Under uppbyggnad. Klart hittills:
   live-status: en pulsande **Live/Offline**-prick som speglar Realtime-kanalens
   faktiska anslutning (`realtimeConnected` ur providerns `subscribe`-status), och en
   **"uppdaterad HH:MM:SS"**-stämpel som sätts när data ändras (piggybackar på kartans
-  rAF-flush → inga extra renders).
+  rAF-flush → inga extra renders). Räknaren märks dessutom **`Preliminärt`/`Slutgiltigt`**
+  (datastyrt via `dataset_meta.rakningstillfalle`) — valnattens `X av 6 312 valdistrikt`
+  är preliminärt tills Länsstyrelsernas slutliga sammanräkning (personröster + sena
+  uppsamlingsröster tillkommer då). Gäller alla tre valen.
 
 - **Drill-down + aggregat-paneler (klar).** Panelen har en **breadcrumb** med
   klickbara förfäder (navigera uppåt) och en **"Bryt ner"-matris** över det valda

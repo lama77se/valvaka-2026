@@ -60,7 +60,11 @@ export function ResultPanel() {
     districtAndel2022Ref,
     ensureDistrictWinners2022,
     revision,
+    dataset,
   } = useResults()
+
+  // Preliminärt tills slutlig sammanräkning (se DistrictMap) — gäller alla tre valen.
+  const preliminar = !dataset?.rakningstillfalle || dataset.rakningstillfalle.toLowerCase().startsWith('prelimin')
 
   const areaIndex = areaIndexRef.current[valtyp]
 
@@ -308,7 +312,7 @@ export function ResultPanel() {
             </div>
             <ResultTable
               title={`${ELECTION[valtyp]} — ${areaName}`}
-              subtitle={`${view.reported.toLocaleString('sv-SE')} av ${view.total.toLocaleString('sv-SE')} distrikt räknade (${pct} %)`}
+              subtitle={`${view.reported.toLocaleString('sv-SE')} av ${view.total.toLocaleString('sv-SE')} valdistrikt räknade (${pct} %) · ${preliminar ? 'preliminärt' : 'slutgiltigt'}`}
               display={view.display}
               giltiga={view.giltiga}
               sparr={SPARR[valtyp]}

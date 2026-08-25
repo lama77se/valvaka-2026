@@ -400,6 +400,11 @@ export function DistrictMap() {
 
   const total = totalByValtyp[valtyp]
   const reportedPct = total > 0 ? Math.round((reportedCount / total) * 100) : 0
+  // Resultatet är PRELIMINÄRT tills Länsstyrelsernas slutliga sammanräkning (rakningstill-
+  // fälle byter från "preliminär" → "slutlig"). "X av 6312 valdistrikt" mäter bara distrikt
+  // som rapporterat sin preliminärräkning — sena förtids-/brev-/utlandsröster + personröster
+  // tillkommer vid sluträkningen. Gäller alla tre valen (dataset_meta är EN global rad).
+  const preliminar = !dataset?.rakningstillfalle || dataset.rakningstillfalle.toLowerCase().startsWith('prelimin')
 
   return (
     <div className="absolute inset-0">
@@ -465,10 +470,22 @@ export function DistrictMap() {
         </div>
         {total > 0 && (
           <div className="pointer-events-none rounded-md border border-slate-700 bg-slate-900/90 px-4 py-1.5 text-center text-sm text-slate-100 shadow-lg">
-            <div>
-              <span className="font-mono text-base font-semibold tabular-nums">{reportedCount}</span>
-              <span className="text-slate-400"> av {total.toLocaleString('sv-SE')} distrikt räknade</span>
-              <span className="ml-2 text-xs text-sky-300">{reportedPct}%</span>
+            <div className="flex items-center justify-center gap-2">
+              <span
+                className={`rounded px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${preliminar ? 'bg-amber-500/15 text-amber-300' : 'bg-emerald-500/15 text-emerald-300'}`}
+                title={
+                  preliminar
+                    ? 'Preliminärt röstresultat. "X av 6312 valdistrikt" räknar distrikt som rapporterat sin preliminärräkning — sena förtids-/brev-/utlandsröster och personröster tillkommer vid Länsstyrelsernas slutliga sammanräkning (onsdag efter valdagen). Gäller riksdag, region och kommun.'
+                    : 'Slutgiltigt resultat (slutlig sammanräkning).'
+                }
+              >
+                {preliminar ? 'Preliminärt' : 'Slutgiltigt'}
+              </span>
+              <span>
+                <span className="font-mono text-base font-semibold tabular-nums">{reportedCount}</span>
+                <span className="text-slate-400"> av {total.toLocaleString('sv-SE')} valdistrikt</span>
+                <span className="ml-2 text-xs text-sky-300">{reportedPct}%</span>
+              </span>
             </div>
             <div className="mt-0.5 flex items-center justify-center gap-1.5 text-[11px] text-slate-400">
               <span

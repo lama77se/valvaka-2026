@@ -119,7 +119,7 @@ export function DepartureBoard({ valtyp }: { valtyp: Valtyp }) {
       {rows.length === 0 ? (
         <p className="px-3 py-4 text-center text-xs text-slate-500">Inga distrikt inrapporterade än</p>
       ) : (
-        <ul className="max-h-[420px] divide-y divide-slate-800/70 overflow-y-auto">
+        <ul className="max-h-[200px] divide-y divide-slate-800/70 overflow-y-auto">
           {rows.map((r) => {
             // Vinnare + tvåa ur distriktets partiröster (sorterat fallande).
             const votes = store.aggregate([r.vd])
