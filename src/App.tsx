@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Analytics } from '@vercel/analytics/react'
 import { DistrictMap } from '@/components/DistrictMap'
 import { ResultPanel } from '@/components/ResultPanel'
@@ -6,7 +7,47 @@ import { DepartureBoard } from '@/components/DepartureBoard'
 import { PartyLegend } from '@/components/PartyLegend'
 import { VALTYPER } from '@/lib/results'
 
+// Kartan + resultatpanelen sida vid sida är byggda för desktop och fungerar inte på
+// en telefonskärm. Är fönstret för smalt → visa bara ett meddelande i stället för att
+// montera (och tungt ladda) hela appen på en yta den ändå inte ryms i.
+const MOBILE_QUERY = '(max-width: 820px)'
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.matchMedia(MOBILE_QUERY).matches)
+  useEffect(() => {
+    const mq = window.matchMedia(MOBILE_QUERY)
+    const onChange = () => setIsMobile(mq.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+  return isMobile
+}
+
+function MobileNotice() {
+  return (
+    <main className="flex h-screen w-screen items-center justify-center bg-[#0b1020] p-6 text-slate-100">
+      <div className="max-w-sm rounded-xl border border-slate-700 bg-slate-900/80 p-6 text-center shadow-2xl">
+        <div className="mb-3 flex justify-center text-sky-400" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+            <rect x="2" y="3" width="20" height="14" rx="2" />
+            <path d="M8 21h8M12 17v4" />
+          </svg>
+        </div>
+        <p className="text-xs font-medium uppercase tracking-widest text-slate-400">Valvaka 2026</p>
+        <h1 className="mt-1 text-lg font-bold tracking-tight">Öppna på en större skärm</h1>
+        <p className="mt-2 text-sm text-slate-400">
+          Realtidskartan och resultatpanelen är byggda för desktop. Besök sidan på en
+          dator eller surfplatta i liggande läge för hela valvakan.
+        </p>
+      </div>
+      <Analytics />
+    </main>
+  )
+}
+
 function App() {
+  const isMobile = useIsMobile()
+  if (isMobile) return <MobileNotice />
+
   return (
     <ResultsProvider>
       <main className="relative h-screen w-screen overflow-hidden bg-[#0b1020] text-slate-100">
