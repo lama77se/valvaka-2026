@@ -22,6 +22,7 @@
     "verify:mandate-kf": "tsx scripts/verify-mandate-kf.ts",
     "verify:aggregate": "tsx scripts/verify-aggregate.ts",
     "verify:uppsamling": "tsx scripts/verify-uppsamling.ts",
+    "ingest:slutlig-rd": "node --env-file=.env.local --max-old-space-size=4096 scripts/ingest-slutlig-rd.mjs",
     "simulate:valnatt": "node --env-file=.env.local scripts/simulate-valnatt.mjs",
     "results:reset": "node --env-file=.env.local scripts/reset-results.mjs",
     "verify:realtime": "node --env-file=.env.local scripts/verify-realtime.mjs",

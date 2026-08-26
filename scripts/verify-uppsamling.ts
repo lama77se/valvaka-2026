@@ -123,6 +123,9 @@ const main = async () => {
   console.log('--- RD riket (exercerar 314-summeringen, 349 mandat) ---')
   for (const r of pick(/_RD\.zip$/i, 1)) await testOrgan(r, 'RD', 'riket')
 
+  console.log('\n--- RD riket SLUTLIG (~26 MB, definitiv — den lokala worker-filen) ---')
+  for (const r of rels.filter((r) => /\/s\/rd\/.*_RD\.zip$/i.test(r)).slice(0, 1)) await testOrgan(r, 'RD', 'riket')
+
   console.log('\n--- RF region (uppsamling per län) ---')
   for (const r of pick(/_RF\.zip$/i, 2)) await testOrgan(r, 'RF', 'region')
 

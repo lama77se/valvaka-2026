@@ -17,11 +17,11 @@ resultat.val.se/resultatfiler/<base>/index.md5   (manifest: md5 + organ-zip)
         │  pg_cron var 2:e min → net.http_post
         ▼
 supabase/functions/ingest-result  (Deno edge function)
-        │  md5-diff (ingest_state) → hämta ändrade organ-zip → fflate-unzip
-        │  → parsa röstfördelnings-JSON → filtrera mot FK → upsert
+        │  md5-diff (ingest_state) → hämta ändrade organ-zip → STREAMA (fflate + SAX)
+        │  → filtrera mot FK → batch-upsert   (för stora slutliga: lokalt skript, se nedan)
         ▼
-result  (Postgres)  ──Realtime──►  kartan färgas + rapporteringsgrad tickar
-dataset_meta (1 rad) ──────────►  provenance-banner (genrep/testdata)
+result + uppsamling_result (Postgres) ──Realtime──►  kartan färgas + rapporteringsgrad tickar
+dataset_meta (1 rad) ──────────────────►  provenance-banner (genrep/testdata)
 ```
 
 - **Funktion:** [`supabase/functions/ingest-result/index.ts`](../supabase/functions/ingest-result/index.ts)
@@ -65,13 +65,14 @@ En zip per organ — RD riket (`00`), RF per region, KF per kommun — innehåll
 `valdistrikt[].rostfordelning.rosterPaverkaMandat.partiRoster[].antalRoster`.
 
 **FK-filtrering (annars bryter `result`s foreign keys):**
-- `valdistriktskod` med **len ≠ 8** (uppsamlingsdistrikt, t.ex. `011400`) hoppas över.
+- Uppsamlingsdistrikt (`valdistriktstyp === 'uppsamlingsdistrikt'`, kod ≠ 8 siffror t.ex.
+  `011400`) routas till **`uppsamling_result`** per explicit kommunkod/lankod (ej `result`).
 - `partikod` som saknas i `party` hoppas över. (I genrep 2026: 0 tappade — full täckning.)
 
 ## Kadens & första fyllning
 
-`MAX_FILES = 25` organ-filer per körning → första fyllningen av alla ~314 organ tar
-~10–15 cron-varv (~20–30 min), sen hämtas bara det som ändrats (manifest-md5-diff).
+`MAX_FILES = 10` organ-filer per körning (+ en väggtidsbudget) → första fyllningen av alla
+~314 organ tar en handfull cron-varv, sen hämtas bara det som ändrats (manifest-md5-diff).
 På valnatten: tighta kadensen (30–60 s) i en egen migration.
 
 ## Verifiera lokalt
@@ -87,39 +88,46 @@ curl -XPOST localhost:54321/functions/v1/ingest-result -d '{"base":"https://resu
 
 Städa testdata ur `result` med `npm run results:reset` vid behov.
 
-## Kända begränsningar (att lösa före valnatten)
+## Stora slutliga filer — lokalt Node-skript (`npm run ingest:slutlig-rd`)
 
-- **Storleksvakt: organ-zip > 4 MB packas inte upp** (skippas + markeras done). Edge-
-  runtimen har **256 MB minne — EJ höjbart, inte ens på Pro** (och wall-time 150 s free
-  / 400 s paid). En ~9 MB slutlig RD-zip (~130 MB uppackad) spränger minnestaket och
-  dödar hela invokeringen (`WORKER_RESOURCE_LIMIT`, ej fångbart) → utan vakten skulle
-  den crash-loopa varje varv (äldst-först) och svälta resten. Preliminär RD (~2 MB) ryms.
-- **Preliminära filer + slutliga RF/KF ingestas.** Slutlig RF (~2 MB) och KF (~0,03 MB)
-  är små och går in via samma väg (ger slutgiltiga region-/kommunresultat efter
-  sluträkningen); den slutliga RD-filen (~26 MB) utesluts i manifest-filtret (laddas
-  inte ens ner) och hanteras av en separat worker (nedan). En BEFORE UPDATE-trigger
-  (`result_no_status_downgrade`) hindrar att en sen preliminär re-ingest skriver över
-  en slutlig rad.
-- **🔴 Slutlig RD-fil är monolitisk (~26 MB).** RD kommer som EN riks-fil för alla
-  distrikt. Mätt mot genrepet: **preliminär** RD stannar på ~2,2 MB även vid 100 %
-  räknat (ryms väl under 4 MB-vakten → valnatten är trygg med preliminär-vägen), men
-  **slutlig** RD är ~26 MB (~hundratals MB uppackad) och spränger 256 MB-taket
-  (`WORKER_RESOURCE_LIMIT`). Den utesluts därför ur edge-ingesten. **Åtgärd (post-
-  valnatt, ej tidskritiskt):** streaming-parse *eller* en Node-worker utan 256 MB-taket
-  för just slutlig-RD.
-- **Realtime:** rösterna upsertas i **≤100-radersbatchar** — Realtime tappar ändringar
-  från stora transaktioner (>~100 rader), så större batchar skulle inte måla om
-  live-kartan (snapshot vid omladdning fungerar ändå).
-- **🟠 Uppsamlingsröster ingår inte i aggregaten (upp till ~3 % sent på kvällen).**
-  De 314 uppsamlingsdistrikten (förtids-/reströster, koder ≠ 8 siffror) hoppas över, så
-  riks-/regions-/kommunsummorna underskattar med **~0 % tidigt → upp till ~3 % sent**
-  när reströsterna kommer in. Officiella `SomSkaRaknas` räknar IN dem (RD 6626 = 6312 +
-  314), men vår rapporteringsgrad + karta är geografisk (6312/6272) — det matchar det
-  kartan faktiskt kan måla. Att lägga in deras röster i riket/region/kommun-aggregaten
-  är billigt (prefix-aggregat), MEN **RD-valkrets förblir fel oavsett** (uppsamling
-  saknar valkrets), och `reportedCount` måste vaktas så den inte överstiger nämnaren.
-  Medvetet **ej gjort** — värderingsval (3 %-korrigering med en oreducerbar valkrets-
-  lucka). Beslut: dokumenterad känd begränsning tills annat bestäms.
+De **slutliga** filerna bär personröster: RD publiceras odelat nationellt (~260 MB uppackad)
+och de största regionerna blir ~50–95 MB. Edge kan INTE parsa dem — Supabase-edge har **~2 s
+CPU/request** och att tokenisera 260 MB spränger det på ~4 s (`WORKER_RESOURCE_LIMIT`), och den
+monolitiska JSON:en går inte att chunka/resume:a (till skillnad från transport-repots radbaserade
+CSV). ingest-result:s storleksvakt (Content-Length > `MAX_EDGE_ZIP_BYTES` = 4 MB) **hoppar** dem
+och delegerar hit. Node har inget sådant tak (~1,1 GB RSS på 260 MB-filen, väl inom 7 GB).
+
+**4 filer** överstiger gränsen: **slutlig RD (24,6 MB)** + de 3 största regionernas **slutliga RF**
+(Stockholm 8,1 / VGR 6,6 / Skåne 5,4 MB). Skript:
+[`scripts/ingest-slutlig-rd.mjs`](../scripts/ingest-slutlig-rd.mjs).
+
+**När:** under **sluträkningen (ons–fre efter valet)**, när de definitiva filerna dyker upp och
+uppdateras (Länsstyrelsen räknar om). Preliminära natten behöver det INTE — då tar edge allt.
+
+**Hur:**
+```bash
+npm run ingest:slutlig-rd            # tar bara filer som ändrats sedan sist (md5)
+npm run ingest:slutlig-rd -- --force # kör om alla stora slutliga filer
+```
+Kräver service-role i `.env.local`. Egna `ingest_state`-nycklar (`slutlig-local:`) → krockar
+aldrig med edge:ns state. Verifierat: skriver 6312 slutliga RD-distrikt + de 3 stora regionerna;
+`verify:uppsamling` bekräftar att slutlig RD → `computeMandate` == val.se-facit (349).
+
+## Kända begränsningar
+
+- **Streaming-parse (alla storlekar som ryms i edge).** ingest-result STREAMAR varje fil
+  (fflate streaming-unzip → `@streamparser/json` SAX → batch-upsert) → minnet är bounded oavsett
+  filstorlek (~110 MB peak lokalt på 260 MB-filen). Ersätter den gamla unzipSync + JSON.parse-
+  vägen. De 4 filer som ändå inte ryms (CPU-taket, se ovan) delegeras till det lokala skriptet.
+- **Realtime-batch:** preliminärt upsertas i **≤100-radersbatchar** — Realtime tappar txns >~100
+  rader → live-kartan skulle inte målas om på valnatten. Slutligt använder **1000-radersbatchar**
+  (Realtime behövs inte ons–fre; klienten läser via snapshot). En BEFORE UPDATE-trigger
+  (`result_no_status_downgrade`) hindrar att en sen preliminär re-ingest skriver över en slutlig rad.
+- **✅ Uppsamlingsröster vägs in i organtotalerna (löst, PR #30).** De 314 uppsamlingsdistrikten
+  (sena röster, koder ≠ 8 siffror) routas till `uppsamling_result` per explicit kommunkod/lankod
+  och vägs in i organ-aggregaten (KF-kommun, RF-region, RD-riket) → slutgiltiga röstsummor + mandat
+  matchar val.se. Karta/valkrets/distrikt förblir geografiska (6312/6272) med flit → barnen
+  summerar då inte exakt till organet. Verifierat mot facit: `npm run verify:uppsamling`.
 - **🟠 "Övriga" småpartier klumpas på valnatten.** Bara mandat-relevanta partier räknas
   individuellt på valkvällen; övriga registrerade partier redovisas ihop och ligger i
   `rosterEjPaverkaMandat` (som vi INTE tar per parti). Vår andel blir därför *andel av de
@@ -131,9 +139,12 @@ Städa testdata ur `result` med `npm run results:reset` vid behov.
 
 ## Checklista inför valnatten (13 sep 2026)
 
-1. Byt `RESULT_BASE_DEFAULT` → `…/val2026` i `ingest-result/index.ts`.
-2. Slutlig RF/KF ingestas redan; bygg en separat worker för slutlig **RD** (~26 MB) —
-   streaming eller Node utan 256 MB-taket. (Ej tidskritiskt för valnatten.)
+1. Byt `RESULT_BASE_DEFAULT` → `…/val2026` **på BÅDA ställena i lockstep**:
+   `ingest-result/index.ts` OCH `scripts/ingest-slutlig-rd.mjs`. (Om bara den ena byts laddas
+   giganterna från fel katalog — tyst fel på de filer som betyder mest.)
+2. Preliminärt + små slutliga (290 KF + 17 RF) tas av edge automatiskt. **Stora slutliga**
+   (RD + de 3 största regionernas RF) tas av `npm run ingest:slutlig-rd` — kör det under
+   **sluträkningen (ons–fre)** när de definitiva filerna kommer/uppdateras (se avsnittet ovan).
 3. Ny migration: tighta cron-kadensen (30–60 s) för `ingest-result-genrep` (döp om).
 4. Merge → CI deployar funktionen + applicerar migrationen. På skarpa filerna
    **FÖRSVINNER `test`-attributet helt** (val.se sätter det inte till `false`, det tas
