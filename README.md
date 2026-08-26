@@ -8,7 +8,7 @@ normaliserar till Postgres, och Supabase Realtime pushar förändringar ut till
 kartklienten. På så vis byggs en egen realtidsfeed ovanpå en källa som bara
 publicerar platta filer på schema.
 
-**Live:** [valvaka-2026.vercel.app](https://valvaka-2026.vercel.app) — färgas just nu
+**Live:** [valvaka.tech](https://valvaka.tech) — färgas just nu
 av Valmyndighetens **generalrepetition** (testdata) tills skarpa resultat flödar på
 valnatten 13 sep 2026.
 
