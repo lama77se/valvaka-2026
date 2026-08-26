@@ -63,10 +63,10 @@ export function ResultPanel() {
     revision,
   } = useResults()
 
-  // Preliminärt tills sluträkningen börjat komma in för DENNA valtyp (per-valtyp — RD kan
-  // vara preliminär medan RF/KF blivit slutliga). Härlett ur result.status i storen; storen
-  // uppdateras via snapshot/Realtime och panelen renderas om på `revision`.
-  const preliminar = !storesRef.current[valtyp].isSlutlig
+  // Slutresultat-läge PER VALTYP ur result.status i storen (preliminärt → sluträknas · X %
+  // → slutgiltigt). Panelen renderas om på `revision` så andelen hålls färsk.
+  const prog = storesRef.current[valtyp].slutligProgress()
+  const slutligText = prog.state === 'preliminar' ? 'preliminärt' : prog.state === 'slutlig' ? 'slutgiltigt' : `sluträknas ${prog.pct} %`
 
   const areaIndex = areaIndexRef.current[valtyp]
 
@@ -314,7 +314,7 @@ export function ResultPanel() {
             </div>
             <ResultTable
               title={`${ELECTION[valtyp]} — ${areaName}`}
-              subtitle={`${view.reported.toLocaleString('sv-SE')} av ${view.total.toLocaleString('sv-SE')} valdistrikt räknade (${pct} %) · ${preliminar ? 'preliminärt' : 'slutgiltigt'}`}
+              subtitle={`${view.reported.toLocaleString('sv-SE')} av ${view.total.toLocaleString('sv-SE')} valdistrikt räknade (${pct} %) · ${slutligText}`}
               display={view.display}
               giltiga={view.giltiga}
               sparr={SPARR[valtyp]}

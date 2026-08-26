@@ -400,12 +400,26 @@ export function DistrictMap() {
 
   const total = totalByValtyp[valtyp]
   const reportedPct = total > 0 ? Math.round((reportedCount / total) * 100) : 0
-  // Resultatet är PRELIMINÄRT tills Länsstyrelsernas slutliga sammanräkning. PER VALTYP:
-  // härlett ur result.status i denna valtyps store (RD kan vara preliminär medan RF/KF
-  // hunnit bli slutliga). "X av 6312 valdistrikt" mäter bara distrikt som rapporterat sin
-  // preliminärräkning — sena förtids-/brev-/utlandsröster + personröster tillkommer vid
-  // sluträkningen.
-  const preliminar = !storesRef.current[valtyp].isSlutlig
+  // Slutresultat-läge PER VALTYP ur result.status i denna valtyps store: preliminärt →
+  // sluträknas · X % (onsdagsräkningen pågår, distrikt för distrikt) → slutgiltigt (alla
+  // distrikt slutligt räknade). RD kan vara preliminär medan RF/KF sluträknas. "X av 6312
+  // valdistrikt" mäter distriktens preliminärräkning — sena röster + personröster
+  // tillkommer vid sluträkningen.
+  const prog = storesRef.current[valtyp].slutligProgress()
+  const tagTone =
+    prog.state === 'preliminar' ? 'bg-amber-500/15 text-amber-300'
+    : prog.state === 'slutlig' ? 'bg-emerald-500/15 text-emerald-300'
+    : 'bg-sky-500/15 text-sky-300'
+  const tagLabel =
+    prog.state === 'preliminar' ? 'Preliminärt'
+    : prog.state === 'slutlig' ? 'Slutgiltigt'
+    : `Sluträknas · ${prog.pct} %`
+  const tagTitle =
+    prog.state === 'preliminar'
+      ? 'Preliminärt röstresultat. Slutligt resultat vid Länsstyrelsernas slutliga sammanräkning (från onsdagen efter valdagen) — personröster och sena förtids-/brev-/utlandsröster tillkommer då.'
+      : prog.state === 'slutlig'
+        ? 'Slutgiltigt resultat — alla valdistrikt är slutligt sammanräknade.'
+        : `Sluträkningen pågår: ${prog.pct} % av valdistrikten är slutligt räknade, resten visar fortfarande preliminära siffror.`
 
   return (
     <div className="absolute inset-0">
@@ -473,14 +487,10 @@ export function DistrictMap() {
           <div className="pointer-events-none rounded-md border border-slate-700 bg-slate-900/90 px-4 py-1.5 text-center text-sm text-slate-100 shadow-lg">
             <div className="flex items-center justify-center gap-2">
               <span
-                className={`rounded px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${preliminar ? 'bg-amber-500/15 text-amber-300' : 'bg-emerald-500/15 text-emerald-300'}`}
-                title={
-                  preliminar
-                    ? 'Preliminärt röstresultat. "X av 6312 valdistrikt" räknar distrikt som rapporterat sin preliminärräkning — sena förtids-/brev-/utlandsröster och personröster tillkommer vid Länsstyrelsernas slutliga sammanräkning (onsdag efter valdagen). Gäller riksdag, region och kommun.'
-                    : 'Slutgiltigt resultat (slutlig sammanräkning).'
-                }
+                className={`rounded px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${tagTone}`}
+                title={tagTitle}
               >
-                {preliminar ? 'Preliminärt' : 'Slutgiltigt'}
+                {tagLabel}
               </span>
               <span>
                 <span className="font-mono text-base font-semibold tabular-nums">{reportedCount}</span>
