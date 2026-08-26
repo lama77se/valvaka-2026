@@ -388,9 +388,16 @@ export function DistrictMap() {
         if (b[3] > box[3]) box[3] = b[3]
       }
       if (Number.isFinite(box[0])) {
+        // Vid FOKUS zoomas området in hårt → reservera även VÄNSTERKOLUMNEN där
+        // info-kortet (uppe) och avgångstavlorna (nere) ligger, annars hamnar t.ex.
+        // Blekinge delvis under dem. Mät avgångstavlornas högerkant (bredaste vänster-
+        // överlägget) så paddingen följer med om deras bredd ändras. (Sverige-vyn nedan
+        // behåller liten vänsterpadding — landet är smalt och tavlorna ligger i marginalen.)
+        const boardsRight = document.getElementById('left-boards')?.getBoundingClientRect().right ?? 0
+        const focusPad = { ...pad, left: Math.max(pad.left, Math.round(boardsRight) + 24) }
         // maxZoom kapar bara mycket små kommuner — annars fit:ar vi kommunens egen
         // utsträckning. Distrikt något tightare (11) än större områden (10).
-        map.fitBounds(box, { padding: pad, maxZoom: level === 'distrikt' ? 11 : 10, duration: 700 })
+        map.fitBounds(box, { padding: focusPad, maxZoom: level === 'distrikt' ? 11 : 10, duration: 700 })
       }
     } else if (code == null) {
       map.fitBounds(SWEDEN_BOUNDS, { padding: pad, duration: 600 })
