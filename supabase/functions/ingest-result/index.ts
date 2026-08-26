@@ -30,11 +30,15 @@ import { JSONParser } from 'https://esm.sh/@streamparser/json@0.0.21'
 
 // Generalrepet nu → byt till 'https://resultat.val.se/resultatfiler/val2026' på valnatten.
 const RESULT_BASE_DEFAULT = 'https://resultat.val.se/resultatfiler/genrep2026'
-// Organ-filer per körning; pg_cron plockar resten nästa varv. Lågt satt eftersom EN fil kan vara
-// tung (slutlig RD strömmar ~260 MB) — men streaming gör minnet oberoende av storlek, så det är
-// väggtiden (inte minnet) som begränsar. Budgeten nedan stoppar innan edge-taket (~400 s Pro).
+// Organ-filer per körning; pg_cron plockar resten nästa varv.
 const MAX_FILES_DEFAULT = 10
 const BUDGET_MS = 300_000
+// STORLEKSVAKT: filer med större zip än så här PARSAR edge inte — BEVISAT att den slutliga
+// RD-filen (~24 MB zip / 260 MB uppackad) dödar isolatet på ~4 s (parse allena, WORKER_RESOURCE_
+// LIMIT), och den monolitiska JSON:en går inte att chunka/resume:a. ~4 MB zip / ~40 MB uppackat
+// är den bevisat säkra gränsen (gamla load-all-vägen klarade det). Större slutliga filer (RD +
+// de 3 största regionerna) delegeras till det LOKALA Node-skriptet: `npm run ingest:slutlig-rd`.
+const MAX_EDGE_ZIP_BYTES = 4_000_000
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -43,7 +47,9 @@ interface FileMeta { valtyp?: string; valtillfalle?: string; test?: boolean; rak
 interface StreamResult {
   // ok → markera done. fetchfail/dberror/incomplete → transient, markera EJ done (försök igen
   // nästa varv → självläker). corrupt → dålig data för denna md5, markera done (annars svält).
-  status: 'ok' | 'fetchfail' | 'dberror' | 'incomplete' | 'corrupt'
+  // toobig → för stor för edge (delegeras till lokala Node-skriptet), markera done så den
+  // inte väljs varje varv.
+  status: 'ok' | 'fetchfail' | 'dberror' | 'incomplete' | 'corrupt' | 'toobig'
   meta?: FileMeta
   resultUp?: number
   uppUp?: number
@@ -60,6 +66,14 @@ async function streamFile(url: string, districtSet: Set<string>, partySet: Set<s
     return { status: 'fetchfail' }
   }
   if (!res.ok || !res.body) return { status: 'fetchfail' }
+
+  // Storleksvakt FÖRE nedladdning: Content-Length (GET-header = zip-storleken) → avbryt kroppen
+  // och delegera till lokala skriptet om den är för stor för edge. Ingen extra HEAD, ingen 24 MB
+  // hämtad i onödan, ingen krasch-loop på giganterna.
+  if ((Number(res.headers.get('content-length')) || 0) > MAX_EDGE_ZIP_BYTES) {
+    await res.body.cancel().catch(() => {})
+    return { status: 'toobig' }
+  }
 
   const meta: FileMeta = {}
   let valtyp = ''
@@ -249,11 +263,12 @@ Deno.serve(async (req) => {
       upserted += r.resultUp ?? 0
       uppUpserted += r.uppUp ?? 0
     } else {
-      skipped++ // corrupt zip/JSON för denna md5 → markera done ändå (annars svälts svansen)
+      skipped++ // 'toobig' (delegeras till lokala skriptet) eller 'corrupt' — markeras ändå done
     }
     if (probe) continue // diagnostik → rör inte ingest_state
+    const lastStatus = r.status === 'ok' ? 200 : r.status === 'toobig' ? 413 : 422
     await supabase.from('ingest_state').upsert(
-      { file_path: f.url, etag: f.md5, last_ok: new Date().toISOString(), last_status: r.status === 'ok' ? 200 : 422 },
+      { file_path: f.url, etag: f.md5, last_ok: new Date().toISOString(), last_status: lastStatus },
       { onConflict: 'file_path' },
     )
   }

@@ -40,20 +40,22 @@ valnatten byts källan till de skarpa resultatfilerna via en enda konstant, utan
   distrikten: val.se:s riktiga rapporteringstid, full hierarkiväg och de fem största
   partierna.
 - **Statustagg per valtyp** — *Preliminärt → Sluträknas · X % → Slutgiltigt*, härledd ur
-  räkningsläget. Slutliga region-/kommunfiler ingestas löpande; den monolitiska
-  slutlig-RD-filen tas av en separat worker efter valnatten.
+  räkningsläget. Preliminärt + små slutliga filer strömmas in av edge-funktionen; de fyra
+  största slutliga filerna (riks-RD + de tre största regionerna) tas av ett lokalt Node-skript
+  under sluträkningen (`npm run ingest:slutlig-rd`).
 - **Uppsamlingsröster invägda** — de sena rösterna (utlands-/sena förtidsröster som
   Valmyndigheten räknar vid onsdagsräkningen) vägs in i organtotalerna (kommun/region/riket)
   så den slutgiltiga presentationens röstsummor och mandat matchar val.se — verifierat mot
   generalrepets mandatfacit (`npm run verify:uppsamling`). Kartan/valkretsarna förblir geografiska.
 - **Delbara vy-URL:er** — t.ex. `?val=KF&omrade=kommun:1488` öppnar "Kommunvalet Trollhättan".
 - **Skarp valnatt-ingest** — en Deno edge function schemalagd med `pg_cron` pollar
-  resultatfilerna, normaliserar till Postgres och upsertar idempotent. Verifierad
-  end-to-end mot generalrepet; på valnatten pekas den bara om till de skarpa filerna.
+  resultatfilerna och **strömmar** in dem (fflate streaming-unzip → SAX-parser → batch-upsert),
+  så minnet är oberoende av filstorlek. Verifierad end-to-end mot generalrepet; på valnatten
+  pekas den bara om till de skarpa filerna. De fyra största *slutliga* filerna spränger edge-
+  runtimens CPU-tak (~2 s/request kan inte tokenisera 260 MB JSON) och tas i stället av ett
+  lokalt Node-skript, `npm run ingest:slutlig-rd`, som körs under sluträkningen (ons–fre).
 
-Kvar (post-valnatt, ej tidskritiskt): en worker för den ~26 MB stora slutlig-RD-filen
-(utanför edge-runtimens minnestak) — den fyller samtidigt på riksdagsvalets uppsamlingsröster
-(region- och kommunvalets vägs redan in). Se
+Detaljerad ingest- och valnatts-checklista i
 **[docs/resultat-ingest-genrep.md](./docs/resultat-ingest-genrep.md)**.
 
 Fullständigt underlag i **[docs/arkitektur.md](./docs/arkitektur.md)** och
@@ -108,6 +110,8 @@ npm run verify:mandate-kf  # mandatmodul mot 2022 KF-facit (kommun, 290 kommuner
 npm run simulate:valnatt   # simulera inrapportering (RD) för realtidsdemo
 npm run verify:realtime    # headless-acceptans: upsert → karta + tabell via Realtime
 npm run verify:aggregate   # resultattabellens aggregat + mandat + ±2022 mot 2022-facit
+npm run verify:uppsamling  # uppsamlingsröster → riktiga computeMandate mot genrepets mandatfacit (nätverk)
+npm run ingest:slutlig-rd  # ingesta de STORA slutliga filerna (riks-RD + 3 största regionerna) — körs ons–fre under sluträkningen (service-role i .env.local)
 npm run results:reset      # rensa simulerade resultat ur result-tabellen
 ```
 
