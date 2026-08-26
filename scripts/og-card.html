@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="sv">
+<head><meta charset="utf-8" /><style>
+  * { margin: 0; box-sizing: border-box; }
+  html, body { width: 1200px; height: 630px; }
+  body {
+    background: radial-gradient(120% 120% at 20% 0%, #16203b 0%, #0b1020 55%);
+    color: #f1f5f9; font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    padding: 72px 80px; display: flex; flex-direction: column; justify-content: space-between;
+  }
+  .kicker { font-size: 22px; font-weight: 600; letter-spacing: .28em; text-transform: uppercase; color: #7dd3fc; }
+  h1 { font-size: 104px; font-weight: 800; letter-spacing: -.02em; line-height: 1; margin-top: 18px; }
+  p.tag { font-size: 34px; color: #94a3b8; margin-top: 24px; max-width: 940px; line-height: 1.32; }
+  .bar { display: flex; height: 30px; width: 100%; border-radius: 8px; overflow: hidden; margin-top: 8px; box-shadow: 0 8px 30px rgba(0,0,0,.4); }
+  .bar > div { flex: 1; }
+  .foot { display: flex; align-items: baseline; justify-content: space-between; }
+  .dom { font-size: 34px; font-weight: 700; color: #38bdf8; }
+  .src { font-size: 22px; color: #64748b; }
+</style></head>
+<body>
+  <div>
+    <div class="kicker">Valresultat i realtid</div>
+    <h1>Valvaka 2026</h1>
+    <p class="tag">Realtidskarta över svenska valresultat — riksdag, region och kommun, per valdistrikt, live på valnatten.</p>
+  </div>
+  <div class="bar">
+    <div style="background:#8B0016"></div><div style="background:#E8112d"></div><div style="background:#83CF39"></div>
+    <div style="background:#009933"></div><div style="background:#006AB3"></div><div style="background:#231977"></div>
+    <div style="background:#52BDEC"></div><div style="background:#DDDD00"></div>
+  </div>
+  <div class="foot">
+    <span class="dom">valvaka.tech</span>
+    <span class="src">Data från Valmyndigheten</span>
+  </div>
+</body>
+</html>
