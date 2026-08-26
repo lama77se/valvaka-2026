@@ -15,6 +15,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { supabase } from '@/lib/supabase'
 import { ResultStore, VALTYPER, VALTYP_VK_COLUMN, type Valtyp } from '@/lib/results'
 import { buildGroups, type AreaComparison, type AreaGroups, type Comparison2022, type DistrictMeta, type Level, type PartyMeta } from '@/lib/aggregate'
+import type { PartyVotes } from '@/lib/mandate'
 import type { AreaIndex } from '@/lib/hierarchy'
 
 export type Area = { level: Level; code: string | null }
@@ -89,6 +90,8 @@ export interface ResultsContextValue {
   metaRef: RefObject<Map<string, DistrictMeta>>
   allCodesRef: RefObject<string[]>
   groupsRef: RefObject<AreaGroups>
+  // Uppsamlingsröster per valtyp, hinkade på organ-kod (RD '', RF lankod, KF kommunkod).
+  uppsamlingRef: RefObject<Record<Valtyp, Map<string, PartyVotes>>>
   comparisonRef: RefObject<Comparison2022 | null>
   districtComparisonRef: RefObject<Map<string, string>>
   distriktNamnRef: RefObject<Map<string, string>>
@@ -156,6 +159,8 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
   const metaRef = useRef<Map<string, DistrictMeta>>(new Map())
   const allCodesRef = useRef<string[]>([])
   const groupsRef = useRef<AreaGroups>(buildGroups([]))
+  // Uppsamlingsröster per valtyp, hinkade på organ-kod. Läses en gång vid mount (nedan).
+  const uppsamlingRef = useRef<Record<Valtyp, Map<string, PartyVotes>>>({ RD: new Map(), RF: new Map(), KF: new Map() })
   // Valkretsindex per valtyp (RD 2-siffrig vk_rd, RF 4-siffrig län-prefixad vk_rf).
   // Byggs en gång ur distriktsmetadatan; KF har ingen valkretsnivå (tomt index).
   const emptyIndex = (): AreaIndex => ({ districtToVk: new Map(), vkToDistricts: new Map(), kommunToVk: new Map() })
@@ -403,6 +408,42 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  // Uppsamlingsröster (sena röster, onsdagsräkningen) → per-valtyp organ-hinkar. Vägs in
+  // i organ-aggregaten (KF-kommun/RF-region/RD-riket) i panelen så den slutgiltiga
+  // presentationen matchar val.se:s totaler. INGEN Realtime (dygnstakt, målar ej kartan) →
+  // läses en gång vid mount; saknas tabellen i ett kort deploy-fönster faller vi tyst
+  // tillbaka (organ-totalerna blir då rent geografiska, ingen krasch).
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const next: Record<Valtyp, Map<string, PartyVotes>> = { RD: new Map(), RF: new Map(), KF: new Map() }
+      const PAGE = 10000
+      let from = 0
+      while (!cancelled) {
+        const { data, error } = await supabase
+          .from('uppsamling_result')
+          .select('valtyp,kommunkod,lankod,partikod,roster')
+          .range(from, from + PAGE - 1)
+        if (error || !data || data.length === 0) break
+        for (const r of data as unknown as Array<{ valtyp: string; kommunkod: string; lankod: string; partikod: string; roster: number }>) {
+          const m = next[r.valtyp as Valtyp]
+          if (!m) continue
+          // Organ-nyckel: RD → riket (EN hink), RF → länet, KF → kommunen.
+          const key = r.valtyp === 'RD' ? '' : r.valtyp === 'RF' ? r.lankod : r.kommunkod
+          const bucket = m.get(key) ?? m.set(key, {}).get(key)!
+          bucket[r.partikod] = (bucket[r.partikod] ?? 0) + r.roster
+        }
+        from += data.length
+      }
+      if (cancelled) return
+      uppsamlingRef.current = next
+      setRevision((r) => r + 1)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   // Distriktsval → hämta det distriktets 2022-resultat (en gång, cache:at). Bumpar
   // revision när det landat så tabellen räknar om med 2022-kolumnerna ifyllda.
   useEffect(() => {
@@ -456,6 +497,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     metaRef,
     allCodesRef,
     groupsRef,
+    uppsamlingRef,
     comparisonRef,
     districtComparisonRef,
     distriktNamnRef,

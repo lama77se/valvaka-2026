@@ -13,6 +13,8 @@ import {
   comparisonFor,
   computeMandate,
   districtsInArea,
+  mergeVotes,
+  uppsamlingForArea,
 } from '@/lib/aggregate'
 import { RIKET, defaultAreaFor, useResults, type Area } from '@/components/ResultsProvider'
 import { ResultTable } from '@/components/ResultTable'
@@ -51,6 +53,7 @@ export function ResultPanel() {
     partyRef,
     allCodesRef,
     groupsRef,
+    uppsamlingRef,
     comparisonRef,
     kommuner,
     regioner,
@@ -85,8 +88,12 @@ export function ResultPanel() {
     void revision // beroende: räkna om vid ny snapshot / strypt Realtime-bump
     const store = storesRef.current[valtyp]
     const codes = districtsInArea(allCodesRef.current, selectedArea.level, selectedArea.code, valtyp, metaRef.current)
-    const votes = store.aggregate(codes)
-    const mandate = computeMandate(valtyp, selectedArea.level, selectedArea.code, (c) => store.aggregate(c), groupsRef.current)
+    // Organ-nivåerna (KF-kommun/RF-region/RD-riket) väger in uppsamlingsrösterna i BÅDE
+    // röster/andel (här) och mandat (computeMandate) så den slutgiltiga presentationen
+    // matchar val.se. Övriga nivåer → uppsamlingForArea ger null → rent geografiskt.
+    const uppsamling = uppsamlingRef.current[valtyp]
+    const votes = mergeVotes(store.aggregate(codes), uppsamlingForArea(valtyp, selectedArea.level, selectedArea.code, uppsamling))
+    const mandate = computeMandate(valtyp, selectedArea.level, selectedArea.code, (c) => store.aggregate(c), groupsRef.current, uppsamling)
     let areaResult = applyMandate(buildRows(votes, partyRef.current, SPARR[valtyp]), mandate)
     const districtLeaf =
       selectedArea.level === 'distrikt' && selectedArea.code

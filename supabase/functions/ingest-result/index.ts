@@ -16,10 +16,11 @@
 //   ..._rostfordelning_<kod>_<VT>.json (+ mandat + sha256). JSON, EJ husstil-CSV.
 //   Röster som räknas = rostfordelning.rosterPaverkaMandat.partiRoster[].antalRoster.
 //
-// FALLGROPAR: (a) uppsamlingsdistrikt har KORT kod (len 6, t.ex. "011400") → FK mot
-// district (8-siffrig) skulle brista → filtreras bort. (b) partikod har inledande
-// nollor ("0001"). (c) result_snapshot skrivs INTE här (genrep uppdateras oavbrutet →
-// append-only skulle svälla); replay/audit är en separat Fas 7-väg.
+// FALLGROPAR: (a) uppsamlingsdistrikt (valdistriktstyp==='uppsamlingsdistrikt') har KORT
+// kod (len 6, t.ex. "011400") och saknar geometri → INGEN FK mot district; de routas till
+// uppsamling_result per explicit kommunkod/lankod (vägs in i organ-aggregat, se klienten).
+// (b) partikod har inledande nollor ("0001"). (c) result_snapshot skrivs INTE här (genrep
+// uppdateras oavbrutet → append-only skulle svälla); replay/audit är en separat Fas 7-väg.
 //
 // SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY auto-injiceras i edge-runtime.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -100,6 +101,7 @@ Deno.serve(async (req) => {
 
   // 4. Per ändrad organ-fil: hämta → (storleksvakt) → unzip → parsa → upsert result.
   let upserted = 0
+  let uppUpserted = 0 // uppsamlingsrader separat → post-deploy-signal (skiljer "uppsamling landade" från "bara geo")
   let skipped = 0
   let meta: { valtillfalle?: string; test?: boolean; rakningstillfalle?: string; senasteUppdateringstid?: string } | null = null
   for (const f of changed) {
@@ -121,9 +123,23 @@ Deno.serve(async (req) => {
           meta = j
           const rakstatus = String(j.rakningstillfalle ?? '').startsWith('prelimin') ? 'preliminar' : 'slutlig'
           const rows: Record<string, unknown>[] = []
+          const uppRows: Record<string, unknown>[] = []
           for (const vd of j.valdistrikt ?? []) {
             const kod = vd.valdistriktskod
-            if (typeof kod !== 'string' || kod.length !== 8 || !districtSet.has(kod)) continue // uppsamling/okänd
+            // Uppsamlingsdistrikt (sena röster, räknas onsdagsräkningen) → egen tabell,
+            // routas per EXPLICIT kommunkod/lankod. Koden är 6-siffrig OCH återanvänds
+            // mellan RD/RF-filer (samma "018001") → parsa den aldrig, ta organet ur fälten.
+            if (vd.valdistriktstyp === 'uppsamlingsdistrikt') {
+              const kommunkod = typeof vd.kommunkod === 'string' ? vd.kommunkod : null
+              const lankod = typeof vd.lankod === 'string' ? vd.lankod : null
+              if (typeof kod !== 'string' || !kommunkod || !lankod) continue
+              for (const p of vd.rostfordelning?.rosterPaverkaMandat?.partiRoster ?? []) {
+                if (!partySet.has(p.partikod)) continue
+                uppRows.push({ valtyp: j.valtyp, kod, kommunkod, lankod, partikod: p.partikod, roster: p.antalRoster, status: rakstatus })
+              }
+              continue
+            }
+            if (typeof kod !== 'string' || kod.length !== 8 || !districtSet.has(kod)) continue // okänd geo
             // val.se:s egna rapporteringstid per distrikt (naiv svensk lokaltid, t.ex.
             // "2026-08-25T10:21:59") → avgångstavlan visar riktigt klockslag på varje rad.
             const rapporteringstid = typeof vd.rapporteringsTid === 'string' ? vd.rapporteringsTid : null
@@ -139,6 +155,16 @@ Deno.serve(async (req) => {
             const { error } = await supabase.from('result').upsert(rows.slice(i, i + 100), { onConflict: 'valtyp,valdistriktskod,partikod' })
             if (error) break // blockera inte hela pipelinen på ett fel — filen markeras ändå done nedan
             upserted += Math.min(100, rows.length - i)
+          }
+          // Uppsamlingsrösterna (samma fil) → uppsamling_result. Egen upsert-loop; ett fel
+          // (t.ex. tabellen ännu ej migrerad i ett deploy-fönster) stoppar bara detta steg,
+          // inte de geografiska rösterna ovan. LOGGA felet (annars är ett schema-/RLS-fel tyst
+          // och identiskt varje md5-varv) — och räkna uppsamling separat så svaret skiljer
+          // "uppsamling landade" från "bara geo". Genrep uppdateras löpande → nästa varv fyller på.
+          for (let i = 0; i < uppRows.length; i += 100) {
+            const { error } = await supabase.from('uppsamling_result').upsert(uppRows.slice(i, i + 100), { onConflict: 'valtyp,kod,partikod' })
+            if (error) { console.error('uppsamling_result upsert:', error.message); break }
+            uppUpserted += Math.min(100, uppRows.length - i)
           }
         }
         // Markera filen behandlad ÄVEN utan röstfördelning / med 0 rader (t.ex. OS-/
@@ -161,5 +187,5 @@ Deno.serve(async (req) => {
     }, { onConflict: 'id' })
   }
 
-  return json({ ok: true, source: base.includes('genrep') ? 'genrep2026' : 'val2026', changed: changed.length, upserted, skipped, remaining: allChanged.length - changed.length })
+  return json({ ok: true, source: base.includes('genrep') ? 'genrep2026' : 'val2026', changed: changed.length, upserted, uppUpserted, skipped, remaining: allChanged.length - changed.length })
 })
