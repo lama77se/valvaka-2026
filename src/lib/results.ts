@@ -17,6 +17,10 @@ export const VALTYP_LABEL: Record<Valtyp, string> = {
   KF: 'Kommun',
 }
 
+// Slutresultat-läge per valtyp: preliminärt (valnatt) → sluträknas (onsdagsräkningen
+// pågår, distrikt för distrikt) → slutgiltigt (alla distrikt slutligt räknade).
+export type SlutligState = 'preliminar' | 'slutraknas' | 'slutlig'
+
 // district-kolumnen som avgör om ett distrikt deltar i valtypen (→ HUD-nämnare).
 export const VALTYP_VK_COLUMN: Record<Valtyp, 'vk_rd' | 'vk_rf' | 'vk_kf'> = {
   RD: 'vk_rd',
@@ -39,10 +43,9 @@ export class ResultStore {
   // val.se:s rapporteringstid per distrikt (naiv svensk lokaltid-sträng), för
   // avgångstavlan. Sätts från valfri result-rad för distriktet (samma på alla partier).
   private reportTimes = new Map<string, string>()
-  // Har någon rad för denna valtyp status 'slutlig'? Monoton (slutlig nedgraderas aldrig,
-  // se result_no_status_downgrade-triggern) → driver preliminärt/slutgiltigt-taggen PER
-  // valtyp (RD kan vara preliminär medan RF/KF blivit slutliga).
-  private _hasSlutlig = false
+  // Distrikt som fått minst EN rad med status 'slutlig' (monoton — slutlig nedgraderas
+  // aldrig, se result_no_status_downgrade-triggern). Driver slutresultat-taggen PER valtyp.
+  private slutligDistrikt = new Set<string>()
 
   set(valdistriktskod: string, partikod: string, roster: number, rapporteringstid?: string | null, status?: string | null): void {
     let parties = this.byDistrict.get(valdistriktskod)
@@ -52,7 +55,7 @@ export class ResultStore {
     }
     parties.set(partikod, roster)
     if (rapporteringstid) this.reportTimes.set(valdistriktskod, rapporteringstid)
-    if (status === 'slutlig') this._hasSlutlig = true
+    if (status === 'slutlig') this.slutligDistrikt.add(valdistriktskod)
   }
 
   // Rapporteringstid (rå ISO-sträng "YYYY-MM-DDTHH:MM:SS") eller null om okänd.
@@ -60,9 +63,16 @@ export class ResultStore {
     return this.reportTimes.get(valdistriktskod) ?? null
   }
 
-  // Har sluträkningen börjat komma in för denna valtyp? → "Slutgiltigt", annars "Preliminärt".
-  get isSlutlig(): boolean {
-    return this._hasSlutlig
+  // Slutresultat-progress för valtypen: 'preliminar' (inga slutliga distrikt än),
+  // 'slutraknas' (en del slutligt räknade — siffrorna kan ännu ändras) eller 'slutlig'
+  // (ALLA rapporterade distrikt slutligt räknade → siffrorna låsta). Sluträkningen kommer
+  // distrikt för distrikt över flera dagar, därav mellanläget med andel (pct).
+  slutligProgress(): { state: SlutligState; pct: number } {
+    const total = this.byDistrict.size
+    const done = this.slutligDistrikt.size
+    if (total === 0 || done === 0) return { state: 'preliminar', pct: 0 }
+    if (done >= total) return { state: 'slutlig', pct: 100 }
+    return { state: 'slutraknas', pct: Math.round((done / total) * 100) }
   }
 
   outcome(valdistriktskod: string): DistrictOutcome {
