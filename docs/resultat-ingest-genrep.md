@@ -94,13 +94,19 @@ Städa testdata ur `result` med `npm run results:reset` vid behov.
   / 400 s paid). En ~9 MB slutlig RD-zip (~130 MB uppackad) spränger minnestaket och
   dödar hela invokeringen (`WORKER_RESOURCE_LIMIT`, ej fångbart) → utan vakten skulle
   den crash-loopa varje varv (äldst-först) och svälta resten. Preliminär RD (~2 MB) ryms.
-- **Endast preliminära filer (`./p/…`) ingestas**; slutliga (`./s/…`) hoppas över
-  (post-valnatt, ej tidskritiskt).
-- **🔴 Stor RD-fil är monolitisk.** RD kommer som EN riks-fil för alla ~6 600 distrikt.
-  Vid full valnattsvolym växer preliminär RD mot ~9 MB → passerar vakten → RD slutar
-  uppdateras sent på kvällen. **Åtgärd före valnatten:** streaming-parse av RD-JSON:en
-  (ladda inte hela i minnet) *eller* en Node-worker (utan 256 MB-taket) för just RD;
-  först då kan även slutlig-RD ingestas. Mät RD-filens storlekskurva under genrepet.
+- **Preliminära filer + slutliga RF/KF ingestas.** Slutlig RF (~2 MB) och KF (~0,03 MB)
+  är små och går in via samma väg (ger slutgiltiga region-/kommunresultat efter
+  sluträkningen); den slutliga RD-filen (~26 MB) utesluts i manifest-filtret (laddas
+  inte ens ner) och hanteras av en separat worker (nedan). En BEFORE UPDATE-trigger
+  (`result_no_status_downgrade`) hindrar att en sen preliminär re-ingest skriver över
+  en slutlig rad.
+- **🔴 Slutlig RD-fil är monolitisk (~26 MB).** RD kommer som EN riks-fil för alla
+  distrikt. Mätt mot genrepet: **preliminär** RD stannar på ~2,2 MB även vid 100 %
+  räknat (ryms väl under 4 MB-vakten → valnatten är trygg med preliminär-vägen), men
+  **slutlig** RD är ~26 MB (~hundratals MB uppackad) och spränger 256 MB-taket
+  (`WORKER_RESOURCE_LIMIT`). Den utesluts därför ur edge-ingesten. **Åtgärd (post-
+  valnatt, ej tidskritiskt):** streaming-parse *eller* en Node-worker utan 256 MB-taket
+  för just slutlig-RD.
 - **Realtime:** rösterna upsertas i **≤100-radersbatchar** — Realtime tappar ändringar
   från stora transaktioner (>~100 rader), så större batchar skulle inte måla om
   live-kartan (snapshot vid omladdning fungerar ändå).
@@ -126,7 +132,8 @@ Städa testdata ur `result` med `npm run results:reset` vid behov.
 ## Checklista inför valnatten (13 sep 2026)
 
 1. Byt `RESULT_BASE_DEFAULT` → `…/val2026` i `ingest-result/index.ts`.
-2. Lös stor-RD/slutlig-parsningen (streaming eller mer minne) och släpp in `./s/…`.
+2. Slutlig RF/KF ingestas redan; bygg en separat worker för slutlig **RD** (~26 MB) —
+   streaming eller Node utan 256 MB-taket. (Ej tidskritiskt för valnatten.)
 3. Ny migration: tighta cron-kadensen (30–60 s) för `ingest-result-genrep` (döp om).
 4. Merge → CI deployar funktionen + applicerar migrationen. På skarpa filerna
    **FÖRSVINNER `test`-attributet helt** (val.se sätter det inte till `false`, det tas

@@ -55,11 +55,17 @@ Deno.serve(async (req) => {
   const files = (await idxRes.text())
     .split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
     .map((l) => { const p = l.split(/\s+/); return { md5: p[0], rel: p[p.length - 1] } })
-    // Bara PRELIMINÄRA organ-zip (`./p/…`). Slutliga (`./s/…`) hoppas över: genrepets
-    // slutliga RD-fil är ~9 MB (~130 MB uppackad) → spränger edge-runtimens minne
-    // (WORKER_RESOURCE_LIMIT). Stor/slutlig RD kräver streaming-parse eller mer minne
-    // — se valnatt-checklistan i docs/resultat-ingest-genrep.md.
-    .filter((e) => /_(RD|RF|KF)\.zip$/i.test(e.rel) && e.rel.includes('/p/'))
+    // Preliminära RD/RF/KF (valnattens väg) + slutliga RF/KF (efter sluträkningen).
+    // Slutlig RF (~2 MB) och KF (~0,03 MB) är små och ryms; den slutliga RD-filen är
+    // däremot EN monolitisk ~26 MB-zip (~hundratals MB uppackad) som spränger edge-
+    // runtimens 256 MB-tak (WORKER_RESOURCE_LIMIT) → utesluts helt här (laddas inte ens
+    // ner) och hanteras av en separat worker (se docs). MAX_ZIP_BYTES-vakten nedan är
+    // ändå kvar som skyddsnät för ev. oväntat stora RF/KF-filer.
+    .filter(
+      (e) =>
+        /_(RD|RF|KF)\.zip$/i.test(e.rel) &&
+        (e.rel.includes('/p/') || (e.rel.includes('/s/') && !/_RD\.zip$/i.test(e.rel))),
+    )
     .map((e) => ({ ...e, url: base + e.rel.replace(/^\./, '') }))
   if (files.length === 0) return json({ error: 'inga organ-zip i manifestet', base }, 502)
 
