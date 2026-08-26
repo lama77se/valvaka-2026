@@ -52,7 +52,7 @@ interface StreamResult {
 
 // Streama EN organ-zip → upserta result (status ur rakningstillfalle) + uppsamling_result i
 // klungor. Returnerar status-kod som styr om filen markeras done (transienta fel → försök igen).
-async function streamFile(url: string, districtSet: Set<string>, partySet: Set<string>, supabase: SupabaseClient): Promise<StreamResult> {
+async function streamFile(url: string, districtSet: Set<string>, partySet: Set<string>, supabase: SupabaseClient, probe: boolean): Promise<StreamResult> {
   let res: Response
   try {
     res = await fetch(url)
@@ -70,19 +70,26 @@ async function streamFile(url: string, districtSet: Set<string>, partySet: Set<s
   const pendingResult: Record<string, unknown>[] = []
   const pendingUpp: Record<string, unknown>[] = []
 
-  // Små transaktioner (≤100 rader/upsert): Realtime tappar HELT ändringar från stora txns
-  // (>~100 rader) → live-kartan skulle inte målas om. uppsamling rör ej kartan → 500 räcker.
+  // PRELIMINÄRT → 100 rader/upsert: Realtime tappar HELT stora txns (>~100 rader) → live-kartan
+  // skulle inte målas om på valnatten. SLUTLIGT → 1000 rader/upsert: Realtime behövs inte (sen-
+  // räkningen ons–fre, klienten läser via snapshot), och 10× färre upserts håller edge-resurserna
+  // (den slutliga RD-filen slog i WORKER_RESOURCE_LIMIT vid ~1070 upserts). Sätts när rakning läses.
+  let resultBatch = 100
   const flush = async (force: boolean) => {
-    while (pendingResult.length >= 100 || (force && pendingResult.length > 0)) {
-      const batch = pendingResult.splice(0, 100)
-      const { error } = await supabase.from('result').upsert(batch, { onConflict: 'valtyp,valdistriktskod,partikod' })
-      if (error) throw new Error('upsert result: ' + error.message)
+    while (pendingResult.length >= resultBatch || (force && pendingResult.length > 0)) {
+      const batch = pendingResult.splice(0, resultBatch)
+      if (!probe) {
+        const { error } = await supabase.from('result').upsert(batch, { onConflict: 'valtyp,valdistriktskod,partikod' })
+        if (error) throw new Error('upsert result: ' + error.message)
+      }
       resultUp += batch.length
     }
     while (pendingUpp.length >= 500 || (force && pendingUpp.length > 0)) {
       const batch = pendingUpp.splice(0, 500)
-      const { error } = await supabase.from('uppsamling_result').upsert(batch, { onConflict: 'valtyp,kod,partikod' })
-      if (error) throw new Error('upsert uppsamling: ' + error.message)
+      if (!probe) {
+        const { error } = await supabase.from('uppsamling_result').upsert(batch, { onConflict: 'valtyp,kod,partikod' })
+        if (error) throw new Error('upsert uppsamling: ' + error.message)
+      }
       uppUp += batch.length
     }
   }
@@ -99,7 +106,7 @@ async function streamFile(url: string, districtSet: Set<string>, partySet: Set<s
     if (key === 'valtyp') { valtyp = value as string; meta.valtyp = valtyp; return }
     if (key === 'valtillfalle') { meta.valtillfalle = value as string; return }
     if (key === 'test') { meta.test = value as boolean; return }
-    if (key === 'rakningstillfalle') { rakning = value as string; meta.rakningstillfalle = rakning; return }
+    if (key === 'rakningstillfalle') { rakning = value as string; meta.rakningstillfalle = rakning; resultBatch = rakning.startsWith('prelimin') ? 100 : 1000; return }
     if (key === 'senasteUppdateringstid') { meta.senasteUppdateringstid = value as string; return }
     // deno-lint-ignore no-explicit-any
     const vd = value as any
@@ -179,9 +186,12 @@ async function streamFile(url: string, districtSet: Set<string>, partySet: Set<s
 }
 
 Deno.serve(async (req) => {
-  const body = await req.json().catch(() => ({})) as { base?: string; max?: number }
+  const body = await req.json().catch(() => ({})) as { base?: string; max?: number; probe?: boolean }
   const base = (body.base ?? RESULT_BASE_DEFAULT).replace(/\/+$/, '')
   const max = Number(body.max ?? MAX_FILES_DEFAULT)
+  // Diagnostik: probe=true streamar + parsar + räknar men UPSERTAR inte och markerar inte done.
+  // Låter oss mäta om parse/ström ALLENA ryms i edge (då är upserts flaskhalsen) utan sidoeffekt.
+  const probe = !!body.probe
   const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
 
   // 1. Manifest → organ-zip-poster. ALLA preliminära OCH slutliga RD/RF/KF (streaming klarar
@@ -229,7 +239,7 @@ Deno.serve(async (req) => {
   const deadline = Date.now() + BUDGET_MS
   for (const f of changed) {
     if (Date.now() > deadline) break
-    const r = await streamFile(f.url, districtSet, partySet, supabase)
+    const r = await streamFile(f.url, districtSet, partySet, supabase, probe)
     if (r.status === 'fetchfail' || r.status === 'dberror' || r.status === 'incomplete') {
       // Transient (nätverk/DB/trunkerad) → markera INTE done, försök igen nästa varv (självläker).
       continue
@@ -241,6 +251,7 @@ Deno.serve(async (req) => {
     } else {
       skipped++ // corrupt zip/JSON för denna md5 → markera done ändå (annars svälts svansen)
     }
+    if (probe) continue // diagnostik → rör inte ingest_state
     await supabase.from('ingest_state').upsert(
       { file_path: f.url, etag: f.md5, last_ok: new Date().toISOString(), last_status: r.status === 'ok' ? 200 : 422 },
       { onConflict: 'file_path' },
