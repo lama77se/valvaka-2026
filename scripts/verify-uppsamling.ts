@@ -5,8 +5,8 @@
 // KF-kommun — och att UTAN parametern är allt en NO-OP (geografiskt).
 //
 // KRÄVER NÄTVERK mot den LIVE genrep-feeden (som verify:realtime kräver Supabase) → körs
-// manuellt, INTE i CI. Feeden byts/försvinner efter valet; testet är en engångsgrind för
-// just den här funktionen. Kör:  npm run verify:uppsamling
+// manuellt, INTE i CI (bygg/lint-grinden räcker för PR). Feeden byts/försvinner efter valet;
+// testet är en engångsgrind för just den här funktionen. Kör:  npm run verify:uppsamling
 import { unzipSync } from 'fflate'
 import { buildGroups, computeMandate, uppsamlingForArea, type UppsamlingVotes } from '../src/lib/aggregate.ts'
 import type { PartyVotes } from '../src/lib/mandate.ts'
