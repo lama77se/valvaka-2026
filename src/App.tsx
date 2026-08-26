@@ -91,8 +91,10 @@ function App() {
         </div>
 
         {/* Tre avgångstavlor — RD/RF/KF, alltid synliga (nedre vänster). Live-ticker
-            över inrapporterade distrikt + rapporteringsgrad per val. */}
-        <div className="pointer-events-none absolute bottom-4 left-4 flex flex-col gap-2">
+            över inrapporterade distrikt + rapporteringsgrad per val. id:t används av
+            kartans fokus-fitBounds för att reservera vänsterkolumnen (så inzoomade
+            områden inte hamnar under tavlorna). */}
+        <div id="left-boards" className="pointer-events-none absolute bottom-4 left-4 flex flex-col gap-2">
           {VALTYPER.map((vt) => (
             <DepartureBoard key={vt} valtyp={vt} />
           ))}
