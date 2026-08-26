@@ -42,13 +42,18 @@ valnatten byts källan till de skarpa resultatfilerna via en enda konstant, utan
 - **Statustagg per valtyp** — *Preliminärt → Sluträknas · X % → Slutgiltigt*, härledd ur
   räkningsläget. Slutliga region-/kommunfiler ingestas löpande; den monolitiska
   slutlig-RD-filen tas av en separat worker efter valnatten.
+- **Uppsamlingsröster invägda** — de sena rösterna (utlands-/sena förtidsröster som
+  Valmyndigheten räknar vid onsdagsräkningen) vägs in i organtotalerna (kommun/region/riket)
+  så den slutgiltiga presentationens röstsummor och mandat matchar val.se — verifierat mot
+  generalrepets mandatfacit (`npm run verify:uppsamling`). Kartan/valkretsarna förblir geografiska.
 - **Delbara vy-URL:er** — t.ex. `?val=KF&omrade=kommun:1488` öppnar "Kommunvalet Trollhättan".
 - **Skarp valnatt-ingest** — en Deno edge function schemalagd med `pg_cron` pollar
   resultatfilerna, normaliserar till Postgres och upsertar idempotent. Verifierad
   end-to-end mot generalrepet; på valnatten pekas den bara om till de skarpa filerna.
 
 Kvar (post-valnatt, ej tidskritiskt): en worker för den ~26 MB stora slutlig-RD-filen
-(utanför edge-runtimens minnestak) och att väga in uppsamlingsrösterna (~3 %). Se
+(utanför edge-runtimens minnestak) — den fyller samtidigt på riksdagsvalets uppsamlingsröster
+(region- och kommunvalets vägs redan in). Se
 **[docs/resultat-ingest-genrep.md](./docs/resultat-ingest-genrep.md)**.
 
 Fullständigt underlag i **[docs/arkitektur.md](./docs/arkitektur.md)** och

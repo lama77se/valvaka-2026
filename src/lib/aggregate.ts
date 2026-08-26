@@ -160,6 +160,39 @@ export function buildGroups(allCodes: string[]): AreaGroups {
   return { all: allCodes, byLan, byKommun }
 }
 
+// --- Uppsamlingsröster (sena röster, onsdagsräkningen) -------------------------
+// Vägs in i ORGAN-aggregaten (KF-kommun, RF-region, RD-riket) så slutgiltiga totaler
+// matchar val.se. Nyckeln är organ-koden: RD → '' (riket, EN hink), RF → lankod
+// (2 siffror), KF → kommunkod (4 siffror). Håller distrikt/valkrets/karta geografiska.
+export type UppsamlingVotes = Map<string, PartyVotes>
+
+// Slå ihop bas-röster med ev. extra (uppsamling). Utan extra → oförändrad bas
+// (referenslika return är OK — callers muterar aldrig). Default-fallet gör hela
+// mandat-/aggregatvägen till en NO-OP när ingen uppsamling skickas in (2022-facit-testerna).
+export function mergeVotes(base: PartyVotes, extra?: PartyVotes | null): PartyVotes {
+  if (!extra) return base
+  const out: PartyVotes = { ...base }
+  for (const [p, v] of Object.entries(extra)) out[p] = (out[p] ?? 0) + v
+  return out
+}
+
+// Extra uppsamlingsröster att lägga till DISPLAY-aggregatet (röster/andel i panelen).
+// Endast de tre valbara organ-nivåerna har en total som ska matcha val.se; övriga
+// nivåer (valkrets/distrikt) förblir rent geografiska (barnen summerar då inte till
+// föräldern — medvetet, se docs).
+export function uppsamlingForArea(
+  valtyp: Valtyp,
+  level: Level,
+  areaCode: string | null,
+  uppsamling: UppsamlingVotes | null | undefined,
+): PartyVotes | null {
+  if (!uppsamling) return null
+  if (valtyp === 'RD' && level === 'riket') return uppsamling.get('') ?? null
+  if (valtyp === 'RF' && level === 'region' && areaCode) return uppsamling.get(areaCode) ?? null
+  if (valtyp === 'KF' && level === 'kommun' && areaCode) return uppsamling.get(areaCode) ?? null
+  return null
+}
+
 // Proportionell mandatfördelning (jämkad uddatalsmetod 1,2) bland partier ≥ spärr.
 export function proportionalSeats(votes: PartyVotes, seats: number, threshold: number): Record<string, number> {
   const total = Object.values(votes).reduce((a, b) => a + b, 0)
@@ -181,36 +214,41 @@ export function computeMandate(
   areaCode: string | null,
   aggregate: (codes: Iterable<string>) => PartyVotes,
   groups: AreaGroups,
+  uppsamling?: UppsamlingVotes | null, // undefined → NO-OP (2022-facit-testerna oförändrade)
 ): MandateResult | null {
   const acc: Record<string, number> = {}
   const add = (seats: Record<string, number>) => {
     for (const [p, s] of Object.entries(seats)) acc[p] = (acc[p] ?? 0) + s
   }
   const emptyIfNone = (codes: string[] | undefined) => codes ?? []
+  // Röster för EN församling = geografiskt aggregat + församlingens uppsamlingsröster
+  // (organ-koden: RD '', RF lankod, KF kommunkod). mergeVotes utan extra → oförändrat.
+  const votesFor = (codes: string[] | undefined, organKey: string) =>
+    mergeVotes(aggregate(emptyIfNone(codes)), uppsamling?.get(organKey))
 
   if (valtyp === 'RD') {
     if (level !== 'riket') return null
-    add(proportionalSeats(aggregate(groups.all), SEAT_CONFIG_2026.RD.totalSeats, SEAT_CONFIG_2026.RD.threshold))
+    add(proportionalSeats(votesFor(groups.all, ''), SEAT_CONFIG_2026.RD.totalSeats, SEAT_CONFIG_2026.RD.threshold))
   } else if (valtyp === 'RF') {
     if (level === 'region') {
       const seats = SEAT_CONFIG_2026.RF[areaCode ?? '']
       if (!seats) return null
-      add(proportionalSeats(aggregate(emptyIfNone(groups.byLan.get(areaCode!))), seats, 0.03))
+      add(proportionalSeats(votesFor(groups.byLan.get(areaCode!), areaCode!), seats, 0.03))
     } else if (level === 'riket') {
       for (const [lan, seats] of Object.entries(SEAT_CONFIG_2026.RF))
-        add(proportionalSeats(aggregate(emptyIfNone(groups.byLan.get(lan))), seats, 0.03))
+        add(proportionalSeats(votesFor(groups.byLan.get(lan), lan), seats, 0.03))
     } else return null
   } else {
     // KF
     if (level === 'kommun') {
       const cfg = SEAT_CONFIG_2026.KF[areaCode ?? '']
       if (!cfg) return null
-      add(proportionalSeats(aggregate(emptyIfNone(groups.byKommun.get(areaCode!))), cfg.seats, cfg.threshold))
+      add(proportionalSeats(votesFor(groups.byKommun.get(areaCode!), areaCode!), cfg.seats, cfg.threshold))
     } else if (level === 'riket' || level === 'region') {
       const prefix = level === 'region' ? areaCode ?? '' : ''
       for (const [code, cfg] of Object.entries(SEAT_CONFIG_2026.KF)) {
         if (prefix && !code.startsWith(prefix)) continue
-        add(proportionalSeats(aggregate(emptyIfNone(groups.byKommun.get(code))), cfg.seats, cfg.threshold))
+        add(proportionalSeats(votesFor(groups.byKommun.get(code), code), cfg.seats, cfg.threshold))
       }
     } else return null
   }
