@@ -189,7 +189,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     const channel = supabase
       .channel('result-live')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'result' }, (payload) => {
-        const row = payload.new as { valtyp?: string; valdistriktskod?: string; partikod?: string; roster?: number; rapporteringstid?: string | null }
+        const row = payload.new as { valtyp?: string; valdistriktskod?: string; partikod?: string; roster?: number; rapporteringstid?: string | null; status?: string | null }
         if (!row?.valtyp || !row.valdistriktskod || !row.partikod) return
         const store = storesRef.current[row.valtyp as Valtyp]
         if (!store) return
@@ -197,7 +197,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
           const w = window as unknown as { __eventCount?: number }
           w.__eventCount = (w.__eventCount ?? 0) + 1
         }
-        store.set(row.valdistriktskod, row.partikod, row.roster ?? 0, row.rapporteringstid)
+        store.set(row.valdistriktskod, row.partikod, row.roster ?? 0, row.rapporteringstid, row.status)
         for (const fn of listenersRef.current) fn(row.valdistriktskod, row.valtyp as Valtyp)
         bumpRevisionThrottled()
       })
@@ -230,16 +230,16 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
       // före att migrationen kört) → fall tillbaka utan den EN gång så snapshoten
       // aldrig havererar (då visas "—" tills nästa reload efter migrationen).
       const PAGE = 1000
-      let cols = 'valtyp,valdistriktskod,partikod,roster,rapporteringstid'
+      let cols = 'valtyp,valdistriktskod,partikod,roster,status,rapporteringstid'
       for (let from = 0; !cancelled; from += PAGE) {
         const { data, error } = await supabase.from('result').select(cols).range(from, from + PAGE - 1)
         if (error) {
-          if (cols.includes('rapporteringstid')) { cols = 'valtyp,valdistriktskod,partikod,roster'; from -= PAGE; continue }
+          if (cols.includes('rapporteringstid')) { cols = 'valtyp,valdistriktskod,partikod,roster,status'; from -= PAGE; continue }
           break
         }
         if (!data || data.length === 0) break
-        for (const r of data as unknown as Array<{ valtyp: string; valdistriktskod: string; partikod: string; roster: number; rapporteringstid?: string | null }>)
-          storesRef.current[r.valtyp as Valtyp]?.set(r.valdistriktskod, r.partikod, r.roster, r.rapporteringstid)
+        for (const r of data as unknown as Array<{ valtyp: string; valdistriktskod: string; partikod: string; roster: number; status?: string | null; rapporteringstid?: string | null }>)
+          storesRef.current[r.valtyp as Valtyp]?.set(r.valdistriktskod, r.partikod, r.roster, r.rapporteringstid, r.status)
         if (data.length < PAGE) break
       }
       if (cancelled) return

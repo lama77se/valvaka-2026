@@ -61,11 +61,12 @@ export function ResultPanel() {
     districtAndel2022Ref,
     ensureDistrictWinners2022,
     revision,
-    dataset,
   } = useResults()
 
-  // Preliminärt tills slutlig sammanräkning (se DistrictMap) — gäller alla tre valen.
-  const preliminar = !dataset?.rakningstillfalle || dataset.rakningstillfalle.toLowerCase().startsWith('prelimin')
+  // Preliminärt tills sluträkningen börjat komma in för DENNA valtyp (per-valtyp — RD kan
+  // vara preliminär medan RF/KF blivit slutliga). Härlett ur result.status i storen; storen
+  // uppdateras via snapshot/Realtime och panelen renderas om på `revision`.
+  const preliminar = !storesRef.current[valtyp].isSlutlig
 
   const areaIndex = areaIndexRef.current[valtyp]
 

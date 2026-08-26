@@ -400,11 +400,12 @@ export function DistrictMap() {
 
   const total = totalByValtyp[valtyp]
   const reportedPct = total > 0 ? Math.round((reportedCount / total) * 100) : 0
-  // Resultatet är PRELIMINÄRT tills Länsstyrelsernas slutliga sammanräkning (rakningstill-
-  // fälle byter från "preliminär" → "slutlig"). "X av 6312 valdistrikt" mäter bara distrikt
-  // som rapporterat sin preliminärräkning — sena förtids-/brev-/utlandsröster + personröster
-  // tillkommer vid sluträkningen. Gäller alla tre valen (dataset_meta är EN global rad).
-  const preliminar = !dataset?.rakningstillfalle || dataset.rakningstillfalle.toLowerCase().startsWith('prelimin')
+  // Resultatet är PRELIMINÄRT tills Länsstyrelsernas slutliga sammanräkning. PER VALTYP:
+  // härlett ur result.status i denna valtyps store (RD kan vara preliminär medan RF/KF
+  // hunnit bli slutliga). "X av 6312 valdistrikt" mäter bara distrikt som rapporterat sin
+  // preliminärräkning — sena förtids-/brev-/utlandsröster + personröster tillkommer vid
+  // sluträkningen.
+  const preliminar = !storesRef.current[valtyp].isSlutlig
 
   return (
     <div className="absolute inset-0">
