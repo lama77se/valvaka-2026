@@ -266,22 +266,28 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
       }
       if (!cancelled) setTotalByValtyp(counts)
 
-      // Snapshot av redan inrapporterade resultat (alla valtyper, paginerat).
-      // rapporteringstid-kolumnen kan saknas i ett kort deploy-fönster (klienten ute
-      // före att migrationen kört) → fall tillbaka utan den EN gång så snapshoten
-      // aldrig havererar (då visas "—" tills nästa reload efter migrationen).
-      const PAGE = 1000
+      // Snapshot av redan inrapporterade resultat (alla valtyper, paginerat). Stora sidor
+      // för att minska antalet requests per besökare (valnatts-läslasten) — men `range`
+      // begränsas ändå av PostgREST:s max-rows (Supabase-default 1000). Vi stegar därför
+      // `from` med FAKTISKT antal returnerade rader, inte PAGE, så det funkar oavsett
+      // max-rows: höjs den (dashboard: Settings → API → Max rows → 10000) ger PAGE=10000
+      // ~17 requests i stället för ~163; är den kvar på 1000 faller vi tillbaka på
+      // 1000-block precis som förr (ingen regression).
+      // rapporteringstid-kolumnen kan saknas i ett kort deploy-fönster (klienten ute före
+      // att migrationen kört) → fall tillbaka utan den EN gång så snapshoten aldrig havererar.
+      const PAGE = 10000
       let cols = 'valtyp,valdistriktskod,partikod,roster,status,rapporteringstid'
-      for (let from = 0; !cancelled; from += PAGE) {
+      let from = 0
+      while (!cancelled) {
         const { data, error } = await supabase.from('result').select(cols).range(from, from + PAGE - 1)
         if (error) {
-          if (cols.includes('rapporteringstid')) { cols = 'valtyp,valdistriktskod,partikod,roster,status'; from -= PAGE; continue }
+          if (cols.includes('rapporteringstid')) { cols = 'valtyp,valdistriktskod,partikod,roster,status'; continue }
           break
         }
         if (!data || data.length === 0) break
         for (const r of data as unknown as Array<{ valtyp: string; valdistriktskod: string; partikod: string; roster: number; status?: string | null; rapporteringstid?: string | null }>)
           storesRef.current[r.valtyp as Valtyp]?.set(r.valdistriktskod, r.partikod, r.roster, r.rapporteringstid, r.status)
-        if (data.length < PAGE) break
+        from += data.length // faktiskt returnerat (kan kapas av max-rows) → robust
       }
       if (cancelled) return
       setSnapshotVersion((v) => v + 1)
