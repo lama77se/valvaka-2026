@@ -160,9 +160,9 @@ Under uppbyggnad. Klart hittills:
   **generalrep** (`genrep2026`, live testdata) via samma edge-function + `pg_cron`
   som valnatten; på valnatten byts källan till `val2026` (en konstant) + tightas
   cron-kadensen (30–60 s). Kvar inför natten: lasttesta klientens läslast (den verkliga
-  skalningsrisken — DB:n ligger redan på Pro med micro-compute), samt den stora/slutliga
-  RD-filen (post-valnatt: streaming-parse eller Node-worker, då ~9 MB-zip:en spränger
-  edge-runtimens 256 MB-tak). Fullständig genomgång i
+  skalningsrisken — DB:n är uppskalad till Pro med small-compute inför valnatten), samt
+  den stora/slutliga RD-filen (post-valnatt: streaming-parse eller Node-worker, då
+  ~26 MB-zip:en spränger edge-runtimens 256 MB-tak). Fullständig genomgång i
   **[docs/resultat-ingest-genrep.md](./docs/resultat-ingest-genrep.md)**.
 
 Se **[docs/arkitektur.md](./docs/arkitektur.md)** för hela underlaget och
