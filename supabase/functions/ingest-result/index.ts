@@ -141,6 +141,11 @@ async function streamFile(url: string, districtSet: Set<string>, partySet: Set<s
     }
   }
 
+  // Mata fflate i SMÅ bitar (64 KB komprimerat → ~0,6 MB uppackat per push) och töm klungor
+  // EFTER varje bit. Kritiskt i edge: en enda push av en stor käll-chunk skulle sync-inflate
+  // en MB-burst och spika minnet över 256 MB-taket (edge levererar färre/större chunkar än
+  // lokalt). Med små bitar + tät flush stannar peak-minnet på några MB oavsett filstorlek.
+  const SUBCHUNK = 65536
   const reader = res.body.getReader()
   try {
     for (;;) {
@@ -153,8 +158,11 @@ async function streamFile(url: string, districtSet: Set<string>, partySet: Set<s
         return { status: 'fetchfail', error: (netErr as Error).message }
       }
       if (step.done) break
-      uz.push(step.value, false)
-      await flush(false) // backpressure mellan käll-chunkar → minnet stannar lågt
+      const buf = step.value
+      for (let off = 0; off < buf.length; off += SUBCHUNK) {
+        uz.push(buf.subarray(off, Math.min(off + SUBCHUNK, buf.length)), false)
+        await flush(false)
+      }
     }
     uz.push(new Uint8Array(0), true)
     await flush(true)
