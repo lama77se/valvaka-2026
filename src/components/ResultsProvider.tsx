@@ -28,6 +28,41 @@ export const NATIVE_LEVEL: Record<Valtyp, Level> = { RD: 'riket', RF: 'region', 
 // "välj region/kommun"-läge (code null) tills man väljer i listan eller klickar i kartan.
 export const defaultAreaFor = (valtyp: Valtyp): Area => ({ level: NATIVE_LEVEL[valtyp], code: null })
 
+// --- Delbara vy-URL:er ------------------------------------------------------------------
+// En vy = valtyp + markerat område. Kodas i query-strängen så en länk kan öppna en
+// specifik default-vy, t.ex. ?val=KF&omrade=kommun:1488 = "Kommunalvalet Trollhättan",
+// eller ?val=RD&omrade=valkrets:XX = "Riksdagsvalet i valkrets XX". Området kodas
+// "nivå:kod" (riket saknar kod; RF/KF-promptläget = default → utelämnas → ren länk).
+const AREA_LEVELS: Level[] = ['riket', 'region', 'kommun', 'valkrets', 'distrikt']
+
+function parseAreaParam(raw: string | null, valtyp: Valtyp): Area {
+  if (!raw) return defaultAreaFor(valtyp)
+  if (raw === 'riket') return RIKET
+  const i = raw.indexOf(':')
+  const level = (i === -1 ? raw : raw.slice(0, i)) as Level
+  const code = i === -1 ? null : raw.slice(i + 1)
+  if (!AREA_LEVELS.includes(level)) return defaultAreaFor(valtyp)
+  return { level, code: code || null }
+}
+
+export function readViewFromUrl(): { valtyp: Valtyp; area: Area } {
+  if (typeof window === 'undefined') return { valtyp: 'RD', area: RIKET }
+  const q = new URLSearchParams(window.location.search)
+  const raw = (q.get('val') ?? '').toUpperCase()
+  const valtyp = (VALTYPER as readonly string[]).includes(raw) ? (raw as Valtyp) : 'RD'
+  return { valtyp, area: parseAreaParam(q.get('omrade'), valtyp) }
+}
+
+export function viewToSearch(valtyp: Valtyp, area: Area): string {
+  const def = defaultAreaFor(valtyp)
+  const areaIsDefault = area.level === def.level && area.code === def.code
+  if (valtyp === 'RD' && areaIsDefault) return '' // app-defaulten (Riksdag/Riket) → ren URL
+  // Bygg strängen för hand så "nivå:kod" behåller ett läsbart kolon (URLSearchParams
+  // %3A-kodar det). Koderna är siffror/korta alfanumeriska → encodeURIComponent är no-op.
+  const omrade = areaIsDefault ? '' : `&omrade=${area.level}${area.code ? ':' + encodeURIComponent(area.code) : ''}`
+  return `?val=${valtyp}${omrade}`
+}
+
 type NamedCode = { code: string; name: string }
 type ChangeListener = (vd: string, valtyp: Valtyp) => void
 export type WinnerParty = { forkortning: string | null; farg: string | null }
@@ -90,8 +125,9 @@ export function useResults(): ResultsContextValue {
 const emptyCounts = (): Record<Valtyp, number> => ({ RD: 0, RF: 0, KF: 0 })
 
 export function ResultsProvider({ children }: { children: ReactNode }) {
-  const [valtyp, setValtypState] = useState<Valtyp>('RD')
-  const [selectedArea, setSelectedArea] = useState<Area>(RIKET)
+  // Startvy ur URL:en (delbar permalänk), annars Riksdag/Riket.
+  const [valtyp, setValtypState] = useState<Valtyp>(() => readViewFromUrl().valtyp)
+  const [selectedArea, setSelectedArea] = useState<Area>(() => readViewFromUrl().area)
   // Byt valtyp → nollställ området till den nya valtypens nativa default (ett
   // kommun-val kan inte visa "Riket" osv). Ett valt DISTRIKT behålls dock — samma
   // 8-siffriga kod gäller i alla tre valen, så man kan jämföra distriktets RD/RF/KF.
@@ -99,6 +135,11 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     setValtypState(v)
     setSelectedArea((prev) => (prev.level === 'distrikt' ? prev : defaultAreaFor(v)))
   }, [])
+  // Spegla vald vy i URL:en (delbar). replaceState → ingen historik-skräp; länken
+  // pekar alltid på nuvarande valtyp + område.
+  useEffect(() => {
+    window.history.replaceState(null, '', window.location.pathname + viewToSearch(valtyp, selectedArea) + window.location.hash)
+  }, [valtyp, selectedArea])
   const [revision, setRevision] = useState(0)
   const [snapshotVersion, setSnapshotVersion] = useState(0)
   const [kommuner, setKommuner] = useState<NamedCode[]>([])
