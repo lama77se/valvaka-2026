@@ -165,18 +165,18 @@ export function DistrictMap() {
             'case',
             ['boolean', ['feature-state', 'hover'], false],
             '#38bdf8',
-            // Utanför valt område (fokusläge) → grått, oavsett resultatfärg.
+            // Utanför valt område (fokusläge) → dämpad grå, oavsett resultatfärg (men syns).
             ['boolean', ['feature-state', 'dimmed'], false],
-            '#1e293b',
+            '#475569',
             ['coalesce', ['feature-state', 'color'], UNREPORTED_FILL],
           ],
           'fill-opacity': [
             'case',
             ['boolean', ['feature-state', 'hover'], false],
             0.92,
-            // Dimmat (utanför fokus) tonas ned kraftigt så det valda området framträder.
+            // Dimmat (utanför fokus) tonas ned men förblir synligt (pale) så omgivningen syns.
             ['boolean', ['feature-state', 'dimmed'], false],
-            0.12,
+            0.3,
             ['boolean', ['feature-state', 'reported'], false],
             0.92,
             0.5,
@@ -187,7 +187,25 @@ export function DistrictMap() {
         id: 'district-line',
         type: 'line',
         source: 'districts',
-        paint: { 'line-color': '#0f172a', 'line-width': 0.3 },
+        paint: {
+          // Fokusområdets distrikt får en ljus, tydligare kant → gränsen mot omgivningen
+          // framträder. Utanför fokus: svag delning (så pale-omgivningen syns strukturerad).
+          // Utan fokus (nationell vy): nästan osynlig, som förr.
+          'line-color': [
+            'case',
+            ['boolean', ['feature-state', 'focused'], false],
+            '#e2e8f0',
+            ['boolean', ['feature-state', 'dimmed'], false],
+            '#334155',
+            '#0f172a',
+          ],
+          'line-width': [
+            'case',
+            ['boolean', ['feature-state', 'focused'], false],
+            1.1,
+            0.3,
+          ],
+        },
       })
 
       // Källan redo → setFeatureState biter; applicera hittills laddade resultat.
@@ -359,9 +377,13 @@ export function DistrictMap() {
         : []
     const on = codes.length > 0 // äkta fokus (undvik att gråa ut allt vid tomt urval)
     const inSet = new Set(codes)
-    // Dimma varje distrikt utanför fokus; avdimma i fokus / alla vid Riket.
+    // Dimma varje distrikt utanför fokus; markera fokusdistrikten (ljus kant). Vid Riket/
+    // tomt urval (on=false) blir båda false för alla → nationell vy oförändrad.
     for (const vd of allCodesRef.current) {
-      map.setFeatureState({ source: 'districts', id: vd }, { dimmed: on && !inSet.has(vd) })
+      map.setFeatureState({ source: 'districts', id: vd }, {
+        dimmed: on && !inSet.has(vd),
+        focused: on && inSet.has(vd),
+      })
     }
     // Ram att zooma till: ett distrikt zoomas till HELA sin kommun (samma 4-siffriga
     // prefix) så kommunen syns runt det markerade distriktet — inte bara distriktet
