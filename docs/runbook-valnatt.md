@@ -7,13 +7,13 @@ detta dokument på natten. Bakgrund/detaljer: [resultat-ingest-genrep.md](./resu
 
 | Del | Vad | Var |
 |---|---|---|
-| **Edge `ingest-result`** | pollar val.se, **strömmar** in preliminärt + små slutliga filer (≤ 4 MB zip) → `result`/`uppsamling_result` → Realtime → karta | Supabase, pg_cron `*/2 min` |
-| **Storleksvakt** | hoppar de 4 största slutliga filerna (för stora för edge) | i samma funktion |
-| **Lokalt skript** | `npm run ingest:slutlig-rd` — de 4 giganterna (riks-RD + Sthlm/VGR/Skåne slutlig RF) | din dator, ons–fre |
+| **Edge `ingest-result`** | pollar val.se, **strömmar** in de **preliminära** filerna (`/p/`) → `result`/`uppsamling_result` → Realtime → karta | Supabase, pg_cron `*/2 min` |
+| **Storleksvakt + CPU-budget** | säkerhetsnät i edge (preliminära filer är små; slutliga filtreras redan bort) | i samma funktion |
+| **Lokalt skript** | `npm run ingest:slutlig` — **alla slutliga** filer (`/s/`): riks-RD + alla 17 RF + alla ~290 KF | din dator, ons–fre |
 | **Frontend** | valvaka.tech, auto-deploy från `main` | Vercel |
 
 **Datakällan byts med EN konstant, `RESULT_BASE_DEFAULT`, på TVÅ ställen (lockstep):**
-`supabase/functions/ingest-result/index.ts` **och** `scripts/ingest-slutlig-rd.mjs`.
+`supabase/functions/ingest-result/index.ts` **och** `scripts/ingest-slutlig.mjs`.
 `genrep2026` (test, nu) → `val2026` (skarpt, ~13 sep).
 
 ---
@@ -38,6 +38,12 @@ genrep-testdata hela natten**. Därför MÅSTE DB:n rensas innan skarpt flödar 
 - [ ] **Verifiera att val2026 gått live** (byt INTE förrän den svarar 200):
   `curl -s -o /dev/null -w "%{http_code}" https://resultat.val.se/resultatfiler/val2026/index.md5`
   (404 tills ~13 sep, sen 200).
+- [ ] **Verifiera att natten bara har `/p/` (preliminära) filer** — edge tar BARA `/p/`, så om
+  val2026 mot förmodan publicerar tidiga `/s/`-filer under natten fylls INTE de distrikten förrän
+  du kör det lokala skriptet. Räkna dem i manifestet (förväntat: `/p/` > 0, `/s/` = 0 på natten):
+  `curl -s https://resultat.val.se/resultatfiler/val2026/index.md5 | grep -c '/p/.*_\(RD\|RF\|KF\)\.zip'`
+  och samma med `/s/`. (Verifieras redan på genrep-sim mån 31 aug 13–15 — då ska kartan fyllas helt
+  från edge allena; ser du `/s/` under en valnatts-sim, kör `npm run ingest:slutlig` som backup.)
 - [ ] **`.env.local` klar** med service-role (`SUPABASE_SERVICE_ROLE_KEY`) för det lokala skriptet.
 - [ ] **Infra:** Supabase-compute uppskalad (small/Pro), `Max rows = 10000` (Settings → API).
   Vercel-env (`VITE_SUPABASE_URL/ANON_KEY/GEOMETRY_URL`) korrekta (appen är live).
@@ -65,9 +71,9 @@ första skarpa filen försvinner `test`-attributet → `dataset_meta` skrivs om 
 - Kartan börjar fyllas, rapporteringsgrad-HUD:en tickar, statustaggen = **Preliminärt**.
 - Avgångstavlorna visar inrapporterade distrikt med val.se:s klockslag.
 
-> På SJÄLVA natten finns bara **preliminära** filer (+ efterhand små slutliga RF/KF). Riks-RD
-> är ~2 MB preliminär → ryms i edge. **De stora slutliga filerna finns INTE än** — de kommer
-> onsdag. Ingen körning av det lokala skriptet på natten.
+> På SJÄLVA natten finns bara **preliminära** filer (`/p/`). Riks-RD är ~2 MB preliminär → ryms
+> i edge. **Slutliga filer (`/s/`) finns INTE än** — de kommer onsdag när Länsstyrelsen börjar
+> sluträkna. Ingen körning av det lokala skriptet på natten.
 
 ---
 
@@ -76,18 +82,20 @@ första skarpa filen försvinner `test`-attributet → `dataset_meta` skrivs om 
 Länsstyrelsen räknar om (uppsamlingsröster onsdag; personröster + slutliga tal över flera dagar).
 Statustaggen vandrar **Preliminärt → Sluträknas · X % → Slutgiltigt** per valtyp.
 
-**Automatiskt (edge):** slutliga RF/KF (små) + uppsamling ingestas löpande av cron:en. Inget att göra.
+**Automatiskt (edge):** endast **preliminära** filer + uppsamling som fortfarande kommer preliminärt.
+Edge rör INTE slutliga filer (`/s/`) — de tas helt av det lokala skriptet nedan.
 
-**Manuellt (du) — de 4 giganterna:**
+**Manuellt (du) — ALLA slutliga filer:**
 ```bash
-npm run ingest:slutlig-rd            # tar bara det som ändrats sedan sist
-npm run ingest:slutlig-rd -- --force # kör om alla stora slutliga filer
+npm run ingest:slutlig            # tar bara det som ändrats sedan sist
+npm run ingest:slutlig -- --force # kör om alla slutliga filer
 ```
 - **När:** kör det när de definitiva filerna dyker upp/uppdateras — **onsdag och framåt, några
   gånger om dagen** medan sluträkningen pågår (md5 ändras vid varje omräkning; skriptet hoppar
   oförändrade filer).
-- **Vad:** riks-RD (260 MB) + Stockholm/VGR/Skåne slutlig RF. `⚠️` skriptet måste peka på
-  `val2026` (samma lockstep-switch som edge — se att den förberedda PR:en bytte BÅDA filerna).
+- **Vad:** alla slutliga (`/s/`) filer — riks-RD (260 MB) + alla 17 RF + alla ~290 KF. `⚠️` skriptet
+  måste peka på `val2026` (samma lockstep-switch som edge — se att den förberedda PR:en bytte BÅDA
+  filerna).
 - Kör tills statustaggen når **Slutgiltigt** för alla tre valen och siffrorna slutat ändras.
 
 ---
@@ -98,7 +106,7 @@ npm run ingest:slutlig-rd -- --force # kör om alla stora slutliga filer
 ```bash
 curl -s -XPOST "$VITE_SUPABASE_URL/functions/v1/ingest-result" \
   -H "apikey: $ANON" -H "Authorization: Bearer $ANON" -d '{}'
-# → {"ok":true,"changed":N,...}  (546/WORKER_RESOURCE_LIMIT = en gigant slank förbi vakten)
+# → {"ok":true,"changed":N,...}  (546/WORKER_RESOURCE_LIMIT bör ej hända — edge tar bara små /p/)
 ```
 
 **Provenance/banner:** `dataset_meta` (rad `id=1`) → `source='val2026', test=false` när skarpt flödar.
@@ -106,9 +114,10 @@ curl -s -XPOST "$VITE_SUPABASE_URL/functions/v1/ingest-result" \
 **Vanliga fel:**
 - **Kartan fryst på gammal data / uppdateras inte** → genrep-datan rensades inte (N1). Kör
   `npm run results:reset -- --ingest-state`, låt cron:en ominge­sta.
-- **`WORKER_RESOURCE_LIMIT` i loggen** → en stor slutlig fil kom förbi 4 MB-vakten. Den markeras
-  ändå done (ingen krasch-loop); ta den med det lokala skriptet.
-- **Giganterna kommer inte in** → glömt köra `npm run ingest:slutlig-rd`, eller skriptet pekar
+- **`WORKER_RESOURCE_LIMIT` i loggen** → oväntat; edge tar bara preliminära (`/p/`) filer och de är
+  små. Kontrollera att manifest-filtret i `ingest-result` fortfarande utesluter `/s/`. Filen
+  markeras ändå done (ingen krasch-loop).
+- **Slutliga siffror kommer inte in** → glömt köra `npm run ingest:slutlig`, eller skriptet pekar
   fortfarande på `genrep` (lockstep-switchen bytte bara edge-filen).
 - **Bannern släcks inte** → ingen skarp fil har flödat än (val2026 fortfarande 404/tom) eller
   `dataset_meta` inte uppdaterats — kolla att cron:en hittar ändrade filer.

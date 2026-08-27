@@ -40,20 +40,21 @@ valnatten byts källan till de skarpa resultatfilerna via en enda konstant, utan
   distrikten: val.se:s riktiga rapporteringstid, full hierarkiväg och de fem största
   partierna.
 - **Statustagg per valtyp** — *Preliminärt → Sluträknas · X % → Slutgiltigt*, härledd ur
-  räkningsläget. Preliminärt + små slutliga filer strömmas in av edge-funktionen; de fyra
-  största slutliga filerna (riks-RD + de tre största regionerna) tas av ett lokalt Node-skript
-  under sluträkningen (`npm run ingest:slutlig-rd`).
+  räkningsläget. De **preliminära** filerna strömmas in av edge-funktionen; **alla slutliga**
+  filer (riks-RD + samtliga region- och kommunfiler) tas av ett lokalt Node-skript under
+  sluträkningen (`npm run ingest:slutlig`).
 - **Uppsamlingsröster invägda** — de sena rösterna (utlands-/sena förtidsröster som
   Valmyndigheten räknar vid onsdagsräkningen) vägs in i organtotalerna (kommun/region/riket)
   så den slutgiltiga presentationens röstsummor och mandat matchar val.se — verifierat mot
   generalrepets mandatfacit (`npm run verify:uppsamling`). Kartan/valkretsarna förblir geografiska.
 - **Delbara vy-URL:er** — t.ex. `?val=KF&omrade=kommun:1488` öppnar "Kommunvalet Trollhättan".
-- **Skarp valnatt-ingest** — en Deno edge function schemalagd med `pg_cron` pollar
-  resultatfilerna och **strömmar** in dem (fflate streaming-unzip → SAX-parser → batch-upsert),
-  så minnet är oberoende av filstorlek. Verifierad end-to-end mot generalrepet; på valnatten
-  pekas den bara om till de skarpa filerna. De fyra största *slutliga* filerna spränger edge-
-  runtimens CPU-tak (~2 s/request kan inte tokenisera 260 MB JSON) och tas i stället av ett
-  lokalt Node-skript, `npm run ingest:slutlig-rd`, som körs under sluträkningen (ons–fre).
+- **Skarp valnatt-ingest** — en Deno edge function schemalagd med `pg_cron` pollar de
+  **preliminära** resultatfilerna och **strömmar** in dem (fflate streaming-unzip → SAX-parser →
+  batch-upsert), så minnet är oberoende av filstorlek. Verifierad end-to-end mot generalrepet; på
+  valnatten pekas den bara om till de skarpa filerna. De *slutliga* filerna spränger edge-runtimens
+  CPU-tak (~2 s/request kan inte tokenisera 260 MB JSON, och klungor av medelstora slutliga summerar
+  över taket) och tas i stället i sin helhet av ett lokalt Node-skript, `npm run ingest:slutlig`,
+  som körs under sluträkningen (ons–fre).
 
 Operativ **[runbook för valnatten](./docs/runbook-valnatt.md)** (inför/på/efter) och detaljerad
 ingest-beskrivning i **[docs/resultat-ingest-genrep.md](./docs/resultat-ingest-genrep.md)**.
@@ -111,7 +112,7 @@ npm run simulate:valnatt   # simulera inrapportering (RD) för realtidsdemo
 npm run verify:realtime    # headless-acceptans: upsert → karta + tabell via Realtime
 npm run verify:aggregate   # resultattabellens aggregat + mandat + ±2022 mot 2022-facit
 npm run verify:uppsamling  # uppsamlingsröster → riktiga computeMandate mot genrepets mandatfacit (nätverk)
-npm run ingest:slutlig-rd  # ingesta de STORA slutliga filerna (riks-RD + 3 största regionerna) — körs ons–fre under sluträkningen (service-role i .env.local)
+npm run ingest:slutlig     # ingesta ALLA slutliga filer (riks-RD + alla region- och kommunfiler) — körs ons–fre under sluträkningen (service-role i .env.local)
 npm run results:reset      # rensa simulerade resultat ur result-tabellen
 ```
 

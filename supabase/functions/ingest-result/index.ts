@@ -7,11 +7,17 @@
 // kontinuerligt uppdaterad test-feed (`test: true`) med exakt samma format som skarpa
 // valnatten. På valnatten 13 sep 2026: byt RESULT_BASE_DEFAULT till `.../val2026` och deploya om.
 //
-// STREAMANDE PARSNING (en väg för ALLA filer, oavsett storlek): fflate streaming-unzip →
-// @streamparser/json (SAX) → batch-upsert. Håller minnet BOUNDED (~110 MB peak på den slutliga
-// RD-filen på ~260 MB uppackad; edge-taket 256 MB) → ingen fil är för stor. Ersätter den gamla
-// unzipSync + JSON.parse-vägen (som sprängde taket på slutlig RD + de 3 största regionernas RF)
-// OCH dess MAX_ZIP_BYTES-vakt — nu finns EN loader, inget att hålla i synk.
+// ROLLFÖRDELNING (PR #37): edge tar BARA de PRELIMINÄRA filerna (/p/) — det är allt som finns på
+// valnatten och de ryms i CPU-taket. Alla SLUTLIGA filer (/s/) tas av det lokala Node-skriptet
+// (scripts/ingest-slutlig.mjs): de bär personröster (tunga att parsa) och en klunga medelstora
+// slutliga i EN invokering summerar >2 s CPU → WORKER_RESOURCE_LIMIT. Att helt utesluta /s/ här
+// tar bort hela den krasch-risken. Se manifest-filtret nedan.
+//
+// STREAMANDE PARSNING (bounded minne oavsett filstorlek): fflate streaming-unzip →
+// @streamparser/json (SAX) → batch-upsert (~110 MB peak; edge-taket 256 MB). Ersätter den gamla
+// unzipSync + JSON.parse-vägen. Storleksvakt + CPU-budget nedan finns kvar som SÄKERHETSNÄT ifall
+// en oväntat stor preliminär fil dyker upp (i praktiken små), men slutliga giganter kommer ändå
+// aldrig hit efter manifest-filtret.
 //
 // FORMAT (verifierat mot genrep 2026-08):
 //   resultat.val.se/resultatfiler/<base>/index.md5  = manifest: "<md5>␠␠./p/<vt>/<fil>.zip"
@@ -34,18 +40,18 @@ const RESULT_BASE_DEFAULT = 'https://resultat.val.se/resultatfiler/genrep2026'
 // är den EGENTLIGA gränsen; detta hindrar bara att MÅNGA små filer (preliminärt) drar iväg.
 const MAX_FILES_DEFAULT = 25
 const BUDGET_MS = 300_000
-// CPU-BUDGET per invokering: edge har ~2 s CPU/REQUEST (inte kumulativt över varv). Att parsa
-// flera MEDELSTORA slutliga filer (personröster, ~15–40 MB uppackat) i EN invokering summerar
-// >2 s CPU → WORKER_RESOURCE_LIMIT, även om ingen enskild fil är en gigant. Sluta lägga till
-// filer när kumulativa STRÖMMADE zip-bytes passerar detta (~zip×10 uppackat → ~0,5 s CPU vid
-// 6 MB). MAX_FILES kvar som tak för många SMÅ filer (preliminärt tickar snabbt då). Upptäckt
-// vid runbook-rehearsal: full omingest med max:20 kraschade på medelstora slutliga-klungor.
+// CPU-BUDGET per invokering (SÄKERHETSNÄT sedan edge är preliminär-only): edge har ~2 s CPU/
+// REQUEST (inte kumulativt över varv). Att parsa flera MEDELSTORA filer (~15–40 MB uppackat) i EN
+// invokering kan summera >2 s CPU → WORKER_RESOURCE_LIMIT. Sluta lägga till filer när kumulativa
+// STRÖMMADE zip-bytes passerar detta (~zip×10 uppackat → ~0,5 s CPU vid 6 MB). Preliminära filer
+// är små så detta bör aldrig lösa ut i praktiken; kvar ifall en fil oväntat växer. Upptäckt vid
+// runbook-rehearsal (dåvarande arkitektur tog slutliga i edge; klungor av dem kraschade).
 const INVOKE_BYTE_BUDGET = 6_000_000
-// STORLEKSVAKT: filer med större zip än så här PARSAR edge inte — BEVISAT att den slutliga
-// RD-filen (~24 MB zip / 260 MB uppackad) dödar isolatet på ~4 s (parse allena, WORKER_RESOURCE_
-// LIMIT), och den monolitiska JSON:en går inte att chunka/resume:a. ~4 MB zip / ~40 MB uppackat
-// är den bevisat säkra gränsen (gamla load-all-vägen klarade det). Större slutliga filer (RD +
-// de 3 största regionerna) delegeras till det LOKALA Node-skriptet: `npm run ingest:slutlig-rd`.
+// STORLEKSVAKT (SÄKERHETSNÄT): filer med större zip än så här PARSAR edge inte utan markerar done
+// (413) och delegerar till det lokala skriptet. Slutliga giganter (RD ~24 MB zip / 260 MB uppackat
+// dödar isolatet på ~4 s, WORKER_RESOURCE_LIMIT) filtreras redan bort av manifest-filtret (/p/
+// only), så detta träffar bara en hypotetiskt uppsvälld preliminär fil. ~4 MB zip är den bevisat
+// säkra gränsen. De slutliga tas av `npm run ingest:slutlig` (scripts/ingest-slutlig.mjs).
 const MAX_EDGE_ZIP_BYTES = 4_000_000
 
 const json = (body: unknown, status = 200) =>
@@ -219,14 +225,17 @@ Deno.serve(async (req) => {
   const probe = !!body.probe
   const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
 
-  // 1. Manifest → organ-zip-poster. ALLA preliminära OCH slutliga RD/RF/KF (streaming klarar
-  //    vilken storlek som helst → ingen storleksexkludering längre).
+  // 1. Manifest → organ-zip-poster. Edge tar BARA de PRELIMINÄRA (/p/) — det är allt som finns
+  //    på valnatten och de ryms i CPU-taket. ALLA slutliga (/s/) tas av det lokala Node-skriptet
+  //    (scripts/ingest-slutlig.mjs): slutliga filer bär personröster och en KLUNGA medelstora
+  //    slutliga i EN invokering summerar >2 s CPU → WORKER_RESOURCE_LIMIT. Att helt utesluta /s/
+  //    här tar bort hela den krasch-risken; skriptet körs ändå ons–fre under sluträkningen.
   const idxRes = await fetch(`${base}/index.md5`)
   if (!idxRes.ok) return json({ error: `manifest ${idxRes.status}`, base }, 502)
   const files = (await idxRes.text())
     .split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
     .map((l) => { const p = l.split(/\s+/); return { md5: p[0], rel: p[p.length - 1] } })
-    .filter((e) => /_(RD|RF|KF)\.zip$/i.test(e.rel) && (e.rel.includes('/p/') || e.rel.includes('/s/')))
+    .filter((e) => /_(RD|RF|KF)\.zip$/i.test(e.rel) && e.rel.includes('/p/'))
     .map((e) => ({ ...e, url: base + e.rel.replace(/^\./, '') }))
   if (files.length === 0) return json({ error: 'inga organ-zip i manifestet', base }, 502)
 
@@ -255,7 +264,7 @@ Deno.serve(async (req) => {
   const { data: parties } = await supabase.from('party').select('partikod')
   const partySet = new Set((parties ?? []).map((p) => p.partikod))
 
-  // 4. Per ändrad organ-fil: streama → upserta. Väggtidsbudget (en slutlig RD tar ~30–55 s) →
+  // 4. Per ändrad organ-fil: streama → upserta. Väggtidsbudget (preliminär RD ~2 MB ryms lätt) →
   //    stanna innan edge-taket, resten nästa varv. Filen markeras done UTOM vid transient fel.
   let upserted = 0
   let uppUpserted = 0

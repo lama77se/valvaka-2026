@@ -1,15 +1,15 @@
-// LOKALT skript — de SLUTLIGA resultatfiler som är för stora för edge-funktionen.
+// LOKALT skript — ALLA SLUTLIGA resultatfiler (/s/), som edge-funktionen med flit INTE tar.
 //
-// Slutliga filer bär personröster: RD publiceras odelat nationellt (~260 MB uppackad) och de
-// största regionerna (Stockholm/VGR/Skåne) blir ~50–95 MB. Edge kan INTE parsa dem: Supabase-
-// edge har ~2 s CPU/request och att tokenisera 260 MB spränger det på ~4 s (WORKER_RESOURCE_
-// LIMIT), och den monolitiska JSON:en går inte att chunka/resume:a. ingest-result:s storleks-
-// vakt (MAX_EDGE_ZIP_BYTES) HOPPAR därför dessa filer och delegerar dem hit. Node har inget
-// sådant tak (uppmätt ~1,1 GB RSS på 260 MB-filen, väl inom 7 GB) → load-all funkar fint.
+// Rollfördelning (sedan PR #37): edge tar bara de PRELIMINÄRA filerna (/p/) — det är allt som
+// finns på valnatten och de ryms i edge:ns CPU-tak. Slutliga filer (/s/) bär personröster och är
+// tunga att parsa; en KLUNGA medelstora slutliga i EN edge-invokering summerar >2 s CPU →
+// WORKER_RESOURCE_LIMIT (546), och den odelade riks-RD:n (~260 MB uppackad) spränger taket ensam.
+// Därför tar detta skript HELA den slutliga räkningen: riks-RD + alla 17 RF + alla ~290 KF.
+// Node har inget CPU-/minnestak likt edge (uppmätt ~1,1 GB RSS på 260 MB-filen) → load-all funkar.
 //
 // KÖR under SLUTRÄKNINGEN (ons–fre efter valet), när de definitiva filerna dyker upp/uppdateras:
-//   npm run ingest:slutlig-rd            # tar bara filer som ändrats sedan sist (md5)
-//   npm run ingest:slutlig-rd -- --force # kör om alla stora slutliga filer
+//   npm run ingest:slutlig            # tar bara filer som ändrats sedan sist (md5)
+//   npm run ingest:slutlig -- --force # kör om alla slutliga filer
 //
 // Kräver service-role i .env.local (kringgår RLS, skriver result). Egna ingest_state-nycklar
 // (STATE_PREFIX) → krockar aldrig med edge:ns state för samma fil.
@@ -17,12 +17,9 @@ import { createClient } from '@supabase/supabase-js'
 import { unzipSync } from 'fflate'
 
 // ⚠️ VALNATTEN/DEFINITIVT: byt till '…/val2026' SAMTIDIGT som ingest-result RESULT_BASE_DEFAULT.
-// Om edge står på val2026 men detta skript på genrep laddas giganterna från TESTDATA.
+// Om edge står på val2026 men detta skript på genrep laddas de slutliga filerna från TESTDATA.
 const RESULT_BASE_DEFAULT = 'https://resultat.val.se/resultatfiler/genrep2026'
 
-// Ta slutliga filer större än så här — SAMMA gräns som edge:ns MAX_EDGE_ZIP_BYTES (edge tar
-// allt ≤ 4 MB zip, vi tar resten). Storleksfördelningen har ett tydligt glapp (2,7 → 5,4 MB).
-const WORKER_MIN_BYTES = 3_900_000
 const STATE_PREFIX = 'slutlig-local:' // eget nyckelrum (ingen krock med edge:ns url-nycklar)
 
 const hasFlag = (n) => process.argv.includes(n)
@@ -54,8 +51,8 @@ async function loadFkSets() {
 
 // Bygg + skriv EN organfil (load-all). Parsning/routing EXAKT som ingest-result.
 async function processFile(f, sets) {
-  log(`hämtar ${f.rel} (${(f.bytes / 1048576).toFixed(1)} MB zip)`)
   const buf = new Uint8Array(await (await fetch(f.url)).arrayBuffer())
+  log(`hämtar ${f.rel} (${(buf.length / 1048576).toFixed(1)} MB zip)`)
   const unz = unzipSync(buf)
   const name = Object.keys(unz).find((n) => /rostfordelning.*\.json$/i.test(n))
   if (!name) { console.error(`  ingen rostfordelning i ${f.rel} — hoppar (markerar EJ done).`); return false }
@@ -100,7 +97,7 @@ async function processFile(f, sets) {
   return true
 }
 
-// 1. Manifest → slutliga RD/RF/KF-filer.
+// 1. Manifest → ALLA slutliga (/s/) RD/RF/KF-filer.
 const idx = await fetch(`${BASE}/index.md5`)
 if (!idx.ok) { log(`manifest ${idx.status} @ ${BASE} — inga slutliga filer att hämta, avslutar.`); process.exit(0) }
 const all = (await idx.text())
@@ -110,28 +107,16 @@ const all = (await idx.text())
   .map((e) => ({ ...e, url: BASE + e.rel.replace(/^\./, '') }))
 if (all.length === 0) { log('inga slutliga filer i manifestet än — avslutar.'); process.exit(0) }
 
-// 2. HEAD-storlek → behåll bara de som är för stora för edge (> WORKER_MIN_BYTES).
-log(`${all.length} slutliga filer, mäter storlek…`)
-const sized = []
-for (let i = 0; i < all.length; i += 20) {
-  const rs = await Promise.all(all.slice(i, i + 20).map(async (e) => {
-    const h = await fetch(e.url, { method: 'HEAD' })
-    return { ...e, bytes: Number(h.headers.get('content-length')) || 0 }
-  }))
-  sized.push(...rs)
-}
-const big = sized.filter((e) => e.bytes > WORKER_MIN_BYTES).sort((a, b) => a.bytes - b.bytes)
-log(`stora slutliga filer (> ${(WORKER_MIN_BYTES / 1048576).toFixed(1)} MB): ${big.length} — ${big.map((b) => b.rel.replace(/.*_(\d+|00)_(RD|RF|KF)\.zip$/, '$1 $2')).join(', ')}`)
-if (big.length === 0) { log('inga stora slutliga filer (edge tar de små) — avslutar.'); process.exit(0) }
-
-// 3. Vilka har ändrats sedan sist? (eget state-prefix). --force kör om alla.
+// 2. Vilka har ändrats sedan sist? (eget state-prefix). --force kör om alla.
 const { data: states } = await db.from('ingest_state').select('file_path,etag').like('file_path', `${STATE_PREFIX}%`)
 const seen = new Map((states ?? []).map((s) => [s.file_path, s.etag]))
-const changed = FORCE ? big : big.filter((e) => seen.get(STATE_PREFIX + e.url) !== e.md5)
-if (changed.length === 0) { log('alla stora slutliga filer oförändrade sedan sist — inget att göra.'); process.exit(0) }
-log(`att behandla: ${changed.length}/${big.length}${FORCE ? ' (--force)' : ''}`)
+const changed = FORCE ? all : all.filter((e) => seen.get(STATE_PREFIX + e.url) !== e.md5)
+if (changed.length === 0) { log(`alla ${all.length} slutliga filer oförändrade sedan sist — inget att göra.`); process.exit(0) }
+// RD (den tunga 260 MB-filen) sist → minnestoppen kommer en gång, efter att småfilerna GC:ats.
+changed.sort((a, b) => (/_RD\.zip$/i.test(a.rel) ? 1 : 0) - (/_RD\.zip$/i.test(b.rel) ? 1 : 0))
+log(`att behandla: ${changed.length}/${all.length} slutliga filer${FORCE ? ' (--force)' : ''}`)
 
-// 4. FK-set en gång, behandla filerna (minsta först → RD sist; frigör minne mellan).
+// 3. FK-set en gång, behandla filerna (frigör minne mellan varje).
 const sets = await loadFkSets()
 let done = 0
 for (const f of changed) {
@@ -144,5 +129,5 @@ for (const f of changed) {
     done++
   }
 }
-log(`KLART — ${done}/${changed.length} stora slutliga filer behandlade.`)
+log(`KLART — ${done}/${changed.length} slutliga filer behandlade.`)
 process.exit(0)
