@@ -30,9 +30,17 @@ import { JSONParser } from 'https://esm.sh/@streamparser/json@0.0.21'
 
 // Generalrepet nu → byt till 'https://resultat.val.se/resultatfiler/val2026' på valnatten.
 const RESULT_BASE_DEFAULT = 'https://resultat.val.se/resultatfiler/genrep2026'
-// Organ-filer per körning; pg_cron plockar resten nästa varv.
-const MAX_FILES_DEFAULT = 10
+// Övre tak på organ-filer per körning (pg_cron plockar resten nästa varv). CPU-budgeten nedan
+// är den EGENTLIGA gränsen; detta hindrar bara att MÅNGA små filer (preliminärt) drar iväg.
+const MAX_FILES_DEFAULT = 25
 const BUDGET_MS = 300_000
+// CPU-BUDGET per invokering: edge har ~2 s CPU/REQUEST (inte kumulativt över varv). Att parsa
+// flera MEDELSTORA slutliga filer (personröster, ~15–40 MB uppackat) i EN invokering summerar
+// >2 s CPU → WORKER_RESOURCE_LIMIT, även om ingen enskild fil är en gigant. Sluta lägga till
+// filer när kumulativa STRÖMMADE zip-bytes passerar detta (~zip×10 uppackat → ~0,5 s CPU vid
+// 6 MB). MAX_FILES kvar som tak för många SMÅ filer (preliminärt tickar snabbt då). Upptäckt
+// vid runbook-rehearsal: full omingest med max:20 kraschade på medelstora slutliga-klungor.
+const INVOKE_BYTE_BUDGET = 6_000_000
 // STORLEKSVAKT: filer med större zip än så här PARSAR edge inte — BEVISAT att den slutliga
 // RD-filen (~24 MB zip / 260 MB uppackad) dödar isolatet på ~4 s (parse allena, WORKER_RESOURCE_
 // LIMIT), och den monolitiska JSON:en går inte att chunka/resume:a. ~4 MB zip / ~40 MB uppackat
@@ -53,6 +61,7 @@ interface StreamResult {
   meta?: FileMeta
   resultUp?: number
   uppUp?: number
+  bytes?: number // strömmade zip-bytes (CPU-proxy för invokeringens budget); ~0 för toobig
   error?: string
 }
 
@@ -168,6 +177,7 @@ async function streamFile(url: string, districtSet: Set<string>, partySet: Set<s
   // lokalt). Med små bitar + tät flush stannar peak-minnet på några MB oavsett filstorlek.
   const SUBCHUNK = 65536
   const reader = res.body.getReader()
+  let bytesRead = 0
   try {
     for (;;) {
       let step: ReadableStreamReadResult<Uint8Array>
@@ -180,6 +190,7 @@ async function streamFile(url: string, districtSet: Set<string>, partySet: Set<s
       }
       if (step.done) break
       const buf = step.value
+      bytesRead += buf.length // CPU-proxy för invokeringens budget
       for (let off = 0; off < buf.length; off += SUBCHUNK) {
         uz.push(buf.subarray(off, Math.min(off + SUBCHUNK, buf.length)), false)
         await flush(false)
@@ -195,8 +206,8 @@ async function streamFile(url: string, districtSet: Set<string>, partySet: Set<s
   // Strömmen tog slut men rostfordelnings-filen blev aldrig komplett (fflate nådde ej `final`)
   // → trunkerad nedladdning som ändå avslutades "rent". Våra RD/RF/KF-zip HAR alltid en
   // rostfordelning → !final = ofullständig (aldrig "saknar den") → transient, försök igen.
-  if (!sawFinal) return { status: 'incomplete' }
-  return { status: 'ok', meta, resultUp, uppUp }
+  if (!sawFinal) return { status: 'incomplete', bytes: bytesRead }
+  return { status: 'ok', meta, resultUp, uppUp, bytes: bytesRead }
 }
 
 Deno.serve(async (req) => {
@@ -251,9 +262,13 @@ Deno.serve(async (req) => {
   let skipped = 0
   let meta: FileMeta | null = null
   const deadline = Date.now() + BUDGET_MS
+  let invokeBytes = 0 // kumulativa strömmade zip-bytes denna invokering (CPU-budget, se ovan)
   for (const f of changed) {
-    if (Date.now() > deadline) break
+    // Stanna innan CPU-taket: väggtid ELLER kumulativa bytes (flera medelstora filer summerar
+    // >2 s CPU). Kontrollen är FÖRE filen → föregående fil fick gå klart; resten nästa varv.
+    if (Date.now() > deadline || invokeBytes > INVOKE_BYTE_BUDGET) break
     const r = await streamFile(f.url, districtSet, partySet, supabase, probe)
+    invokeBytes += r.bytes ?? 0 // toobig strömmar ~0 (kroppen avbruten) → äter inte budgeten
     if (r.status === 'fetchfail' || r.status === 'dberror' || r.status === 'incomplete') {
       // Transient (nätverk/DB/trunkerad) → markera INTE done, försök igen nästa varv (självläker).
       continue

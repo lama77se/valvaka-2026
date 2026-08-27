@@ -71,8 +71,10 @@ En zip per organ — RD riket (`00`), RF per region, KF per kommun — innehåll
 
 ## Kadens & första fyllning
 
-`MAX_FILES = 10` organ-filer per körning (+ en väggtidsbudget) → första fyllningen av alla
-~314 organ tar en handfull cron-varv, sen hämtas bara det som ändrats (manifest-md5-diff).
+`MAX_FILES = 25` organ-filer per körning + en **CPU-budget** (~6 MB strömmade zip-bytes/invokering):
+edge har ~2 s CPU/request, och att parsa flera MEDELSTORA slutliga filer (personröster) i EN
+invokering summerar >2 s → `WORKER_RESOURCE_LIMIT`. Budgeten släpper igenom många små filer men
+bara ~2 medelstora per varv. Första fyllningen tar då fler varv, sen hämtas bara det som ändrats.
 På valnatten: tighta kadensen (30–60 s) i en egen migration.
 
 ## Verifiera lokalt
