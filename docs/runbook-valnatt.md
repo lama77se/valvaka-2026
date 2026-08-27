@@ -29,9 +29,9 @@ genrep-testdata hela natten**. Därför MÅSTE DB:n rensas innan skarpt flödar 
 
 ## Inför valnatten (dagarna innan)
 
-- [ ] **Förbered val2026-switchen som en färdig PR/branch** (byt `RESULT_BASE_DEFAULT` →
-  `https://resultat.val.se/resultatfiler/val2026` i BÅDA filerna). Merga den INTE än — ha den
-  redo för ett klick på natten (CI + deploy tar några minuter, undvik att skriva kod live).
+- [x] **val2026-switchen förberedd** som draft-PR `chore/valnatt-switch-val2026` (byter
+  `RESULT_BASE_DEFAULT` → `…/val2026` i BÅDA filerna). Merga den INTE än — un-draft:a + merga på
+  natten (N2), CI deployar edge automatiskt (undvik att skriva kod live).
 - [ ] **(Valfritt) Cron-tightening (30 s i stället för 2 min)** — redan förberedd som **draft-PR**
   (`supabase/migrations/20260913193000_tighten_cron_valnatt.sql`, `cron.alter_job → '30 seconds'`).
   Merga på natten (N3) → `db-migrate.yml` auto-applar. Manuell fallback om migrationen strular:
