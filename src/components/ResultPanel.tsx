@@ -219,10 +219,12 @@ export function ResultPanel() {
 
   return (
     <div className="flex h-full flex-col gap-3 overflow-hidden">
-      {/* Områdesväljare: valtyp-medveten (valtyp styrs från kartan). RD → Riket +
-          nedbrytning; RF → region + kommun inom; KF → bara kommun. */}
+      {/* Rad: områdesväljare (vänster) + valtyp-badge (höger) som återbekräftar vilket val
+          resultatramen visar — speglar valtyp-väljaren högst upp. Områdesväljaren är valtyp-
+          medveten: RD → Riket + nedbrytning; RF → region + kommun inom; KF → bara kommun. */}
+      <div className="flex items-center gap-2">
       <select
-        className="rounded-md border border-slate-700 bg-slate-900/80 px-2 py-1.5 text-sm text-slate-100"
+        className="min-w-0 flex-1 rounded-md border border-slate-700 bg-slate-900/80 px-2 py-1.5 text-sm text-slate-100"
         value={selectValue}
         onChange={(e) => {
           const v = e.target.value
@@ -277,6 +279,13 @@ export function ResultPanel() {
           </optgroup>
         )}
       </select>
+        <span
+          className="shrink-0 select-none rounded-md border border-sky-500/40 bg-sky-500/10 px-2.5 py-1.5 text-sm font-semibold text-sky-200"
+          title={ELECTION[valtyp]}
+        >
+          {VALTYP_LABEL[valtyp]}
+        </span>
+      </div>
 
       <div className="min-h-0 flex-1 overflow-auto pr-1">
         {isPrompt ? (
