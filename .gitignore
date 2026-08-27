@@ -66,3 +66,6 @@ Thumbs.db
 
 # Testing
 coverage/
+
+# Deno lockfile (byprodukt av `deno check` på edge functions)
+deno.lock
