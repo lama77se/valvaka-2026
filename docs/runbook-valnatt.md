@@ -7,7 +7,7 @@ detta dokument på natten. Bakgrund/detaljer: [resultat-ingest-genrep.md](./resu
 
 | Del | Vad | Var |
 |---|---|---|
-| **Edge `ingest-result`** | pollar val.se, **strömmar** in de **preliminära** filerna (`/p/`) → `result`/`uppsamling_result` → Realtime → karta | Supabase, pg_cron `*/2 min` |
+| **Edge `ingest-result`** | pollar val.se, **strömmar** in de **preliminära** filerna (`/p/`) → `result`/`uppsamling_result` → Realtime → karta | Supabase, pg_cron `30 s` |
 | **Storleksvakt + CPU-budget** | säkerhetsnät i edge (preliminära filer är små; slutliga filtreras redan bort) | i samma funktion |
 | **Lokalt skript** | `npm run ingest:slutlig` — **alla slutliga** filer (`/s/`): riks-RD + alla 21 RF + alla ~290 KF | din dator, ons–fre |
 | **Frontend** | valvaka.tech, auto-deploy från `main` | Vercel |
@@ -32,10 +32,10 @@ genrep-testdata hela natten**. Därför MÅSTE DB:n rensas innan skarpt flödar 
 - [x] **val2026-switchen förberedd** som draft-PR `chore/valnatt-switch-val2026` (byter
   `RESULT_BASE_DEFAULT` → `…/val2026` i BÅDA filerna). Merga den INTE än — un-draft:a + merga på
   natten (N2), CI deployar edge automatiskt (undvik att skriva kod live).
-- [ ] **(Valfritt) Cron-tightening (30 s i stället för 2 min)** — redan förberedd som **draft-PR**
-  (`supabase/migrations/20260913193000_tighten_cron_valnatt.sql`, `cron.alter_job → '30 seconds'`).
-  Merga på natten (N3) → `db-migrate.yml` auto-applar. Manuell fallback om migrationen strular:
-  `select cron.alter_job((select jobid from cron.job where jobname='ingest-result-genrep'), schedule => '30 seconds');`
+- [x] **Cron-kadensen är redan 30 s** (migration `20260827120000_tighten_cron.sql`, applicerad i
+  förväg via `db-migrate.yml`) — gäller redan genrep-simmarna och carry:ar in i valnatten, inget
+  natt-steg. Manuell backning vid behov:
+  `select cron.alter_job((select jobid from cron.job where jobname='ingest-result-genrep'), schedule => '*/2 * * * *');`
 - [ ] **Verifiera att val2026 gått live** (byt INTE förrän den svarar 200):
   `curl -s -o /dev/null -w "%{http_code}" https://resultat.val.se/resultatfiler/val2026/index.md5`
   (404 tills ~13 sep, sen 200).
@@ -76,8 +76,7 @@ nu "inga 2026-röster än" (bara 2022-kolumner) tills skarpt flödar — korrekt
 skarpa filen försvinner `test`-attributet → `dataset_meta` skrivs om till `source='val2026',
 test=false` → **testdata-bannern släcks automatiskt**.
 
-**N3. (Valfritt) Merga cron-tightening-migrationen** (`chore/valnatt-cron-tighten`, 30 s) →
-`db-migrate.yml` auto-applar.
+**N3. Cron-kadensen är redan 30 s** (gjord i förväg, `20260827120000_tighten_cron.sql`) — inget att göra.
 
 **N4. Övervaka** (inget manuellt behövs sen — edge sköter preliminärt automatiskt):
 - Testdata-bannern släcks.

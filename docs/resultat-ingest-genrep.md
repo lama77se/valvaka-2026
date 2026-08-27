@@ -81,8 +81,8 @@ riks-RD spränger taket ensam. Att helt hålla `/s/` borta från edge tar bort h
 
 `MAX_FILES = 25` organ-filer per körning + en **CPU-budget** (~6 MB strömmade zip-bytes/invokering)
 som säkerhetsnät: preliminära filer är små, så budgeten bör aldrig lösa ut i praktiken. Första
-fyllningen tar några varv, sen hämtas bara det som ändrats. På valnatten: tighta kadensen (30–60 s)
-i en egen migration.
+fyllningen tar några varv, sen hämtas bara det som ändrats. Kadensen är **30 s** (migration
+`20260827120000_tighten_cron.sql`) — snabbare kart-uppdatering under bursten.
 
 ## Verifiera lokalt
 
@@ -156,8 +156,8 @@ aldrig med edge:ns state. Verifierat: skriver 6312 slutliga RD-distrikt + region
    RF + alla ~290 KF — tas av `npm run ingest:slutlig`, som körs under **sluträkningen (ons–fre)**
    när de definitiva filerna kommer/uppdateras (se avsnittet ovan). På själva natten finns bara
    `/p/`, så inget lokalt skript behövs då.
-3. Cron-kadensen tightas till 30 s av migrationen `20260913193000_tighten_cron_valnatt.sql`
-   (draft-PR `chore/valnatt-cron-tighten`; behåller jobbnamnet — kosmetiskt).
+3. Cron-kadensen är redan 30 s (migration `20260827120000_tighten_cron.sql`, applicerad i förväg;
+   behåller jobbnamnet — kosmetiskt). Inget natt-steg.
 4. Merge → CI deployar funktionen + applicerar migrationen. På skarpa filerna
    **FÖRSVINNER `test`-attributet helt** (val.se sätter det inte till `false`, det tas
    bort) — vår `test: !!meta.test` ger då `false`, så `dataset_meta` skrivs om till
