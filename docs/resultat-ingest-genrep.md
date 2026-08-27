@@ -16,9 +16,9 @@ uppdaterad feed.
 resultat.val.se/resultatfiler/<base>/index.md5   (manifest: md5 + organ-zip)
         │  pg_cron var 2:e min → net.http_post
         ▼
-supabase/functions/ingest-result  (Deno edge function)
+supabase/functions/ingest-result  (Deno edge function — BARA preliminära /p/-filer)
         │  md5-diff (ingest_state) → hämta ändrade organ-zip → STREAMA (fflate + SAX)
-        │  → filtrera mot FK → batch-upsert   (för stora slutliga: lokalt skript, se nedan)
+        │  → filtrera mot FK → batch-upsert   (ALLA slutliga /s/-filer: lokalt skript, se nedan)
         ▼
 result + uppsamling_result (Postgres) ──Realtime──►  kartan färgas + rapporteringsgrad tickar
 dataset_meta (1 rad) ──────────────────►  provenance-banner (genrep/testdata)
@@ -69,13 +69,20 @@ En zip per organ — RD riket (`00`), RF per region, KF per kommun — innehåll
   `011400`) routas till **`uppsamling_result`** per explicit kommunkod/lankod (ej `result`).
 - `partikod` som saknas i `party` hoppas över. (I genrep 2026: 0 tappade — full täckning.)
 
+## Rollfördelning edge / lokalt skript
+
+Edge tar **bara de preliminära (`/p/`) filerna** — det är allt som finns på valnatten och de ryms i
+edge:ns CPU-tak. **Alla slutliga (`/s/`) filer** — riks-RD + alla 21 RF + alla ~290 KF — tas av det
+lokala Node-skriptet (se nedan). Slutliga filer bär personröster (tunga att parsa); en klunga
+medelstora slutliga i EN edge-invokering summerar >2 s CPU → `WORKER_RESOURCE_LIMIT`, och odelade
+riks-RD spränger taket ensam. Att helt hålla `/s/` borta från edge tar bort hela den krasch-risken.
+
 ## Kadens & första fyllning
 
-`MAX_FILES = 25` organ-filer per körning + en **CPU-budget** (~6 MB strömmade zip-bytes/invokering):
-edge har ~2 s CPU/request, och att parsa flera MEDELSTORA slutliga filer (personröster) i EN
-invokering summerar >2 s → `WORKER_RESOURCE_LIMIT`. Budgeten släpper igenom många små filer men
-bara ~2 medelstora per varv. Första fyllningen tar då fler varv, sen hämtas bara det som ändrats.
-På valnatten: tighta kadensen (30–60 s) i en egen migration.
+`MAX_FILES = 25` organ-filer per körning + en **CPU-budget** (~6 MB strömmade zip-bytes/invokering)
+som säkerhetsnät: preliminära filer är små, så budgeten bör aldrig lösa ut i praktiken. Första
+fyllningen tar några varv, sen hämtas bara det som ändrats. På valnatten: tighta kadensen (30–60 s)
+i en egen migration.
 
 ## Verifiera lokalt
 
@@ -90,37 +97,37 @@ curl -XPOST localhost:54321/functions/v1/ingest-result -d '{"base":"https://resu
 
 Städa testdata ur `result` med `npm run results:reset` vid behov.
 
-## Stora slutliga filer — lokalt Node-skript (`npm run ingest:slutlig-rd`)
+## Slutliga filer — lokalt Node-skript (`npm run ingest:slutlig`)
 
-De **slutliga** filerna bär personröster: RD publiceras odelat nationellt (~260 MB uppackad)
-och de största regionerna blir ~50–95 MB. Edge kan INTE parsa dem — Supabase-edge har **~2 s
-CPU/request** och att tokenisera 260 MB spränger det på ~4 s (`WORKER_RESOURCE_LIMIT`), och den
-monolitiska JSON:en går inte att chunka/resume:a (till skillnad från transport-repots radbaserade
-CSV). ingest-result:s storleksvakt (Content-Length > `MAX_EDGE_ZIP_BYTES` = 4 MB) **hoppar** dem
-och delegerar hit. Node har inget sådant tak (~1,1 GB RSS på 260 MB-filen, väl inom 7 GB).
-
-**4 filer** överstiger gränsen: **slutlig RD (24,6 MB)** + de 3 största regionernas **slutliga RF**
-(Stockholm 8,1 / VGR 6,6 / Skåne 5,4 MB). Skript:
-[`scripts/ingest-slutlig-rd.mjs`](../scripts/ingest-slutlig-rd.mjs).
+**Alla slutliga (`/s/`) filer tas här, inte i edge** — riks-RD + alla 21 RF + alla ~290 KF. De
+bär personröster och är tunga att parsa: riks-RD publiceras odelat nationellt (~260 MB uppackad),
+de största regionerna blir ~50–95 MB. Edge kan INTE parsa de största — Supabase-edge har **~2 s
+CPU/request** och att tokenisera 260 MB spränger det på ~4 s (`WORKER_RESOURCE_LIMIT`), och en
+klunga medelstora slutliga summerar också >2 s → krasch. Den monolitiska JSON:en går inte att
+chunka/resume:a (till skillnad från transport-repots radbaserade CSV). Node har inget sådant tak
+(~1,1 GB RSS på 260 MB-filen, väl inom 7 GB) och tar hela den slutliga räkningen i en körning.
+Skript: [`scripts/ingest-slutlig.mjs`](../scripts/ingest-slutlig.mjs).
 
 **När:** under **sluträkningen (ons–fre efter valet)**, när de definitiva filerna dyker upp och
-uppdateras (Länsstyrelsen räknar om). Preliminära natten behöver det INTE — då tar edge allt.
+uppdateras (Länsstyrelsen räknar om). Preliminära natten behöver det INTE — då finns bara `/p/`,
+som edge tar automatiskt.
 
 **Hur:**
 ```bash
-npm run ingest:slutlig-rd            # tar bara filer som ändrats sedan sist (md5)
-npm run ingest:slutlig-rd -- --force # kör om alla stora slutliga filer
+npm run ingest:slutlig            # tar bara filer som ändrats sedan sist (md5)
+npm run ingest:slutlig -- --force # kör om alla slutliga filer
 ```
 Kräver service-role i `.env.local`. Egna `ingest_state`-nycklar (`slutlig-local:`) → krockar
-aldrig med edge:ns state. Verifierat: skriver 6312 slutliga RD-distrikt + de 3 stora regionerna;
+aldrig med edge:ns state. Verifierat: skriver 6312 slutliga RD-distrikt + regionerna;
 `verify:uppsamling` bekräftar att slutlig RD → `computeMandate` == val.se-facit (349).
 
 ## Kända begränsningar
 
-- **Streaming-parse (alla storlekar som ryms i edge).** ingest-result STREAMAR varje fil
-  (fflate streaming-unzip → `@streamparser/json` SAX → batch-upsert) → minnet är bounded oavsett
-  filstorlek (~110 MB peak lokalt på 260 MB-filen). Ersätter den gamla unzipSync + JSON.parse-
-  vägen. De 4 filer som ändå inte ryms (CPU-taket, se ovan) delegeras till det lokala skriptet.
+- **Streaming-parse (preliminära filer i edge).** ingest-result STREAMAR varje fil (fflate
+  streaming-unzip → `@streamparser/json` SAX → batch-upsert) → minnet är bounded oavsett filstorlek
+  (~110 MB peak lokalt på 260 MB-filen). Ersätter den gamla unzipSync + JSON.parse-vägen.
+  Edge tar bara `/p/`; alla slutliga `/s/` (som spränger CPU-taket i klungor) tas av det lokala
+  skriptet ovan. Storleksvakt + CPU-budget i edge är kvar som säkerhetsnät.
 - **Realtime-batch:** preliminärt upsertas i **≤100-radersbatchar** — Realtime tappar txns >~100
   rader → live-kartan skulle inte målas om på valnatten. Slutligt använder **1000-radersbatchar**
   (Realtime behövs inte ons–fre; klienten läser via snapshot). En BEFORE UPDATE-trigger
@@ -142,11 +149,12 @@ aldrig med edge:ns state. Verifierat: skriver 6312 slutliga RD-distrikt + de 3 s
 ## Checklista inför valnatten (13 sep 2026)
 
 1. Byt `RESULT_BASE_DEFAULT` → `…/val2026` **på BÅDA ställena i lockstep**:
-   `ingest-result/index.ts` OCH `scripts/ingest-slutlig-rd.mjs`. (Om bara den ena byts laddas
-   giganterna från fel katalog — tyst fel på de filer som betyder mest.)
-2. Preliminärt + små slutliga (290 KF + 17 RF) tas av edge automatiskt. **Stora slutliga**
-   (RD + de 3 största regionernas RF) tas av `npm run ingest:slutlig-rd` — kör det under
-   **sluträkningen (ons–fre)** när de definitiva filerna kommer/uppdateras (se avsnittet ovan).
+   `ingest-result/index.ts` OCH `scripts/ingest-slutlig.mjs`. (Om bara den ena byts laddas
+   den andra kategorin från fel katalog — tyst fel på de filer som betyder mest.)
+2. **Preliminärt (`/p/`)** tas av edge automatiskt. **Alla slutliga (`/s/`)** — riks-RD + alla 21
+   RF + alla ~290 KF — tas av `npm run ingest:slutlig`, som körs under **sluträkningen (ons–fre)**
+   när de definitiva filerna kommer/uppdateras (se avsnittet ovan). På själva natten finns bara
+   `/p/`, så inget lokalt skript behövs då.
 3. Ny migration: tighta cron-kadensen (30–60 s) för `ingest-result-genrep` (döp om).
 4. Merge → CI deployar funktionen + applicerar migrationen. På skarpa filerna
    **FÖRSVINNER `test`-attributet helt** (val.se sätter det inte till `false`, det tas
