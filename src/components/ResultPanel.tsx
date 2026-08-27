@@ -253,6 +253,15 @@ export function ResultPanel() {
         ) : (
           <option value="">{PROMPT[valtyp]}</option>
         )}
+        {/* Grupperna i hierarkiordning (förälder först): RF region → valkrets; RD valkrets →
+            kommun (ingen region). */}
+        {levels.includes('region') && (
+          <optgroup label="Region / län">
+            {regioner.map((r) => (
+              <option key={r.code} value={`r:${r.code}`}>{r.name}</option>
+            ))}
+          </optgroup>
+        )}
         {levels.includes('valkrets') && (
           <optgroup label="Valkrets">
             {valkretsar.map((v) => (
@@ -261,13 +270,6 @@ export function ResultPanel() {
               <option key={v.code} value={`vk:${v.code}`}>
                 {valtyp === 'RF' ? `${regionName.get(v.code.slice(0, 2)) ?? ''} · ${v.name}` : v.name}
               </option>
-            ))}
-          </optgroup>
-        )}
-        {levels.includes('region') && (
-          <optgroup label="Region / län">
-            {regioner.map((r) => (
-              <option key={r.code} value={`r:${r.code}`}>{r.name}</option>
             ))}
           </optgroup>
         )}
