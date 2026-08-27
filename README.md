@@ -55,8 +55,8 @@ valnatten byts källan till de skarpa resultatfilerna via en enda konstant, utan
   runtimens CPU-tak (~2 s/request kan inte tokenisera 260 MB JSON) och tas i stället av ett
   lokalt Node-skript, `npm run ingest:slutlig-rd`, som körs under sluträkningen (ons–fre).
 
-Detaljerad ingest- och valnatts-checklista i
-**[docs/resultat-ingest-genrep.md](./docs/resultat-ingest-genrep.md)**.
+Operativ **[runbook för valnatten](./docs/runbook-valnatt.md)** (inför/på/efter) och detaljerad
+ingest-beskrivning i **[docs/resultat-ingest-genrep.md](./docs/resultat-ingest-genrep.md)**.
 
 Fullständigt underlag i **[docs/arkitektur.md](./docs/arkitektur.md)** och
 **[docs/implementationsplan.md](./docs/implementationsplan.md)**.
