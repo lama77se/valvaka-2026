@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 
@@ -9,15 +9,9 @@ import {
   SWEDEN_BOUNDS,
 } from '@/lib/geometry'
 import { VALTYPER, VALTYP_LABEL, type Valtyp } from '@/lib/results'
-import { districtsInArea } from '@/lib/aggregate'
+import { SPARR, applyComparison, buildRows, collapseForDisplay, districtsInArea } from '@/lib/aggregate'
+import { ancestorsOf } from '@/lib/hierarchy'
 import { defaultAreaFor, useResults } from '@/components/ResultsProvider'
-
-// Läsbar etikett för district_comparison.jamforbarhet (Fas 2-referensdata).
-const JAMFORBARHET_LABEL: Record<string, string> = {
-  JA: 'Jämförbar mot 2022',
-  NEJ: 'Ej jämförbar mot 2022',
-  FLERA: 'Jämförs mot flera 2022-distrikt',
-}
 
 // Färg för distrikt som rapporterat men vars vinnarparti saknar märkesfärg
 // (lokalt parti utan hex i `party.color`). Orapporterade får null → UNREPORTED_FILL.
@@ -37,7 +31,6 @@ const BLANK_STYLE: StyleSpecification = {
 }
 
 type HoverInfo = { kod: string; namn: string; kommun: string; lan: string }
-type HoverResult = { forkortning: string; share: number; margin: number; total: number }
 
 export function DistrictMap() {
   // Delad state (karta + tabell). Kartan äger inte längre data — den läser storarna
@@ -51,12 +44,18 @@ export function DistrictMap() {
     partyRef,
     metaRef,
     allCodesRef,
-    districtComparisonRef,
     totalByValtyp,
     subscribeChanges,
     snapshotVersion,
     realtimeConnected,
     dataset,
+    kommuner,
+    regioner,
+    valkretsar,
+    areaIndexRef,
+    districtAndel2022Ref,
+    ensureDistrictWinners2022,
+    revision,
   } = useResults()
 
   const containerRef = useRef<HTMLDivElement>(null)
@@ -64,7 +63,6 @@ export function DistrictMap() {
   const hoveredIdRef = useRef<string | null>(null)
   const tooltipRef = useRef<HTMLDivElement>(null) // hover-rutan (positioneras vid pekaren via DOM)
   const [hover, setHover] = useState<HoverInfo | null>(null)
-  const [jamforbarhet, setJamforbarhet] = useState<string | null>(null)
 
   const pendingRef = useRef<Set<string>>(new Set())
   const rafRef = useRef<number | null>(null)
@@ -78,9 +76,56 @@ export function DistrictMap() {
   const [boundsReady, setBoundsReady] = useState(false)
   const [mapReady, setMapReady] = useState(false)
 
-  const [hoverResult, setHoverResult] = useState<HoverResult | null>(null)
   const [reportedCount, setReportedCount] = useState(0)
   const [lastUpdated, setLastUpdated] = useState<string | null>(null) // HH:MM:SS för senaste dataändring
+
+  // Valtyp-medveten hierarki för hover-rutan (rad 2): det hovrade distriktets FÖRÄLDRAR
+  // enligt aktiv valtyp — RD: Valkrets · Kommun, RF: Region · Valkrets, KF: Kommun · Valkrets
+  // (område) — med Riket och lövet (distriktet självt) bortsläppta. ancestorsOf droppar
+  // mellannivåer som inte delar (oindelad KF-kommun → bara Kommun; en-vk-region → Region;
+  // RD-valkrets som ÄR en kommun → bara Valkrets). Samma kedja som panelens breadcrumb.
+  const regionName = useMemo(() => new Map(regioner.map((r) => [r.code, r.name])), [regioner])
+  const kommunName = useMemo(() => new Map(kommuner.map((k) => [k.code, k.name])), [kommuner])
+  const valkretsName = useMemo(() => new Map(valkretsar.map((v) => [v.code, v.name])), [valkretsar])
+  const hierarchyLabel = useMemo(() => {
+    if (!hover) return ''
+    const chain = ancestorsOf(valtyp, { level: 'distrikt', code: hover.kod }, areaIndexRef.current?.[valtyp])
+    return chain
+      .filter((n) => n.level !== 'riket' && n.level !== 'distrikt')
+      .map((n) =>
+        n.level === 'region' ? regionName.get(n.code ?? '')
+        : n.level === 'kommun' ? kommunName.get(n.code ?? '')
+        : valkretsName.get(n.code ?? ''),
+      )
+      .filter(Boolean)
+      .join(' · ')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hover, valtyp, regionName, kommunName, valkretsName])
+
+  // Hover-rutans mini-resultattabell för det hovrade distriktet (aktiv valtyp): parti per
+  // rad, störst→minst, 2026-andel + ±procentenheter mot 2022 (2022-andelen visas ej separat).
+  // Samma byggstenar som panelen (buildRows → applyComparison → collapseForDisplay). 2022 per
+  // distrikt lat-laddas per kommun (ensureDistrictWinners2022, effekt nedan) → revision-bump
+  // fyller i deltat. Saknas 2022 för distriktet → has2022=false → note "ej jämförbart".
+  const hoverRows = useMemo(() => {
+    if (!hover) return null
+    const votes = storesRef.current[valtyp].aggregate([hover.kod])
+    const area = buildRows(votes, partyRef.current, SPARR[valtyp])
+    const a2022 = districtAndel2022Ref.current?.get(hover.kod)
+    const leaf = a2022 && Object.keys(a2022).length ? { andel: a2022, mandat: {} as Record<string, number> } : null
+    const withCmp = applyComparison(area, valtyp, 'distrikt', hover.kod, null, partyRef.current, leaf)
+    return {
+      display: collapseForDisplay(withCmp),
+      giltiga: withCmp.giltiga,
+      has2022: withCmp.rows.some((r) => r.andel2022 != null),
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hover, valtyp, revision])
+
+  // Lat-ladda 2022-siffrorna för det hovrade distriktets kommun (deduppat i providern).
+  useEffect(() => {
+    if (hover?.kod) ensureDistrictWinners2022(valtyp, hover.kod.slice(0, 4))
+  }, [hover?.kod, valtyp, ensureDistrictWinners2022])
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
@@ -265,24 +310,11 @@ export function DistrictMap() {
           kommun: p.Kommun ?? '',
           lan: p['Län'] ?? '',
         })
-        setJamforbarhet(districtComparisonRef.current.get(id) ?? null)
-        const o = storesRef.current[activeValtypRef.current].outcome(id)
-        setHoverResult(
-          o.winner
-            ? {
-                forkortning: partyRef.current.get(o.winner)?.forkortning ?? o.winner,
-                share: o.share,
-                margin: o.margin,
-                total: o.total,
-              }
-            : null,
-        )
       })
       map.on('mouseleave', 'district-fill', () => {
         map.getCanvas().style.cursor = ''
         setHovered(null)
         setHover(null)
-        setHoverResult(null)
       })
 
       // Klick på ett distrikt → zooma in på distriktet (via fokuseffekten) och visa
@@ -313,7 +345,7 @@ export function DistrictMap() {
       map.remove()
       mapRef.current = null
     }
-  }, [subscribeChanges, storesRef, partyRef, districtComparisonRef, setSelectedArea])
+  }, [subscribeChanges, storesRef, partyRef, setSelectedArea])
 
   // Bulkladdning (referens/snapshot) klar → full ompaint + färsk räknare.
   useEffect(() => {
@@ -331,21 +363,8 @@ export function DistrictMap() {
     }
     setReportedCount(storesRef.current[valtyp].reportedCount)
     recolorRef.current?.()
-    // Uppdatera hover-rutans resultat till den nya valtypen om man hovrar.
-    if (hoveredIdRef.current) {
-      const o = storesRef.current[valtyp].outcome(hoveredIdRef.current)
-      setHoverResult(
-        o.winner
-          ? {
-              forkortning: partyRef.current.get(o.winner)?.forkortning ?? o.winner,
-              share: o.share,
-              margin: o.margin,
-              total: o.total,
-            }
-          : null,
-      )
-    }
-  }, [valtyp, storesRef, partyRef])
+    // Hover-rutans mini-tabell räknar om via hoverRows (nyckel: valtyp + revision).
+  }, [valtyp, storesRef])
 
   // Ladda distrikt-bboxarna en gång (samma mönster som comparison-2022.json).
   useEffect(() => {
@@ -548,27 +567,47 @@ export function DistrictMap() {
       >
         {hover && (
           <>
-            <div className="font-semibold">{hover.namn || '—'}</div>
-            <div className="text-slate-400">
-              {hover.kommun} · {hover.lan} · <span className="font-mono">{hover.kod}</span>
+            <div className="flex items-center gap-2">
+              <div className="min-w-0 flex-1 truncate font-semibold">{hover.namn || '—'}</div>
+              <span className="shrink-0 rounded border border-sky-500/40 bg-sky-500/10 px-1.5 py-0.5 text-[11px] font-semibold text-sky-200">
+                {VALTYP_LABEL[valtyp]}
+              </span>
             </div>
-            {hoverResult ? (
-              <div className="mt-1 text-xs text-emerald-300">
-                Ledare ({VALTYP_LABEL[valtyp]}):{' '}
-                <span className="font-semibold">{hoverResult.forkortning}</span>{' '}
-                <span className="font-semibold">{Math.round(hoverResult.share * 100)} %</span>
-                <span className="ml-1 text-slate-400">
-                  (+{Math.round(hoverResult.margin * 100)} %-enh) · {hoverResult.total.toLocaleString('sv-SE')} röster
-                </span>
+            <div className="text-slate-400">
+              {hierarchyLabel || hover.kommun}
+            </div>
+            {hoverRows && hoverRows.giltiga > 0 ? (
+              <div className="mt-1.5 text-xs">
+                <div className="mb-0.5 flex items-center text-[10px] uppercase tracking-wide text-slate-500">
+                  <span className="flex-1">Andel</span>
+                  {hoverRows.has2022 && <span>± mot 2022</span>}
+                </div>
+                {hoverRows.display.shown.map((r) => (
+                  <div key={r.partikod} className="flex items-center gap-1.5 leading-5">
+                    <span className="inline-block h-2 w-2 shrink-0 rounded-full" style={{ background: r.farg ?? REPORTED_NEUTRAL }} />
+                    <span className="w-9 shrink-0 font-semibold">{r.forkortning ?? '—'}</span>
+                    <span className="flex-1 tabular-nums">{(r.andel * 100).toFixed(1)} %</span>
+                    {r.deltaAndel != null && (
+                      <span className={`tabular-nums ${r.deltaAndel >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {r.deltaAndel >= 0 ? '+' : ''}{r.deltaAndel.toFixed(1)}
+                      </span>
+                    )}
+                  </div>
+                ))}
+                {hoverRows.display.ovriga && (
+                  <div className="flex items-center gap-1.5 leading-5 text-slate-400">
+                    <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-slate-600" />
+                    <span className="w-9 shrink-0">Övr.</span>
+                    <span className="flex-1 tabular-nums">{(hoverRows.display.ovriga.andel * 100).toFixed(1)} %</span>
+                  </div>
+                )}
+                <div className="mt-1 border-t border-slate-700 pt-1 text-slate-400">
+                  {hoverRows.giltiga.toLocaleString('sv-SE')} röster
+                  {!hoverRows.has2022 && ' · distrikt ej jämförbart med 2022'}
+                </div>
               </div>
             ) : (
               <div className="mt-1 text-xs text-slate-500">Ej räknat än ({VALTYP_LABEL[valtyp]})</div>
-            )}
-            {jamforbarhet && (
-              <div className="mt-1 text-xs text-sky-300">
-                {JAMFORBARHET_LABEL[jamforbarhet] ?? jamforbarhet}
-                <span className="ml-1 text-slate-500">· från Supabase</span>
-              </div>
             )}
           </>
         )}
