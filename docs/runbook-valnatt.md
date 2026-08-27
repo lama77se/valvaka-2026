@@ -38,12 +38,22 @@ genrep-testdata hela natten**. Därför MÅSTE DB:n rensas innan skarpt flödar 
 - [ ] **Verifiera att val2026 gått live** (byt INTE förrän den svarar 200):
   `curl -s -o /dev/null -w "%{http_code}" https://resultat.val.se/resultatfiler/val2026/index.md5`
   (404 tills ~13 sep, sen 200).
-- [ ] **Verifiera att natten bara har `/p/` (preliminära) filer** — edge tar BARA `/p/`, så om
-  val2026 mot förmodan publicerar tidiga `/s/`-filer under natten fylls INTE de distrikten förrän
-  du kör det lokala skriptet. Räkna dem i manifestet (förväntat: `/p/` > 0, `/s/` = 0 på natten):
-  `curl -s https://resultat.val.se/resultatfiler/val2026/index.md5 | grep -c '/p/.*_\(RD\|RF\|KF\)\.zip'`
-  och samma med `/s/`. (Verifieras redan på genrep-sim mån 31 aug 13–15 — då ska kartan fyllas helt
-  från edge allena; ser du `/s/` under en valnatts-sim, kör `npm run ingest:slutlig` som backup.)
+- [ ] **🔴 Verifiera att `/p/`-vägen faktiskt matar in — det är NATTENS ENDA datakälla.** Edge tar
+  BARA `/p/`; matchar val2026:s sökväg mot förmodan inte exakt `/p/` blir kartan **tyst tom hela
+  natten**. Kolla TVÅ saker:
+  1. **Räkna filer** (förväntat: `/p/` > 0, `/s/` = 0 på natten — Länsstyrelsens sluträkning börjar
+     först veckan efter):
+     `curl -s https://resultat.val.se/resultatfiler/val2026/index.md5 | grep -c '/p/.*_\(RD\|RF\|KF\)\.zip'`
+     och samma med `/s/`.
+  2. **Live-rök: en riktig fil ska ingesta + måla kartan.** Efter N2-bytet, gör en manuell POST
+     (se *Verifiering* nedan) → svaret ska ge `changed>0`/`upserted>0` och ett distrikt tändas.
+  - **Om `/p/`-count = 0 men filer finns:** sökvägskonventionen har flyttat. Filnamnen bär `preliminar`
+    /`slutlig` explicit (`..._preliminar_0114_KF.zip`) — använd det som oberoende diskriminator och
+    hotfix: byt manifest-filtret i `ingest-result` från `.includes('/p/')` till
+    `/_preliminar_/i.test(e.rel)` (och skriptets `/s/`→`/_slutlig_/`), deploya om. Ha detta i åtanke.
+  - Verifieras skarpt på genrep-sim **mån 31 aug 13–15** (då ska kartan fyllas helt från edge allena
+    med Realtime-repaint under burst — den egentliga acceptansen; kör även `npm run verify:realtime`).
+    Ser du `/s/` under en valnatts-sim, kör `npm run ingest:slutlig` som backup.
 - [ ] **`.env.local` klar** med service-role (`SUPABASE_SERVICE_ROLE_KEY`) för det lokala skriptet.
 - [ ] **Infra:** Supabase-compute uppskalad (small/Pro), `Max rows = 10000` (Settings → API).
   Vercel-env (`VITE_SUPABASE_URL/ANON_KEY/GEOMETRY_URL`) korrekta (appen är live).
