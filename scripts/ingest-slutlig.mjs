@@ -4,7 +4,7 @@
 // finns på valnatten och de ryms i edge:ns CPU-tak. Slutliga filer (/s/) bär personröster och är
 // tunga att parsa; en KLUNGA medelstora slutliga i EN edge-invokering summerar >2 s CPU →
 // WORKER_RESOURCE_LIMIT (546), och den odelade riks-RD:n (~260 MB uppackad) spränger taket ensam.
-// Därför tar detta skript HELA den slutliga räkningen: riks-RD + alla 17 RF + alla ~290 KF.
+// Därför tar detta skript HELA den slutliga räkningen: riks-RD + alla 21 RF + alla ~290 KF.
 // Node har inget CPU-/minnestak likt edge (uppmätt ~1,1 GB RSS på 260 MB-filen) → load-all funkar.
 //
 // KÖR under SLUTRÄKNINGEN (ons–fre efter valet), när de definitiva filerna dyker upp/uppdateras:

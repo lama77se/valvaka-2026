@@ -72,7 +72,7 @@ En zip per organ — RD riket (`00`), RF per region, KF per kommun — innehåll
 ## Rollfördelning edge / lokalt skript
 
 Edge tar **bara de preliminära (`/p/`) filerna** — det är allt som finns på valnatten och de ryms i
-edge:ns CPU-tak. **Alla slutliga (`/s/`) filer** — riks-RD + alla 17 RF + alla ~290 KF — tas av det
+edge:ns CPU-tak. **Alla slutliga (`/s/`) filer** — riks-RD + alla 21 RF + alla ~290 KF — tas av det
 lokala Node-skriptet (se nedan). Slutliga filer bär personröster (tunga att parsa); en klunga
 medelstora slutliga i EN edge-invokering summerar >2 s CPU → `WORKER_RESOURCE_LIMIT`, och odelade
 riks-RD spränger taket ensam. Att helt hålla `/s/` borta från edge tar bort hela den krasch-risken.
@@ -99,7 +99,7 @@ Städa testdata ur `result` med `npm run results:reset` vid behov.
 
 ## Slutliga filer — lokalt Node-skript (`npm run ingest:slutlig`)
 
-**Alla slutliga (`/s/`) filer tas här, inte i edge** — riks-RD + alla 17 RF + alla ~290 KF. De
+**Alla slutliga (`/s/`) filer tas här, inte i edge** — riks-RD + alla 21 RF + alla ~290 KF. De
 bär personröster och är tunga att parsa: riks-RD publiceras odelat nationellt (~260 MB uppackad),
 de största regionerna blir ~50–95 MB. Edge kan INTE parsa de största — Supabase-edge har **~2 s
 CPU/request** och att tokenisera 260 MB spränger det på ~4 s (`WORKER_RESOURCE_LIMIT`), och en
@@ -151,7 +151,7 @@ aldrig med edge:ns state. Verifierat: skriver 6312 slutliga RD-distrikt + region
 1. Byt `RESULT_BASE_DEFAULT` → `…/val2026` **på BÅDA ställena i lockstep**:
    `ingest-result/index.ts` OCH `scripts/ingest-slutlig.mjs`. (Om bara den ena byts laddas
    den andra kategorin från fel katalog — tyst fel på de filer som betyder mest.)
-2. **Preliminärt (`/p/`)** tas av edge automatiskt. **Alla slutliga (`/s/`)** — riks-RD + alla 17
+2. **Preliminärt (`/p/`)** tas av edge automatiskt. **Alla slutliga (`/s/`)** — riks-RD + alla 21
    RF + alla ~290 KF — tas av `npm run ingest:slutlig`, som körs under **sluträkningen (ons–fre)**
    när de definitiva filerna kommer/uppdateras (se avsnittet ovan). På själva natten finns bara
    `/p/`, så inget lokalt skript behövs då.

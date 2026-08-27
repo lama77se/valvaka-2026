@@ -9,7 +9,7 @@ detta dokument på natten. Bakgrund/detaljer: [resultat-ingest-genrep.md](./resu
 |---|---|---|
 | **Edge `ingest-result`** | pollar val.se, **strömmar** in de **preliminära** filerna (`/p/`) → `result`/`uppsamling_result` → Realtime → karta | Supabase, pg_cron `*/2 min` |
 | **Storleksvakt + CPU-budget** | säkerhetsnät i edge (preliminära filer är små; slutliga filtreras redan bort) | i samma funktion |
-| **Lokalt skript** | `npm run ingest:slutlig` — **alla slutliga** filer (`/s/`): riks-RD + alla 17 RF + alla ~290 KF | din dator, ons–fre |
+| **Lokalt skript** | `npm run ingest:slutlig` — **alla slutliga** filer (`/s/`): riks-RD + alla 21 RF + alla ~290 KF | din dator, ons–fre |
 | **Frontend** | valvaka.tech, auto-deploy från `main` | Vercel |
 
 **Datakällan byts med EN konstant, `RESULT_BASE_DEFAULT`, på TVÅ ställen (lockstep):**
@@ -93,7 +93,7 @@ npm run ingest:slutlig -- --force # kör om alla slutliga filer
 - **När:** kör det när de definitiva filerna dyker upp/uppdateras — **onsdag och framåt, några
   gånger om dagen** medan sluträkningen pågår (md5 ändras vid varje omräkning; skriptet hoppar
   oförändrade filer).
-- **Vad:** alla slutliga (`/s/`) filer — riks-RD (260 MB) + alla 17 RF + alla ~290 KF. `⚠️` skriptet
+- **Vad:** alla slutliga (`/s/`) filer — riks-RD (260 MB) + alla 21 RF + alla ~290 KF. `⚠️` skriptet
   måste peka på `val2026` (samma lockstep-switch som edge — se att den förberedda PR:en bytte BÅDA
   filerna).
 - Kör tills statustaggen når **Slutgiltigt** för alla tre valen och siffrorna slutat ändras.
