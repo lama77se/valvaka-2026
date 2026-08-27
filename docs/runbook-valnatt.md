@@ -32,9 +32,10 @@ genrep-testdata hela natten**. Därför MÅSTE DB:n rensas innan skarpt flödar 
 - [ ] **Förbered val2026-switchen som en färdig PR/branch** (byt `RESULT_BASE_DEFAULT` →
   `https://resultat.val.se/resultatfiler/val2026` i BÅDA filerna). Merga den INTE än — ha den
   redo för ett klick på natten (CI + deploy tar några minuter, undvik att skriva kod live).
-- [ ] **(Valfritt) Förbered cron-tightening-migration** (30–60 s i stället för 2 min):
+- [ ] **(Valfritt) Cron-tightening (30 s i stället för 2 min)** — redan förberedd som **draft-PR**
+  (`supabase/migrations/20260913193000_tighten_cron_valnatt.sql`, `cron.alter_job → '30 seconds'`).
+  Merga på natten (N3) → `db-migrate.yml` auto-applar. Manuell fallback om migrationen strular:
   `select cron.alter_job((select jobid from cron.job where jobname='ingest-result-genrep'), schedule => '30 seconds');`
-  — eller en ny `cron.schedule(...,'30 seconds',...)`. Ha den redo som PR.
 - [ ] **Verifiera att val2026 gått live** (byt INTE förrän den svarar 200):
   `curl -s -o /dev/null -w "%{http_code}" https://resultat.val.se/resultatfiler/val2026/index.md5`
   (404 tills ~13 sep, sen 200).
@@ -70,11 +71,13 @@ npm run results:reset -- --ingest-state
 Rensar `result` + `uppsamling_result` (+ `ingest_state` för en helt ren omingest). Appen visar
 nu "inga 2026-röster än" (bara 2022-kolumner) tills skarpt flödar — korrekt startläge.
 
-**N2. Byt datakälla → `val2026` (merga den förberedda PR:en):** deployar edge-funktionen. På
-första skarpa filen försvinner `test`-attributet → `dataset_meta` skrivs om till
-`source='val2026', test=false` → **testdata-bannern släcks automatiskt**.
+**N2. Byt datakälla → `val2026` (un-draft:a + merga den förberedda switch-PR:en,
+`chore/valnatt-switch-val2026`):** deployar edge-funktionen (`deploy-functions.yml`). På första
+skarpa filen försvinner `test`-attributet → `dataset_meta` skrivs om till `source='val2026',
+test=false` → **testdata-bannern släcks automatiskt**.
 
-**N3. (Valfritt) Merga cron-tightening-migrationen** (30–60 s).
+**N3. (Valfritt) Merga cron-tightening-migrationen** (`chore/valnatt-cron-tighten`, 30 s) →
+`db-migrate.yml` auto-applar.
 
 **N4. Övervaka** (inget manuellt behövs sen — edge sköter preliminärt automatiskt):
 - Testdata-bannern släcks.
