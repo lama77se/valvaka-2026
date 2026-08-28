@@ -53,7 +53,10 @@ export function ResultTable({ title, subtitle, status, display, giltiga, sparr, 
       </div>
       {subtitle && <p className="mb-2 text-xs text-slate-400">{subtitle}</p>}
 
-      <table className="w-full border-collapse text-sm tabular-nums">
+      {/* Smala telefoner: 8-kolumnstabellen får hellre scrolla i sidled än tryckas ihop
+          (min-w tvingar bredd så overflow-x-auto biter). Desktop-panelen är bredare → ingen scroll. */}
+      <div className="-mx-1 overflow-x-auto px-1">
+      <table className="w-full min-w-[460px] border-collapse text-sm tabular-nums">
         <thead>
           <tr className="text-[11px] uppercase tracking-wider text-slate-500">
             <th rowSpan={2} className="pr-2 text-left align-bottom font-medium">Parti</th>
@@ -129,6 +132,7 @@ export function ResultTable({ title, subtitle, status, display, giltiga, sparr, 
           )}
         </tfoot>
       </table>
+      </div>
     </div>
   )
 }
