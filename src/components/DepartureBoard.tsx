@@ -30,8 +30,15 @@ const fmtTime = (iso: string | null): string => { const m = /[T ](\d{2}:\d{2})/.
 // fler rader på högre skärmar (i stället för fast max-höjd).
 // fullWidth (mobil): tavlan tar hela skärmbredden i stället för den fasta --boards-w.
 export function DepartureBoard({ valtyp, onRowSelect, fill, fullWidth }: { valtyp: Valtyp; onRowSelect?: () => void; fill?: boolean; fullWidth?: boolean }) {
-  const { subscribeChanges, storesRef, partyRef, distriktNamnRef, totalByValtyp, setSelectedArea, setValtyp, revision, snapshotVersion, areaIndexRef, kommuner, regioner, valkretsListRef } = useResults()
+  const { subscribeChanges, storesRef, partyRef, distriktNamnRef, totalByValtyp, setSelectedArea, setValtyp, revision, snapshotVersion, areaIndexRef, kommuner, regioner, valkretsListRef, ensureValtypLoaded } = useResults()
   const [rows, setRows] = useState<Row[]>([])
+
+  // Fas 3-trigger: en monterad tavla ber providern ladda SIN valtyps snapshot (idempotent).
+  // Desktop monterar alla tre → alla tre laddas; mobil Senaste monterar alla tre först när
+  // fliken öppnas → icke-aktiva valtyper laddas då, inte vid appstart.
+  useEffect(() => {
+    ensureValtypLoaded(valtyp)
+  }, [valtyp, ensureValtypLoaded])
 
   // Buffert utanför render: nyast-först-ordning + seen-set. Muteras synkront i
   // lyssnaren, spolas till state rAF-koalescerat (tål valnattsburst). Klockslaget läses

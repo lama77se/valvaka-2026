@@ -111,6 +111,9 @@ export interface ResultsContextValue {
 
   // Signalkanaler
   subscribeChanges: (fn: ChangeListener) => () => void
+  // Fas 3: be providern ladda EN valtyps resultat-snapshot (idempotent; no-op om redan
+  // laddad/på väg). Tavlan kallar den för sin valtyp så icke-aktiva valtyper laddas i mobil.
+  ensureValtypLoaded: (vt: Valtyp) => void
   revision: number
   snapshotVersion: number
   realtimeConnected: boolean // Realtime-kanalens status (SUBSCRIBED) → live-indikator
@@ -229,6 +232,60 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     }, 750)
   }, [])
 
+  // --- Fas 3: efterfrågestyrd snapshot-laddning per valtyp -------------------------------
+  // En vy laddar bara den valtyp den faktiskt visar. Mobil Karta/Resultat visar EN valtyp
+  // → ~⅓ av /result-läslasten (och ⅓ av raderna i minnet) på en telefon. Desktop monterar
+  // alla tre tavlorna → alla tre laddas ändå, så desktop-beteendet är oförändrat.
+  //   loaded  = klar (bumpar snapshotVersion en gång)
+  //   loading = pågår → idempotens-vakt mot dubbelladdning (tavla + karta ber samtidigt)
+  //   retry   = backoff-räknare vid transient fel (nätverk/PostgREST), kapad till 5 försök
+  // aliveRef: pagineringsloopen kan pågå när providern unmountas → sluta då skriva state.
+  const loadedValtyperRef = useRef<Set<Valtyp>>(new Set())
+  const loadingValtyperRef = useRef<Set<Valtyp>>(new Set())
+  const retryRef = useRef<Record<Valtyp, number>>({ RD: 0, RF: 0, KF: 0 })
+  const aliveRef = useRef(true)
+
+  const ensureValtypLoaded = useCallback((vt: Valtyp) => {
+    if (loadedValtyperRef.current.has(vt) || loadingValtyperRef.current.has(vt)) return
+    loadingValtyperRef.current.add(vt)
+    ;(async () => {
+      let ok = false
+      try {
+        // Samma paginering/husregler som den forna gemensamma snapshoten, men filtrerad på
+        // EN valtyp (eq). Stora sidor (kapas av PostgREST:s max-rows) → stega `from` med
+        // faktiskt returnerat antal. rapporteringstid kan saknas i ett kort deploy-fönster
+        // → fall tillbaka utan kolumnen EN gång (börja om från 0 med de smalare kolumnerna).
+        const PAGE = 10000
+        let cols = 'valtyp,valdistriktskod,partikod,roster,status,rapporteringstid'
+        let from = 0
+        while (aliveRef.current) {
+          const { data, error } = await supabase.from('result').select(cols).eq('valtyp', vt).range(from, from + PAGE - 1)
+          if (error) {
+            if (cols.includes('rapporteringstid')) { cols = 'valtyp,valdistriktskod,partikod,roster,status'; from = 0; continue }
+            break // annat fel → lämna ok=false → retrybart nedan
+          }
+          if (!data || data.length === 0) { ok = true; break }
+          for (const r of data as unknown as Array<{ valtyp: string; valdistriktskod: string; partikod: string; roster: number; status?: string | null; rapporteringstid?: string | null }>)
+            storesRef.current[vt]?.set(r.valdistriktskod, r.partikod, r.roster, r.rapporteringstid, r.status)
+          from += data.length
+        }
+        if (!aliveRef.current) return // unmountad mitt i laddningen → varken markera klar eller retry
+      } finally {
+        loadingValtyperRef.current.delete(vt)
+      }
+      if (ok) {
+        loadedValtyperRef.current.add(vt)
+        retryRef.current[vt] = 0
+        // Bumpa signalkanalerna → tavlorna reseedar, kartan/tabellen räknar om för denna valtyp.
+        setSnapshotVersion((v) => v + 1)
+        setRevision((r) => r + 1)
+      } else if (aliveRef.current && retryRef.current[vt] < 5) {
+        retryRef.current[vt]++ // transient fel → bunden backoff (2s, 4s, …, 10s), ger inte upp tyst
+        setTimeout(() => ensureValtypLoaded(vt), 2000 * retryRef.current[vt])
+      }
+    })()
+  }, [])
+
   // Realtime + snapshot + nämnare (mount-en gång). Prenumerera FÖRE snapshot så
   // inget event faller i gapet.
   useEffect(() => {
@@ -270,33 +327,10 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
         counts[vt] = count ?? 0
       }
       if (!cancelled) setTotalByValtyp(counts)
-
-      // Snapshot av redan inrapporterade resultat (alla valtyper, paginerat). Stora sidor
-      // för att minska antalet requests per besökare (valnatts-läslasten) — men `range`
-      // begränsas ändå av PostgREST:s max-rows (Supabase-default 1000). Vi stegar därför
-      // `from` med FAKTISKT antal returnerade rader, inte PAGE, så det funkar oavsett
-      // max-rows: höjs den (dashboard: Settings → API → Max rows → 10000) ger PAGE=10000
-      // ~17 requests i stället för ~163; är den kvar på 1000 faller vi tillbaka på
-      // 1000-block precis som förr (ingen regression).
-      // rapporteringstid-kolumnen kan saknas i ett kort deploy-fönster (klienten ute före
-      // att migrationen kört) → fall tillbaka utan den EN gång så snapshoten aldrig havererar.
-      const PAGE = 10000
-      let cols = 'valtyp,valdistriktskod,partikod,roster,status,rapporteringstid'
-      let from = 0
-      while (!cancelled) {
-        const { data, error } = await supabase.from('result').select(cols).range(from, from + PAGE - 1)
-        if (error) {
-          if (cols.includes('rapporteringstid')) { cols = 'valtyp,valdistriktskod,partikod,roster,status'; continue }
-          break
-        }
-        if (!data || data.length === 0) break
-        for (const r of data as unknown as Array<{ valtyp: string; valdistriktskod: string; partikod: string; roster: number; status?: string | null; rapporteringstid?: string | null }>)
-          storesRef.current[r.valtyp as Valtyp]?.set(r.valdistriktskod, r.partikod, r.roster, r.rapporteringstid, r.status)
-        from += data.length // faktiskt returnerat (kan kapas av max-rows) → robust
-      }
-      if (cancelled) return
-      setSnapshotVersion((v) => v + 1)
-      setRevision((r) => r + 1)
+      // Själva resultat-snapshoten laddas INTE här längre (fas 3) — den är efterfrågestyrd
+      // per valtyp via ensureValtypLoaded, triggad av den aktiva valtypen + monterade tavlor.
+      // Realtime-kanalen ovan prenumererar fortfarande FÖRE någon snapshot (valtyp-effekten
+      // körs efter denna effekt) så inget event faller i gapet.
     })()
 
     return () => {
@@ -305,6 +339,35 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
       if (revTimerRef.current != null) clearTimeout(revTimerRef.current)
     }
   }, [bumpRevisionThrottled])
+
+  // Livstidsvakt för pagineringsloopar (ensureValtypLoaded lever över hela providerns liv,
+  // inte en enskild effekts cleanup). StrictMode: false vid cleanup, true igen vid remount.
+  useEffect(() => {
+    aliveRef.current = true
+    return () => { aliveRef.current = false }
+  }, [])
+
+  // Ladda den AKTIVA valtypens snapshot (och ladda om vid valtyp-byte om den är oladdad).
+  // Placerad EFTER Realtime-effekten så kanalen är uppsatt först. Desktop-tavlorna monterar
+  // alla tre valtyperna och triggar sina egna ensureValtypLoaded → alla tre laddas där.
+  useEffect(() => {
+    ensureValtypLoaded(valtyp)
+  }, [valtyp, ensureValtypLoaded])
+
+  // DEV-only introspektion för headless-validering av fas 3 (Vite strippar hela grenen ur
+  // prod-bygget). Getters läser refar live → alltid färskt utan omregistrering. Read-only.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return
+    ;(window as unknown as { __results?: unknown }).__results = {
+      loaded: () => [...loadedValtyperRef.current],
+      loading: () => [...loadingValtyperRef.current],
+      reported: () => ({
+        RD: storesRef.current.RD.reportedCount,
+        RF: storesRef.current.RF.reportedCount,
+        KF: storesRef.current.KF.reportedCount,
+      }),
+    }
+  }, [])
 
   // Referensdata (mount-en gång): partifärger, distriktsmetadata, ±2022, jämförbarhet.
   useEffect(() => {
@@ -512,6 +575,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     areaIndexRef,
     totalByValtyp,
     subscribeChanges,
+    ensureValtypLoaded,
     revision,
     snapshotVersion,
     realtimeConnected,
