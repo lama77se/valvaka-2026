@@ -12,6 +12,7 @@ import { VALTYPER, VALTYP_LABEL, type Valtyp } from '@/lib/results'
 import { SPARR, applyComparison, buildRows, collapseForDisplay, districtsInArea } from '@/lib/aggregate'
 import { ancestorsOf } from '@/lib/hierarchy'
 import { defaultAreaFor, useResults } from '@/components/ResultsProvider'
+import { ValtypSelector } from '@/components/ValtypSelector'
 
 // Färg för distrikt som rapporterat men vars vinnarparti saknar märkesfärg
 // (lokalt parti utan hex i `party.color`). Orapporterade får null → UNREPORTED_FILL.
@@ -32,12 +33,15 @@ const BLANK_STYLE: StyleSpecification = {
 
 type HoverInfo = { kod: string; namn: string; kommun: string; lan: string }
 
-export function DistrictMap() {
+// variant='mobile' → kartan renderas i en flik: den interna valtyp-väljaren, HUD:en och
+// testdata-bannern släcks (den persistenta mobil-chromen äger dem), och `active` styr när
+// fliken är synlig så kartan kan resiza:s efter att ha varit dold. Desktop anropar utan
+// props → variant='desktop', active=true → oförändrat beteende.
+export function DistrictMap({ variant = 'desktop', active = true }: { variant?: 'desktop' | 'mobile'; active?: boolean } = {}) {
   // Delad state (karta + tabell). Kartan äger inte längre data — den läser storarna
   // och prenumererar på per-distrikt-ändringar via providern.
   const {
     valtyp,
-    setValtyp,
     selectedArea,
     setSelectedArea,
     storesRef,
@@ -126,6 +130,13 @@ export function DistrictMap() {
   useEffect(() => {
     if (hover?.kod) ensureDistrictWinners2022(valtyp, hover.kod.slice(0, 4))
   }, [hover?.kod, valtyp, ensureDistrictWinners2022])
+
+  // Mobil-fliken döljs med `hidden` (display:none) när man är på en annan flik. MapLibre
+  // mäter då containern till 0 → måste resiza:s när fliken blir synlig igen. På desktop är
+  // active alltid true (ändras aldrig) → körs en gång vid mount som en no-op.
+  useEffect(() => {
+    if (active) mapRef.current?.resize()
+  }, [active])
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
@@ -411,13 +422,14 @@ export function DistrictMap() {
       level === 'distrikt' && code
         ? districtsInArea(allCodesRef.current, 'kommun', code.slice(0, 4), valtyp, metaRef.current)
         : codes
-    // Resultatpanelen (aside, --panel-w) ligger ÖVER kartans högra del. fitBounds
-    // centrerar i HELA behållaren → reservera panelbredden som högerpadding, annars
-    // hamnar områdets högra del under panelen (och zoomen blir för djup). Topp-paddingen
-    // (150) trycker ner Sverige så valtyp-väljaren får ett eget luftigt fält OVANFÖR
-    // kartan i stället för att ligga ovanpå den; övriga sidor får luftig marginal.
+    // Panelen (höger, --panel-w) OCH avgångstavlorna (vänster) ligger ÖVER kartan. fitBounds
+    // centrerar i HELA behållaren → reservera BÅDA som padding så Sverige/området hamnar i det
+    // rena fältet mellan dem (samma mittlinje som valtyp-väljaren ovanför), inte under någotdera.
+    // De symmetriska 24 px-glappen tar ut varandra i mittpunkten → kartan och väljaren delar
+    // exakt mittlinje. Topp-paddingen (150) ger väljaren ett eget luftigt fält ovanför kartan.
     const panelW = document.querySelector('aside')?.clientWidth ?? 0
-    const pad = { top: 150, right: panelW + 24, bottom: 48, left: 48 }
+    const boardsRight = document.getElementById('left-boards')?.getBoundingClientRect().right ?? 0
+    const pad = { top: 150, right: panelW + 24, bottom: 48, left: Math.round(boardsRight) + 24 }
     if (on) {
       const box: [number, number, number, number] = [Infinity, Infinity, -Infinity, -Infinity]
       for (const vd of boxCodes) {
@@ -429,16 +441,10 @@ export function DistrictMap() {
         if (b[3] > box[3]) box[3] = b[3]
       }
       if (Number.isFinite(box[0])) {
-        // Vid FOKUS zoomas området in hårt → reservera även VÄNSTERKOLUMNEN där
-        // info-kortet (uppe) och avgångstavlorna (nere) ligger, annars hamnar t.ex.
-        // Blekinge delvis under dem. Mät avgångstavlornas högerkant (bredaste vänster-
-        // överlägget) så paddingen följer med om deras bredd ändras. (Sverige-vyn nedan
-        // behåller liten vänsterpadding — landet är smalt och tavlorna ligger i marginalen.)
-        const boardsRight = document.getElementById('left-boards')?.getBoundingClientRect().right ?? 0
-        const focusPad = { ...pad, left: Math.max(pad.left, Math.round(boardsRight) + 24) }
         // maxZoom kapar bara mycket små kommuner — annars fit:ar vi kommunens egen
-        // utsträckning. Distrikt något tightare (11) än större områden (10).
-        map.fitBounds(box, { padding: focusPad, maxZoom: level === 'distrikt' ? 11 : 10, duration: 700 })
+        // utsträckning. Distrikt något tightare (11) än större områden (10). pad reserverar
+        // redan tavlorna (vänster) + panelen (höger) så inget område hamnar under dem.
+        map.fitBounds(box, { padding: pad, maxZoom: level === 'distrikt' ? 11 : 10, duration: 700 })
       }
     } else if (code == null) {
       map.fitBounds(SWEDEN_BOUNDS, { padding: pad, duration: 600 })
@@ -475,11 +481,12 @@ export function DistrictMap() {
 
       {/* Provenance-banner: kartan färgas av GENERALREPETITIONENS testdata (inte skarpa
           valresultat) tills ingest-result byter till val2026 på valnatten. Data-styrd
-          (dataset.test) så den försvinner av sig själv när skarp data börjar flöda. */}
-      {dataset?.test && (
+          (dataset.test) så den försvinner av sig själv när skarp data börjar flöda.
+          Mobil: chromen äger bannern → släck den här. */}
+      {variant !== 'mobile' && dataset?.test && (
         // Centrerad över den SYNLIGA kartan (samma uträkning som valtyp-väljaren), inte
         // skärmens mitt som ligger en bit in under panelen.
-        <div className="pointer-events-none absolute left-[calc((100%-var(--panel-w))/2)] top-0 z-10 -translate-x-1/2">
+        <div className="pointer-events-none absolute left-[calc((1rem_+_var(--boards-w)_+_100%_-_var(--panel-w))/2)] top-0 z-10 -translate-x-1/2">
           <div className="flex items-center gap-2 rounded-b-md border border-t-0 border-amber-500/60 bg-amber-500/15 px-4 py-1.5 text-sm font-semibold text-amber-200 shadow-lg backdrop-blur">
             <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
@@ -494,11 +501,14 @@ export function DistrictMap() {
       )}
 
       {/* Valtyp-väljare + rapporteringsgrad — en karta, tre val. Trycks ned när
-          generalrep-bannern visas så de inte krockar. */}
-      {/* Centrerad över den SYNLIGA kartan = mittpunkten av ytan till vänster om
-          resultatpanelen ((100vw − panelbredd) / 2), inte skärmens mitt (som ligger en
-          bit in under panelen och drog väljaren för långt åt höger). */}
-      <div className={`absolute left-[calc((100%-var(--panel-w))/2)] ${dataset?.test ? 'top-14' : 'top-4'} -translate-x-1/2 space-y-2`}>
+          generalrep-bannern visas så de inte krockar. Mobil: chromen äger valtyp +
+          rapportering och breadcrumben äger "Hela Sverige" → hela blocket släcks här. */}
+      {/* Centrerad i det RENA fältet mellan avgångstavlorna (vänster) och resultatpanelen
+          (höger): mittpunkten av [tavlornas högerkant, panelens vänsterkant] =
+          (1rem + --boards-w + 100% − --panel-w) / 2. Samma mittlinje som kartan (fitBounds
+          reserverar båda), inte skärmens mitt (som ligger en bit in under panelen). */}
+      {variant !== 'mobile' && (
+      <div className={`absolute left-[calc((1rem_+_var(--boards-w)_+_100%_-_var(--panel-w))/2)] ${dataset?.test ? 'top-14' : 'top-4'} -translate-x-1/2 space-y-2`}>
         {/* Snabb väg tillbaka till hela Sverige — visas bara när man zoomat in på ett
             område (distrikt eller vald nivå). Nollställer till valtypens toppnivå
             (RD → Riket, RF/KF → prompt) vilket via fokuseffekten zoomar ut + avdimmar. */}
@@ -515,22 +525,7 @@ export function DistrictMap() {
             Hela Sverige
           </button>
         )}
-        <div className="flex overflow-hidden rounded-md border border-slate-700 bg-slate-900/90 text-sm shadow-lg">
-          {VALTYPER.map((vt) => (
-            <button
-              key={vt}
-              type="button"
-              onClick={() => setValtyp(vt)}
-              className={`px-4 py-1.5 font-medium transition-colors ${
-                vt === valtyp
-                  ? 'bg-sky-500 text-white'
-                  : 'text-slate-300 hover:bg-slate-800'
-              }`}
-            >
-              {VALTYP_LABEL[vt]}
-            </button>
-          ))}
-        </div>
+        <ValtypSelector />
         {total > 0 && (
           <div className="pointer-events-none rounded-md border border-slate-700 bg-slate-900/90 px-4 py-1.5 text-center text-sm text-slate-100 shadow-lg">
             <div className="flex items-center justify-center gap-2">
@@ -542,7 +537,7 @@ export function DistrictMap() {
               </span>
               <span>
                 <span className="font-mono text-base font-semibold tabular-nums">{reportedCount}</span>
-                <span className="text-slate-400"> av {total.toLocaleString('sv-SE')} valdistrikt</span>
+                <span className="text-slate-400"> av {total.toLocaleString('sv-SE')}</span>
                 <span className="ml-2 text-xs text-sky-300">{reportedPct}%</span>
               </span>
             </div>
@@ -557,6 +552,7 @@ export function DistrictMap() {
           </div>
         )}
       </div>
+      )}
 
       {/* Hover-ruta: ALLTID monterad (så tooltipRef finns för DOM-positioneringen),
           dold tills man hovrar. Följer pekaren via positionTooltip (transform) → den

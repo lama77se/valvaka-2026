@@ -72,10 +72,21 @@
    w-[var(--panel-w)]) och kartkontrollernas offset nedan, så zoom-knapparna aldrig
    hamnar under panelen oavsett hur bred den är. Ändra bredden HÄR. */
 :root {
-  --panel-w: clamp(596px, 44vw, 844px);
+  /* Kontorslaptop-passning (1536×750): panelen ~15 % smalare än förr
+     (596/44vw/844 → 507/37.4vw/717) — det mesta ryms ändå och kartan får mer bredd. */
+  --panel-w: clamp(507px, 37.4vw, 717px);
+  /* Avgångstavlornas bredd — delad källa (som --panel-w) så kartans/väljarens centrering
+     kan reservera vänsterkolumnen och landa på samma mittlinje. Ändra bredden HÄR. */
+  --boards-w: 315px;
 }
 .maplibregl-ctrl-bottom-right {
   margin-right: calc(var(--panel-w) + 16px); /* skjut zoom-kontrollen vänster om panelen */
+}
+/* Mobil: ingen resultatpanel → panel-offseten ovan skulle skjuta zoom-knapparna ut ur
+   bild. Scopa tillbaka dem till kartkanten inuti mobil-flikens karta (mer specifik
+   selektor → vinner utan att röra desktop-regeln). */
+.mobile-map .maplibregl-ctrl-bottom-right {
+  margin-right: 8px;
 }
 
 /* Departure board — ny rad (nytt distrikt) glider in med en kort ljusblå blänk.

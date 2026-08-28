@@ -5,12 +5,15 @@ import { ResultPanel } from '@/components/ResultPanel'
 import { ResultsProvider } from '@/components/ResultsProvider'
 import { DepartureBoard } from '@/components/DepartureBoard'
 import { PartyLegend } from '@/components/PartyLegend'
+import { MobileApp } from '@/components/mobile/MobileApp'
 import { VALTYPER } from '@/lib/results'
 
-// Kartan + resultatpanelen sida vid sida är byggda för desktop och fungerar inte på
-// en telefonskärm. Är fönstret för smalt → visa bara ett meddelande i stället för att
-// montera (och tungt ladda) hela appen på en yta den ändå inte ryms i.
-const MOBILE_QUERY = '(max-width: 820px)'
+// Brytpunkt = Tailwinds xl (1280 px). Desktop-layouten (svävande overlays) visas från
+// xl och uppåt — det täcker alla normala kontorslaptops (1280/1366/1536 px breda). Under
+// 1280 px byter vi till mobil-layouten (flikar). Desktop görs kompakt nog att rymmas i
+// office-kuvertet ~1280×700 → 1536×750 (den vertikala flaskhalsen är de tre staplade
+// avgångstavlorna). Mobil-grenen bor helt i <MobileApp>.
+const MOBILE_QUERY = '(max-width: 1279.98px)'
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.matchMedia(MOBILE_QUERY).matches)
   useEffect(() => {
@@ -22,37 +25,19 @@ function useIsMobile() {
   return isMobile
 }
 
-function MobileNotice() {
+// Desktop-layouten — fullskärmskarta med svävande overlays. Oförändrad; enda skillnaden
+// mot förr är att den lyfts ur App() till en egen komponent så mobil/desktop kan dela
+// EN ResultsProvider (snapshot laddas en gång, överlever rotation över brytpunkten).
+function DesktopApp() {
   return (
-    <main className="flex h-screen w-screen items-center justify-center bg-[#0b1020] p-6 text-slate-100">
-      <div className="max-w-sm rounded-xl border border-slate-700 bg-slate-900/80 p-6 text-center shadow-2xl">
-        <div className="mb-3 flex justify-center text-sky-400" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
-            <rect x="2" y="3" width="20" height="14" rx="2" />
-            <path d="M8 21h8M12 17v4" />
-          </svg>
-        </div>
-        <p className="text-xs font-medium uppercase tracking-widest text-slate-400">Valvaka 2026</p>
-        <h1 className="mt-1 text-lg font-bold tracking-tight">Öppna på en större skärm</h1>
-        <p className="mt-2 text-sm text-slate-400">
-          Realtidskartan och resultatpanelen är byggda för desktop. Besök sidan på en
-          dator eller surfplatta i liggande läge för hela valvakan.
-        </p>
-      </div>
-      <Analytics />
-    </main>
-  )
-}
-
-function App() {
-  const isMobile = useIsMobile()
-  if (isMobile) return <MobileNotice />
-
-  return (
-    <ResultsProvider>
-      <main className="relative h-screen w-screen overflow-hidden bg-[#0b1020] text-slate-100">
+    <main className="relative h-screen w-screen overflow-hidden bg-[#0b1020] text-slate-100">
         <DistrictMap />
-        <div className="absolute left-4 top-4 flex max-w-[248px] flex-col gap-3">
+        {/* Vänsterkolumn: info-kort + "Vinnande parti"-legend högst upp, avgångstavlorna
+            fyller resten av höjden (flex-1) ner till nederkanten → de växer och visar fler
+            rader på högre skärmar men håller sig kompakta nära brytpunkten, utan att krocka
+            med legenden ovanför. */}
+        <div className="pointer-events-none absolute inset-y-4 left-4 flex flex-col gap-3">
+          <div className="flex max-w-[248px] flex-col gap-3">
           <div className="pointer-events-none relative rounded-lg border border-slate-700 bg-slate-900/85 p-4 shadow-lg backdrop-blur">
             {/* Källkodslänk — icon-only-länk (best practice: aria-label för
                 skärmläsare, target=_blank + rel=noopener noreferrer, pointer-events-auto
@@ -70,13 +55,9 @@ function App() {
                 <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.76-3.65 3.95.29.25.55.73.55 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
               </svg>
             </a>
-            <p className="pr-7 text-xs font-medium uppercase tracking-widest text-slate-400">
-              Valresultat i realtid
-            </p>
-            <h1 className="text-xl font-bold tracking-tight">Valvaka 2026</h1>
+            <h1 className="pr-7 text-xl font-bold tracking-tight">Valvaka 2026</h1>
             <p className="mt-1 text-sm text-slate-400">
-              Röster, andel och mandat per parti på alla nivåer — jämfört mot 2022,
-              uppdaterat live per valdistrikt.
+              Liveresultat på alla nivåer — per valdistrikt.
             </p>
             {/* Källhänvisning — Valmyndighetens villkor: all data är fri att använda
                 förutsatt att Valmyndigheten anges som källa. */}
@@ -88,16 +69,16 @@ function App() {
             </p>
           </div>
           <PartyLegend />
-        </div>
+          </div>
 
-        {/* Tre avgångstavlor — RD/RF/KF, alltid synliga (nedre vänster). Live-ticker
-            över inrapporterade distrikt + rapporteringsgrad per val. id:t används av
-            kartans fokus-fitBounds för att reservera vänsterkolumnen (så inzoomade
-            områden inte hamnar under tavlorna). */}
-        <div id="left-boards" className="pointer-events-none absolute bottom-4 left-4 flex flex-col gap-2">
-          {VALTYPER.map((vt) => (
-            <DepartureBoard key={vt} valtyp={vt} />
-          ))}
+          {/* Tre avgångstavlor — RD/RF/KF, alltid synliga. Fyller (flex-1) höjden under
+              legenden ner till nederkanten → visar fler rader på högre skärmar, kompakta nära
+              brytpunkten. id:t används av kartans fitBounds för att reservera vänsterkolumnen. */}
+          <div id="left-boards" className="flex min-h-0 flex-1 flex-col gap-2">
+            {VALTYPER.map((vt) => (
+              <DepartureBoard key={vt} valtyp={vt} fill />
+            ))}
+          </div>
         </div>
 
         {/* Resultattabell — höger panel. Bredden styrs av --panel-w (index.css), delad med
@@ -109,6 +90,17 @@ function App() {
             Samlar in data först i produktion på Vercel; no-op lokalt. */}
         <Analytics />
       </main>
+  )
+}
+
+function App() {
+  const isMobile = useIsMobile()
+  // EN provider ovanför grenen: state (valtyp/område), Realtime-prenumerationen och
+  // snapshot-laddningen skapas en gång och överlever när viewporten korsar brytpunkten
+  // (rotation/resize) → ingen omladdning av ~162k rader vid layoutbytet.
+  return (
+    <ResultsProvider>
+      {isMobile ? <MobileApp /> : <DesktopApp />}
     </ResultsProvider>
   )
 }
