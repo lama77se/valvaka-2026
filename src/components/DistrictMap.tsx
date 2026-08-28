@@ -73,6 +73,7 @@ export function DistrictMap({ variant = 'desktop', active = true }: { variant?: 
   const sourceReadyRef = useRef(false)
   const activeValtypRef = useRef<Valtyp>(valtyp) // speglar `valtyp` för closures
   const recolorRef = useRef<(() => void) | null>(null)
+  const refitRef = useRef<(() => void) | null>(null) // re-fit mot nuvarande urval vid resize
 
   // Fokus/zoom-läge: distrikt-bboxar för fitBounds. Varje områdesval (kartklick,
   // dropdown, breadcrumb, drill) zoomar in på området och dimmar allt utanför.
@@ -422,35 +423,61 @@ export function DistrictMap({ variant = 'desktop', active = true }: { variant?: 
       level === 'distrikt' && code
         ? districtsInArea(allCodesRef.current, 'kommun', code.slice(0, 4), valtyp, metaRef.current)
         : codes
+    // Målramen (geografisk) beräknas EN gång — den ändras inte av fönsterstorleken. Bara
+    // paddingen gör det (panel/tavlor-bredd), så den räknas om inuti runFit → en resize
+    // re-fit:ar mot samma urval men mot den nya ytan.
+    let box: [number, number, number, number] | null = null
+    if (on) {
+      const bb: [number, number, number, number] = [Infinity, Infinity, -Infinity, -Infinity]
+      for (const vd of boxCodes) {
+        const b = boundsRef.current[vd]
+        if (!b) continue
+        if (b[0] < bb[0]) bb[0] = b[0]
+        if (b[1] < bb[1]) bb[1] = b[1]
+        if (b[2] > bb[2]) bb[2] = b[2]
+        if (b[3] > bb[3]) bb[3] = b[3]
+      }
+      if (Number.isFinite(bb[0])) box = bb
+    }
     // Panelen (höger, --panel-w) OCH avgångstavlorna (vänster) ligger ÖVER kartan. fitBounds
     // centrerar i HELA behållaren → reservera BÅDA som padding så Sverige/området hamnar i det
     // rena fältet mellan dem (samma mittlinje som valtyp-väljaren ovanför), inte under någotdera.
     // De symmetriska 24 px-glappen tar ut varandra i mittpunkten → kartan och väljaren delar
     // exakt mittlinje. Topp-paddingen (150) ger väljaren ett eget luftigt fält ovanför kartan.
-    const panelW = document.querySelector('aside')?.clientWidth ?? 0
-    const boardsRight = document.getElementById('left-boards')?.getBoundingClientRect().right ?? 0
-    const pad = { top: 150, right: panelW + 24, bottom: 48, left: Math.round(boardsRight) + 24 }
-    if (on) {
-      const box: [number, number, number, number] = [Infinity, Infinity, -Infinity, -Infinity]
-      for (const vd of boxCodes) {
-        const b = boundsRef.current[vd]
-        if (!b) continue
-        if (b[0] < box[0]) box[0] = b[0]
-        if (b[1] < box[1]) box[1] = b[1]
-        if (b[2] > box[2]) box[2] = b[2]
-        if (b[3] > box[3]) box[3] = b[3]
-      }
-      if (Number.isFinite(box[0])) {
-        // maxZoom kapar bara mycket små kommuner — annars fit:ar vi kommunens egen
-        // utsträckning. Distrikt något tightare (11) än större områden (10). pad reserverar
-        // redan tavlorna (vänster) + panelen (höger) så inget område hamnar under dem.
-        map.fitBounds(box, { padding: pad, maxZoom: level === 'distrikt' ? 11 : 10, duration: 700 })
-      }
-    } else if (code == null) {
-      map.fitBounds(SWEDEN_BOUNDS, { padding: pad, duration: 600 })
+    const runFit = (duration: number) => {
+      const m = mapRef.current
+      if (!m) return
+      const panelW = document.querySelector('aside')?.clientWidth ?? 0
+      const boardsRight = document.getElementById('left-boards')?.getBoundingClientRect().right ?? 0
+      const pad = { top: 150, right: panelW + 24, bottom: 48, left: Math.round(boardsRight) + 24 }
+      // maxZoom kapar bara mycket små kommuner — annars fit:ar vi områdets egen utsträckning.
+      if (on && box) m.fitBounds(box, { padding: pad, maxZoom: level === 'distrikt' ? 11 : 10, duration })
+      else if (code == null) m.fitBounds(SWEDEN_BOUNDS, { padding: pad, duration })
     }
+    runFit(on ? 700 : 600)
+    // Fönsterstorleksändring re-fit:ar mot nuvarande urval (utan animation — se resize-effekt).
+    refitRef.current = () => runFit(0)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedArea, valtyp, mapReady, boundsReady])
+
+  // Fönsterstorleksändring: MapLibre resizar canvasen (trackResize) men BEHÅLLER zoom →
+  // Sverige/området "fastnar" i den gamla storleken tills man laddar om eller zoomar. Re-fit:a
+  // strypt mot nuvarande urval med aktuell padding (som nu speglar den nya fönsterbredden).
+  useEffect(() => {
+    let t: ReturnType<typeof setTimeout> | null = null
+    const onResize = () => {
+      if (t) clearTimeout(t)
+      t = setTimeout(() => {
+        mapRef.current?.resize()
+        refitRef.current?.()
+      }, 150)
+    }
+    window.addEventListener('resize', onResize)
+    return () => {
+      window.removeEventListener('resize', onResize)
+      if (t) clearTimeout(t)
+    }
+  }, [])
 
   const total = totalByValtyp[valtyp]
   const reportedPct = total > 0 ? Math.round((reportedCount / total) * 100) : 0
