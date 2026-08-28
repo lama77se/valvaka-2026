@@ -26,9 +26,10 @@ const fmtTime = (iso: string | null): string => { const m = /[T ](\d{2}:\d{2})/.
 // onRowSelect (valfritt): körs EFTER att raden satt valtyp + område. Mobil skickar in
 // "byt till Resultat-fliken" så en tapp på tavlan visar distriktet i tabellen. Desktop
 // skickar inget → oförändrat beteende.
-// fill (desktop): tavlan är en flex-1-cell i vänsterkolumnen → listan fyller höjden och
-// visar fler rader på högre skärmar (i stället för fast max-höjd). Mobil utelämnar → fast höjd.
-export function DepartureBoard({ valtyp, onRowSelect, fill }: { valtyp: Valtyp; onRowSelect?: () => void; fill?: boolean }) {
+// fill (desktop + mobil Senaste): tavlan är en flex-1-cell → listan fyller höjden och visar
+// fler rader på högre skärmar (i stället för fast max-höjd).
+// fullWidth (mobil): tavlan tar hela skärmbredden i stället för den fasta --boards-w.
+export function DepartureBoard({ valtyp, onRowSelect, fill, fullWidth }: { valtyp: Valtyp; onRowSelect?: () => void; fill?: boolean; fullWidth?: boolean }) {
   const { subscribeChanges, storesRef, partyRef, distriktNamnRef, totalByValtyp, setSelectedArea, setValtyp, revision, snapshotVersion, areaIndexRef, kommuner, regioner, valkretsListRef } = useResults()
   const [rows, setRows] = useState<Row[]>([])
 
@@ -114,7 +115,7 @@ export function DepartureBoard({ valtyp, onRowSelect, fill }: { valtyp: Valtyp; 
       .join(' › ')
 
   return (
-    <div className={`pointer-events-auto w-[var(--boards-w)] overflow-hidden rounded-lg border border-slate-700 bg-slate-950/85 shadow-2xl backdrop-blur ${fill ? 'flex min-h-0 flex-1 flex-col' : ''}`}>
+    <div className={`pointer-events-auto ${fullWidth ? 'w-full' : 'w-[var(--boards-w)]'} overflow-hidden rounded-lg border border-slate-700 bg-slate-950/85 shadow-2xl backdrop-blur ${fill ? 'flex min-h-0 flex-1 flex-col' : ''}`}>
       <div className="flex items-center justify-between border-b border-slate-800 px-3 py-2">
         <div className="flex items-center gap-2">
           <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />

@@ -44,7 +44,7 @@ export function MobileApp() {
       <main className="relative min-h-0 flex-1">
         {mapMounted && (
           <div className={`mobile-map absolute inset-0 ${tab === 'karta' ? '' : 'hidden'}`}>
-            <DistrictMap variant="mobile" active={tab === 'karta'} />
+            <DistrictMap variant="mobile" active={tab === 'karta'} onOpenResult={() => setTab('resultat')} />
           </div>
         )}
         {tab === 'resultat' && (
@@ -54,10 +54,10 @@ export function MobileApp() {
         )}
         {tab === 'senaste' && (
           // Alla tre tavlorna (RD/RF/KF) som på desktop, i en flex-kolumn som fyller höjden:
-          // varje tavla (fill) tar en tredjedel och listan växer med skärmhöjden.
-          <div className="absolute inset-0 flex flex-col items-center gap-3 p-3">
+          // varje tavla (fill) tar en tredjedel, i full skärmbredd (fullWidth).
+          <div className="absolute inset-0 flex flex-col gap-3 p-3">
             {VALTYPER.map((vt) => (
-              <DepartureBoard key={vt} valtyp={vt} fill onRowSelect={() => setTab('resultat')} />
+              <DepartureBoard key={vt} valtyp={vt} fill fullWidth onRowSelect={() => setTab('resultat')} />
             ))}
           </div>
         )}

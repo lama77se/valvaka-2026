@@ -37,7 +37,7 @@ type HoverInfo = { kod: string; namn: string; kommun: string; lan: string }
 // testdata-bannern släcks (den persistenta mobil-chromen äger dem), och `active` styr när
 // fliken är synlig så kartan kan resiza:s efter att ha varit dold. Desktop anropar utan
 // props → variant='desktop', active=true → oförändrat beteende.
-export function DistrictMap({ variant = 'desktop', active = true }: { variant?: 'desktop' | 'mobile'; active?: boolean } = {}) {
+export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }: { variant?: 'desktop' | 'mobile'; active?: boolean; onOpenResult?: () => void } = {}) {
   // Delad state (karta + tabell). Kartan äger inte längre data — den läser storarna
   // och prenumererar på per-distrikt-ändringar via providern.
   const {
@@ -72,6 +72,7 @@ export function DistrictMap({ variant = 'desktop', active = true }: { variant?: 
   const rafRef = useRef<number | null>(null)
   const sourceReadyRef = useRef(false)
   const activeValtypRef = useRef<Valtyp>(valtyp) // speglar `valtyp` för closures
+  const variantRef = useRef(variant) // stabil åtkomst i map-event-closures (mount-en gång)
   const recolorRef = useRef<(() => void) | null>(null)
   const refitRef = useRef<(() => void) | null>(null) // re-fit mot nuvarande urval vid resize
 
@@ -137,6 +138,7 @@ export function DistrictMap({ variant = 'desktop', active = true }: { variant?: 
   // active alltid true (ändras aldrig) → körs en gång vid mount som en no-op.
   useEffect(() => {
     if (active) mapRef.current?.resize()
+    else setHover(null) // lämnar Karta-fliken → stäng ev. öppen tapp-sheet
   }, [active])
 
   useEffect(() => {
@@ -307,37 +309,45 @@ export function DistrictMap({ variant = 'desktop', active = true }: { variant?: 
         el.style.transform = `translate(${x}px, ${y}px)`
       }
 
-      map.on('mousemove', 'district-fill', (e) => {
-        const f = e.features?.[0]
-        if (!f) return
-        map.getCanvas().style.cursor = 'pointer'
-        positionTooltip(e.point.x, e.point.y) // följ pekaren varje rörelse
-        const id = String(f.id)
-        if (id === hoveredIdRef.current) return
-        setHovered(id)
-        const p = f.properties ?? {}
-        setHover({
-          kod: id,
-          namn: p.Valdistriktsnamn ?? '',
-          kommun: p.Kommun ?? '',
-          lan: p['Län'] ?? '',
+      // Hover-rutan är musdriven → bara desktop. På touch finns ingen mouseleave, så en
+      // hover-highlight skulle fastna; mobilen använder i stället tapp→sheet (nedan).
+      if (variantRef.current !== 'mobile') {
+        map.on('mousemove', 'district-fill', (e) => {
+          const f = e.features?.[0]
+          if (!f) return
+          map.getCanvas().style.cursor = 'pointer'
+          positionTooltip(e.point.x, e.point.y) // följ pekaren varje rörelse
+          const id = String(f.id)
+          if (id === hoveredIdRef.current) return
+          setHovered(id)
+          const p = f.properties ?? {}
+          setHover({
+            kod: id,
+            namn: p.Valdistriktsnamn ?? '',
+            kommun: p.Kommun ?? '',
+            lan: p['Län'] ?? '',
+          })
         })
-      })
-      map.on('mouseleave', 'district-fill', () => {
-        map.getCanvas().style.cursor = ''
-        setHovered(null)
-        setHover(null)
-      })
+        map.on('mouseleave', 'district-fill', () => {
+          map.getCanvas().style.cursor = ''
+          setHovered(null)
+          setHover(null)
+        })
+      }
 
-      // Klick på ett distrikt → zooma in på distriktet (via fokuseffekten) och visa
-      // DET distriktets fullständiga partibrytning i tabellen (röster + andel).
-      // Minsta kartdelen = minsta tabellnivån. Mandat och ±2022 saknas på distrikts-
-      // nivå (inget organ fördelas; 2026-distrikt ≠ 2022-distrikt) → "–". Distriktet
-      // är samma kod i alla tre valen.
+      // Klick/tapp på ett distrikt → zooma in (via fokuseffekten) och visa distriktets
+      // fullständiga partibrytning i tabellen. Minsta kartdelen = minsta tabellnivån.
+      // Mandat och ±2022 saknas på distriktsnivå (inget organ fördelas) → "–". Distriktet
+      // är samma kod i alla tre valen. Mobil: tappet öppnar dessutom en bottom-sheet med
+      // distriktets mini-resultat (samma hoverRows-pipeline, matar `hover`).
       map.on('click', 'district-fill', (e) => {
         const f = e.features?.[0]
         if (!f) return
         setSelectedArea({ level: 'distrikt', code: String(f.id) })
+        if (variantRef.current === 'mobile') {
+          const p = f.properties ?? {}
+          setHover({ kod: String(f.id), namn: p.Valdistriktsnamn ?? '', kommun: p.Kommun ?? '', lan: p['Län'] ?? '' })
+        }
       })
     })
 
@@ -447,9 +457,17 @@ export function DistrictMap({ variant = 'desktop', active = true }: { variant?: 
     const runFit = (duration: number) => {
       const m = mapRef.current
       if (!m) return
-      const panelW = document.querySelector('aside')?.clientWidth ?? 0
-      const boardsRight = document.getElementById('left-boards')?.getBoundingClientRect().right ?? 0
-      const pad = { top: 150, right: panelW + 24, bottom: 48, left: Math.round(boardsRight) + 24 }
+      // Mobil: inga sido-overlays över kartan → symmetrisk padding (ingen 150-topp som på
+      // desktop, där den reserverade väljarfältet). Extra bottenpadding när ett distrikt är
+      // valt så det inte hamnar under tapp-sheeten. Desktop: reservera panel + tavlor.
+      let pad: { top: number; right: number; bottom: number; left: number }
+      if (variant === 'mobile') {
+        pad = { top: 24, right: 24, bottom: selectedArea.level === 'distrikt' ? 240 : 40, left: 24 }
+      } else {
+        const panelW = document.querySelector('aside')?.clientWidth ?? 0
+        const boardsRight = document.getElementById('left-boards')?.getBoundingClientRect().right ?? 0
+        pad = { top: 150, right: panelW + 24, bottom: 48, left: Math.round(boardsRight) + 24 }
+      }
       // maxZoom kapar bara mycket små kommuner — annars fit:ar vi områdets egen utsträckning.
       if (on && box) m.fitBounds(box, { padding: pad, maxZoom: level === 'distrikt' ? 11 : 10, duration })
       else if (code == null) m.fitBounds(SWEDEN_BOUNDS, { padding: pad, duration })
@@ -501,6 +519,54 @@ export function DistrictMap({ variant = 'desktop', active = true }: { variant?: 
       : prog.state === 'slutlig'
         ? 'Slutgiltigt resultat — alla valdistrikt är slutligt sammanräknade.'
         : `Sluträkningen pågår: ${prog.pct} % av valdistrikten är slutligt räknade, resten visar fortfarande preliminära siffror.`
+
+  // Distriktets mini-resultat (namn + hierarki + andel/±2022) — delas av desktop-hover-rutan
+  // och mobilens tapp-sheet så det bara finns EN presentation av samma hoverRows.
+  const hoverBody = () =>
+    hover && (
+      <>
+        <div className="flex items-center gap-2">
+          <div className="min-w-0 flex-1 truncate font-semibold">{hover.namn || '—'}</div>
+          <span className="shrink-0 rounded border border-sky-500/40 bg-sky-500/10 px-1.5 py-0.5 text-[11px] font-semibold text-sky-200">
+            {VALTYP_LABEL[valtyp]}
+          </span>
+        </div>
+        <div className="text-slate-400">{hierarchyLabel || hover.kommun}</div>
+        {hoverRows && hoverRows.giltiga > 0 ? (
+          <div className="mt-1.5 text-xs">
+            <div className="mb-0.5 flex items-center text-[10px] uppercase tracking-wide text-slate-500">
+              <span className="flex-1">Andel</span>
+              {hoverRows.has2022 && <span>± mot 2022</span>}
+            </div>
+            {hoverRows.display.shown.map((r) => (
+              <div key={r.partikod} className="flex items-center gap-1.5 leading-5">
+                <span className="inline-block h-2 w-2 shrink-0 rounded-full" style={{ background: r.farg ?? REPORTED_NEUTRAL }} />
+                <span className="w-9 shrink-0 font-semibold">{r.forkortning ?? '—'}</span>
+                <span className="flex-1 tabular-nums">{(r.andel * 100).toFixed(1)} %</span>
+                {r.deltaAndel != null && (
+                  <span className={`tabular-nums ${r.deltaAndel >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {r.deltaAndel >= 0 ? '+' : ''}{r.deltaAndel.toFixed(1)}
+                  </span>
+                )}
+              </div>
+            ))}
+            {hoverRows.display.ovriga && (
+              <div className="flex items-center gap-1.5 leading-5 text-slate-400">
+                <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-slate-600" />
+                <span className="w-9 shrink-0">Övr.</span>
+                <span className="flex-1 tabular-nums">{(hoverRows.display.ovriga.andel * 100).toFixed(1)} %</span>
+              </div>
+            )}
+            <div className="mt-1 border-t border-slate-700 pt-1 text-slate-400">
+              {hoverRows.giltiga.toLocaleString('sv-SE')} röster
+              {!hoverRows.has2022 && ' · distrikt ej jämförbart med 2022'}
+            </div>
+          </div>
+        ) : (
+          <div className="mt-1 text-xs text-slate-500">Ej räknat än ({VALTYP_LABEL[valtyp]})</div>
+        )}
+      </>
+    )
 
   return (
     <div className="absolute inset-0">
@@ -581,60 +647,50 @@ export function DistrictMap({ variant = 'desktop', active = true }: { variant?: 
       </div>
       )}
 
-      {/* Hover-ruta: ALLTID monterad (så tooltipRef finns för DOM-positioneringen),
-          dold tills man hovrar. Följer pekaren via positionTooltip (transform) → den
-          täcker aldrig distriktet man pekar på och krockar inte med någon fast panel. */}
-      <div
-        ref={tooltipRef}
-        className={`pointer-events-none absolute left-0 top-0 max-w-xs rounded-md border border-slate-700 bg-slate-900/90 px-3 py-2 text-sm text-slate-100 shadow-lg ${hover ? '' : 'hidden'}`}
-      >
-        {hover && (
-          <>
-            <div className="flex items-center gap-2">
-              <div className="min-w-0 flex-1 truncate font-semibold">{hover.namn || '—'}</div>
-              <span className="shrink-0 rounded border border-sky-500/40 bg-sky-500/10 px-1.5 py-0.5 text-[11px] font-semibold text-sky-200">
-                {VALTYP_LABEL[valtyp]}
-              </span>
-            </div>
-            <div className="text-slate-400">
-              {hierarchyLabel || hover.kommun}
-            </div>
-            {hoverRows && hoverRows.giltiga > 0 ? (
-              <div className="mt-1.5 text-xs">
-                <div className="mb-0.5 flex items-center text-[10px] uppercase tracking-wide text-slate-500">
-                  <span className="flex-1">Andel</span>
-                  {hoverRows.has2022 && <span>± mot 2022</span>}
-                </div>
-                {hoverRows.display.shown.map((r) => (
-                  <div key={r.partikod} className="flex items-center gap-1.5 leading-5">
-                    <span className="inline-block h-2 w-2 shrink-0 rounded-full" style={{ background: r.farg ?? REPORTED_NEUTRAL }} />
-                    <span className="w-9 shrink-0 font-semibold">{r.forkortning ?? '—'}</span>
-                    <span className="flex-1 tabular-nums">{(r.andel * 100).toFixed(1)} %</span>
-                    {r.deltaAndel != null && (
-                      <span className={`tabular-nums ${r.deltaAndel >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        {r.deltaAndel >= 0 ? '+' : ''}{r.deltaAndel.toFixed(1)}
-                      </span>
-                    )}
-                  </div>
-                ))}
-                {hoverRows.display.ovriga && (
-                  <div className="flex items-center gap-1.5 leading-5 text-slate-400">
-                    <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-slate-600" />
-                    <span className="w-9 shrink-0">Övr.</span>
-                    <span className="flex-1 tabular-nums">{(hoverRows.display.ovriga.andel * 100).toFixed(1)} %</span>
-                  </div>
-                )}
-                <div className="mt-1 border-t border-slate-700 pt-1 text-slate-400">
-                  {hoverRows.giltiga.toLocaleString('sv-SE')} röster
-                  {!hoverRows.has2022 && ' · distrikt ej jämförbart med 2022'}
-                </div>
-              </div>
-            ) : (
-              <div className="mt-1 text-xs text-slate-500">Ej räknat än ({VALTYP_LABEL[valtyp]})</div>
-            )}
-          </>
-        )}
-      </div>
+      {/* Desktop: hover-ruta som följer pekaren (musdriven). Mobil renderar i stället en
+          tapp-sheet nedan (touch har ingen hover) → gate:a den här till desktop. */}
+      {variant !== 'mobile' && (
+        <div
+          ref={tooltipRef}
+          className={`pointer-events-none absolute left-0 top-0 max-w-xs rounded-md border border-slate-700 bg-slate-900/90 px-3 py-2 text-sm text-slate-100 shadow-lg ${hover ? '' : 'hidden'}`}
+        >
+          {hoverBody()}
+        </div>
+      )}
+
+      {/* Mobil: tapp på ett distrikt öppnar en bottom-sheet med samma mini-resultat.
+          Grab-handle + stäng-knapp + genväg till Resultat-fliken. */}
+      {variant === 'mobile' && hover && (
+        <div
+          className="pointer-events-auto absolute inset-x-0 bottom-0 z-20 max-h-[55%] overflow-y-auto rounded-t-2xl border-t border-slate-700 bg-slate-900/95 px-4 pb-4 pt-3 text-sm text-slate-100 shadow-2xl backdrop-blur"
+          style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 16px)' }}
+        >
+          <div className="mx-auto mb-2 h-1 w-10 rounded-full bg-slate-600" />
+          <button
+            type="button"
+            onClick={() => setHover(null)}
+            aria-label="Stäng"
+            className="absolute right-2.5 top-2.5 rounded p-1 text-slate-400 transition-colors hover:text-slate-100"
+          >
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" aria-hidden="true">
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          </button>
+          {hoverBody()}
+          {onOpenResult && (
+            <button
+              type="button"
+              onClick={onOpenResult}
+              className="mt-3 flex w-full items-center justify-center gap-1 rounded-md border border-slate-700 bg-slate-800/60 py-2 text-sm font-medium text-sky-300 transition-colors hover:bg-slate-800"
+            >
+              Visa i Resultat
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="m9 18 6-6-6-6" />
+              </svg>
+            </button>
+          )}
+        </div>
+      )}
     </div>
   )
 }
