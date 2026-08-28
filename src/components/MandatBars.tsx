@@ -31,7 +31,7 @@ function labelInk(hex: string): string {
 //   total satt  → fast nämnare (bredd = value/total); segmenten kan summera till < 100 %
 //                 och lämnar ett tomt spår till höger (röstandelsstapeln: bortkastade
 //                 röster under spärren). Ej satt → nämnaren är segmentsumman (fyller helt).
-function StackedBar({ segs, height, faded = false, labels = false, total, title }: { segs: Seg[]; height: number; faded?: boolean; labels?: boolean; total?: number; title?: string }) {
+function StackedBar({ segs, height, faded = false, labels = false, total, title, valueFmt }: { segs: Seg[]; height: number; faded?: boolean; labels?: boolean; total?: number; title?: string; valueFmt?: (v: number) => string }) {
   const sum = segs.reduce((a, s) => a + s.value, 0)
   const denom = total ?? sum
   if (denom <= 0) return <div className="w-full rounded bg-slate-800/70" style={{ height }} />
@@ -44,7 +44,7 @@ function StackedBar({ segs, height, faded = false, labels = false, total, title 
             key={`${s.fork}-${i}`}
             className="flex items-center justify-center overflow-hidden whitespace-nowrap text-[10px] font-bold leading-none"
             style={{ width: `${pct}%`, background: s.farg, color: labelInk(s.farg) }}
-            title={`${s.fork}: ${Number.isInteger(s.value) ? s.value : s.value.toFixed(1)}`}
+            title={`${s.fork}: ${valueFmt ? valueFmt(s.value) : Number.isInteger(s.value) ? s.value : s.value.toFixed(1)}`}
           >
             {labels && pct >= 3 ? s.fork : ''}
           </div>
@@ -145,7 +145,7 @@ export function MandatBars({ shown, ovriga, totalMandat, totalMandat2022, giltig
           </div>
         </div>
         <BarRow>
-          <StackedBar segs={andelShown} height={22} labels total={1} title={trackTitle} />
+          <StackedBar segs={andelShown} height={22} labels total={1} title={trackTitle} valueFmt={(v) => `${(v * 100).toFixed(1)} %`} />
           {andelShown.length > 0 && <MajorityLine />}
         </BarRow>
         {live && andel2022.length > 0 && (
@@ -153,7 +153,7 @@ export function MandatBars({ shown, ovriga, totalMandat, totalMandat2022, giltig
             {/* Spökstapeln fyller hela bredden (som mandatspöket) så den linjerar med
                 huvudstapeln — annars blev den kortare av 2022 års bortkastade röster. */}
             <BarRow tag="’22">
-              <StackedBar segs={andel2022} height={6} faded />
+              <StackedBar segs={andel2022} height={6} faded valueFmt={(v) => `${(v * 100).toFixed(1)} %`} />
             </BarRow>
           </div>
         )}
