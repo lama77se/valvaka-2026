@@ -23,7 +23,12 @@ type Row = { vd: string }
 // strängen (ingen Date/tz-konvertering som skulle skifta klockslaget). "—" om okänd.
 const fmtTime = (iso: string | null): string => { const m = /[T ](\d{2}:\d{2})/.exec(iso ?? ''); return m ? m[1] : '—' }
 
-export function DepartureBoard({ valtyp }: { valtyp: Valtyp }) {
+// onRowSelect (valfritt): körs EFTER att raden satt valtyp + område. Mobil skickar in
+// "byt till Resultat-fliken" så en tapp på tavlan visar distriktet i tabellen. Desktop
+// skickar inget → oförändrat beteende.
+// fill (desktop): tavlan är en flex-1-cell i vänsterkolumnen → listan fyller höjden och
+// visar fler rader på högre skärmar (i stället för fast max-höjd). Mobil utelämnar → fast höjd.
+export function DepartureBoard({ valtyp, onRowSelect, fill }: { valtyp: Valtyp; onRowSelect?: () => void; fill?: boolean }) {
   const { subscribeChanges, storesRef, partyRef, distriktNamnRef, totalByValtyp, setSelectedArea, setValtyp, revision, snapshotVersion, areaIndexRef, kommuner, regioner, valkretsListRef } = useResults()
   const [rows, setRows] = useState<Row[]>([])
 
@@ -109,7 +114,7 @@ export function DepartureBoard({ valtyp }: { valtyp: Valtyp }) {
       .join(' › ')
 
   return (
-    <div className="pointer-events-auto w-[350px] overflow-hidden rounded-lg border border-slate-700 bg-slate-950/85 shadow-2xl backdrop-blur">
+    <div className={`pointer-events-auto w-[var(--boards-w)] overflow-hidden rounded-lg border border-slate-700 bg-slate-950/85 shadow-2xl backdrop-blur ${fill ? 'flex min-h-0 flex-1 flex-col' : ''}`}>
       <div className="flex items-center justify-between border-b border-slate-800 px-3 py-2">
         <div className="flex items-center gap-2">
           <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
@@ -124,7 +129,7 @@ export function DepartureBoard({ valtyp }: { valtyp: Valtyp }) {
       {rows.length === 0 ? (
         <p className="px-3 py-4 text-center text-xs text-slate-500">Inga distrikt inrapporterade än</p>
       ) : (
-        <ul className="max-h-[200px] divide-y divide-slate-800/70 overflow-y-auto">
+        <ul className={`${fill ? 'min-h-0 flex-1' : 'max-h-[150px]'} divide-y divide-slate-800/70 overflow-y-auto`}>
           {rows.map((r) => {
             // Vinnare + tvåa ur distriktets partiröster (sorterat fallande).
             const votes = store.aggregate([r.vd])
@@ -143,7 +148,7 @@ export function DepartureBoard({ valtyp }: { valtyp: Valtyp }) {
                 key={r.vd}
                 className="board-row cursor-pointer px-3 py-1.5 hover:bg-slate-800/50"
                 style={{ borderLeft: `3px solid ${w?.farg ?? NEUTRAL}` }}
-                onClick={() => { setValtyp(valtyp); setSelectedArea({ level: 'distrikt', code: r.vd }) }}
+                onClick={() => { setValtyp(valtyp); setSelectedArea({ level: 'distrikt', code: r.vd }); onRowSelect?.() }}
                 title={`${path} — visa i tabellen (${VALTYP_LABEL[valtyp]})`}
               >
                 <div className="flex items-baseline gap-2">

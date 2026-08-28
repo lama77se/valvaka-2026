@@ -48,6 +48,19 @@ valnatten byts källan till de skarpa resultatfilerna via en enda konstant, utan
   så den slutgiltiga presentationens röstsummor och mandat matchar val.se — verifierat mot
   generalrepets mandatfacit (`npm run verify:uppsamling`). Kartan/valkretsarna förblir geografiska.
 - **Delbara vy-URL:er** — t.ex. `?val=KF&omrade=kommun:1488` öppnar "Kommunvalet Trollhättan".
+  Mobil-fliken speglas i URL-hashen (`#resultat` / `#senaste`), så en länk kan öppna en
+  specifik vy direkt.
+- **Responsiv layout — desktop + mobil.** Från **xl (≥ 1280 px)** visas desktop-vyn:
+  fullskärmskarta med svävande overlays — info + "Vinnande parti"-legend och tre
+  avgångstavlor till vänster (tavlorna fyller höjden och visar fler rader på högre skärmar),
+  resultatpanel till höger, och karta + valtyp-väljare + status centrerade i det rena fältet
+  mellan overlayerna. Brytpunkten är satt vid 1280 px så normala kontorslaptops behåller
+  desktop. **Under 1280 px** byter appen till en egen **flik-layout** (Karta / Resultat /
+  Senaste) med persistent topp-chrome (valtyp + valt område + status) och tumvänlig bottom-nav;
+  kartan monteras först när Karta-fliken öppnas (aldrig annars) och hålls sedan vid liv, så en
+  besökare som bara läser resultat aldrig betalar för geometrin/WebGL-kontexten. Båda
+  layouterna delar samma state, så valt val + område följer med över brytpunkten (t.ex. vid
+  rotation) utan omladdning.
 - **Skarp valnatt-ingest** — en Deno edge function schemalagd med `pg_cron` pollar de
   **preliminära** resultatfilerna och **strömmar** in dem (fflate streaming-unzip → SAX-parser →
   batch-upsert), så minnet är oberoende av filstorlek. Verifierad end-to-end mot generalrepet; på
