@@ -175,8 +175,9 @@ export function ResultPanel() {
       const a22 = andel2022Of(g.level, g.code)
       const reported = g.districts.reduce((n, c) => n + (store.has(c) ? 1 : 0), 0)
       const live = total > 0
-      // Ledande parti (radens färgmarkering) = största i live-året; grå om lokalt/okänt.
-      const src = live ? a26 : a22
+      // Ledande parti (radens färgmarkering) = största i 2026; neutral/grå för ännu
+      // orapporterade rader (ingen 2022-tonad ram — hela sektionen bygger på 2026).
+      const src = live ? a26 : {}
       let leadFork: string | null = null
       let topA = 0
       for (const [f, a] of Object.entries(src)) if (a > topA) { topA = a; leadFork = f }
@@ -319,17 +320,18 @@ export function ResultPanel() {
                 })}
               </nav>
             )}
-            <div className="mb-3 border-b border-slate-800 pb-3">
-              <MandatBars
-                shown={view.display.shown}
-                ovriga={view.display.ovriga}
-                totalMandat={view.totalMandat}
-                totalMandat2022={view.totalMandat2022}
-                giltiga={view.giltiga}
-                sparr={SPARR[valtyp]}
-                reportPct={pct}
-              />
-            </div>
+            {view.giltiga > 0 && (
+              <div className="mb-3 border-b border-slate-800 pb-3">
+                <MandatBars
+                  shown={view.display.shown}
+                  ovriga={view.display.ovriga}
+                  totalMandat={view.totalMandat}
+                  giltiga={view.giltiga}
+                  sparr={SPARR[valtyp]}
+                  reportPct={pct}
+                />
+              </div>
+            )}
             <ResultTable
               title={`${ELECTION[valtyp]} — ${areaName}`}
               subtitle={`${view.reported.toLocaleString('sv-SE')} av ${view.total.toLocaleString('sv-SE')} valdistrikt räknade (${pct} %) · ${slutligText}`}
@@ -352,19 +354,13 @@ export function ResultPanel() {
                 </p>
               ))}
 
-            {drill.childLevel && drillItems.length > 0 && (
+            {drill.anyLive && drill.childLevel && drillItems.length > 0 && (
               <div className="mt-3 border-t border-slate-800 pt-3">
                 <p className="mb-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[11px] font-semibold uppercase tracking-widest text-slate-400">
                   Bryt ner — {CHILD_LABEL[drill.childLevel] ?? drill.childLevel}
-                  {drill.anyLive ? (
-                    <span className="font-normal normal-case tracking-normal text-slate-500">
-                      2026 andel % · <span className="text-emerald-400/80">▲</span>/<span className="text-rose-400/80">▼</span> mot ’22
-                    </span>
-                  ) : (
-                    <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[11px] font-semibold normal-case tracking-normal text-amber-300/90">
-                      2022 års resultat — inga 2026-röster än
-                    </span>
-                  )}
+                  <span className="font-normal normal-case tracking-normal text-slate-500">
+                    2026 andel % · <span className="text-emerald-400/80">▲</span>/<span className="text-rose-400/80">▼</span> mot ’22
+                  </span>
                 </p>
                 {/* Per-parti-matris: en kolumn per riksdagsparti (spektrumordning), andel %
                     för live-året + Δ mot 2022 under. Ingen egen max-höjd — listan fyller panelen. */}
@@ -382,11 +378,9 @@ export function ResultPanel() {
                   </thead>
                   <tbody>
                     {drillItems.map((it) => {
-                      // I en delvis inrapporterad lista (anyLive) visar rader utan egna
-                      // 2026-röster fortfarande 2022 års siffror. Utan markör ser de
-                      // identiska ut med live-2026-rader → ambertona siffrorna + '22-tagg
-                      // (samma språk som rubrikens "2022 års resultat"-badge).
-                      const stale = drill.anyLive && !it.live
+                      // Hela "Bryt ner" bygger på 2026: sektionen finns bara när någon rad är
+                      // live, en rad utan egna 2026-röster visar '·' (aldrig 2022), och 2022
+                      // syns enbart som diff (▲/▼) UNDER ett faktiskt 2026-tal.
                       return (
                       <tr
                         key={it.code}
@@ -399,21 +393,16 @@ export function ResultPanel() {
                           title={nameOf(it)}
                         >
                           {nameOf(it)}
-                          {stale && (
-                            <span className="ml-1 rounded bg-amber-500/15 px-1 text-[11px] font-semibold text-amber-300/90" title="Inga 2026-röster än — visar 2022 års resultat">
-                              ’22
-                            </span>
-                          )}
                         </td>
                         {drill.cols.map((c) => {
                           const v26 = it.a26[c.fork]
                           const v22 = it.a22[c.fork]
-                          const main = it.live ? v26 : v22
+                          const main = it.live ? v26 : undefined
                           const d = it.live && v26 != null && v22 != null ? (v26 - v22) * 100 : null
                           const has = main && main > 0.0005
                           return (
                             <td key={c.fork} className="px-0.5 py-0.5 text-center align-top leading-tight">
-                              <div className={!has ? 'text-slate-600' : stale ? 'italic text-amber-300/70' : 'text-slate-200'}>
+                              <div className={!has ? 'text-slate-600' : 'text-slate-200'}>
                                 {has ? (main * 100).toFixed(1) : '·'}
                               </div>
                               {d != null && Math.abs(d) >= 0.05 && (

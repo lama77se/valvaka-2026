@@ -2,9 +2,9 @@
 // kompaktare och mer läsbar (best practice: spektrumordning, majoritetslinje, färg +
 // etikett-där-det-får-plats; exakta siffror finns i tabellen rakt under). Övre stapel =
 // röstandel (100 % bred), undre = mandat (bredd = totala mandat, med majoritetslinje).
-// 2022 visas som en tunn "spök"-stapel under varje 2026-stapel (då-vs-nu), och när 2026
-// ännu saknas (förvalsperiod / 0 % räknat) faller stapeln tillbaka på 2022 så den aldrig
-// står tom.
+// 2022 visas ALDRIG som egen huvudstapel — bara som en tunn "spök"-stapel UNDER en levande
+// 2026-stapel (då-vs-nu). Saknas 2026 (förvalsperiod / 0 % räknat) renderas inga staplar
+// alls (en full 2022-stapel skilde sig bara på årtalet i etiketten → lästes som aktuellt).
 import type { ReactNode } from 'react'
 import type { OvrigaRow, PartyRow } from '@/lib/aggregate'
 import { spectrumRank } from '@/lib/soffa'
@@ -78,13 +78,12 @@ export interface MandatBarsProps {
   shown: PartyRow[]
   ovriga: OvrigaRow | null
   totalMandat: number | null
-  totalMandat2022: number | null
-  giltiga: number // 2026 giltiga röster; 0 → inga 2026-röster än (visa 2022)
+  giltiga: number // 2026 giltiga röster; 0 → inga staplar (2022 visas aldrig som egen huvudstapel)
   sparr: number // riksspärr (0..1) för valtypen — partier under lämnas ur röstandelsstapeln
   reportPct?: number | null
 }
 
-export function MandatBars({ shown, ovriga, totalMandat, totalMandat2022, giltiga, sparr, reportPct }: MandatBarsProps) {
+export function MandatBars({ shown, ovriga, totalMandat, giltiga, sparr, reportPct }: MandatBarsProps) {
   const live = giltiga > 0
   const parties = [...shown].sort((a, b) => spectrumRank(a.forkortning) - spectrumRank(b.forkortning))
 
@@ -120,13 +119,17 @@ export function MandatBars({ shown, ovriga, totalMandat, totalMandat2022, giltig
   const underSparrPct = Math.round((1 - andel2026.reduce((a, s) => a + s.value, 0)) * 100)
 
   const liveM = totalMandat != null && totalMandat > 0
-  const hasMandat = liveM || (totalMandat2022 != null && totalMandat2022 > 0)
-  const mTotal = liveM ? (totalMandat as number) : totalMandat2022 ?? 0
+  const mTotal = totalMandat ?? 0
   const majoritet = Math.floor(mTotal / 2) + 1
   const prognos = live && reportPct != null && reportPct < 100
 
-  const andelShown = live ? andel2026 : andel2022
+  const andelShown = andel2026
   const trackTitle = underSparrPct > 0 ? `Tomt spår = ${underSparrPct} % röster under spärren (ger inga mandat)` : undefined
+
+  // Inga 2026-röster → rendera inga staplar. 2022 visas bara som '22-spöke UNDER en levande
+  // 2026-stapel (nedan), aldrig som egen huvudstapel. Tomläget förklaras av meddelandet i
+  // ResultPanel; wrappern där gate:as på samma villkor så ingen tom ram blir kvar.
+  if (!live) return null
 
   return (
     <div className="space-y-2.5">
@@ -134,7 +137,7 @@ export function MandatBars({ shown, ovriga, totalMandat, totalMandat2022, giltig
           röster. 50%-linjen markerar halva väljarkåren. */}
       <div>
         <div className="mb-1 flex items-baseline justify-between gap-2">
-          <span className="text-[13px] font-semibold uppercase tracking-wide text-slate-300">Röstandel {live ? '2026' : '2022'}</span>
+          <span className="text-[13px] font-semibold uppercase tracking-wide text-slate-300">Röstandel 2026</span>
           <div className="flex items-baseline gap-2">
             {prognos && (
               <span className="rounded-full border border-amber-500/60 px-1.5 text-[12px] font-semibold uppercase tracking-wide text-amber-400">
@@ -148,7 +151,7 @@ export function MandatBars({ shown, ovriga, totalMandat, totalMandat2022, giltig
           <StackedBar segs={andelShown} height={22} labels total={1} title={trackTitle} valueFmt={(v) => `${(v * 100).toFixed(1)} %`} />
           {andelShown.length > 0 && <MajorityLine />}
         </BarRow>
-        {live && andel2022.length > 0 && (
+        {andel2022.length > 0 && (
           <div className="mt-1">
             {/* Spökstapeln fyller hela bredden (som mandatspöket) så den linjerar med
                 huvudstapeln — annars blev den kortare av 2022 års bortkastade röster. */}
@@ -160,19 +163,19 @@ export function MandatBars({ shown, ovriga, totalMandat, totalMandat2022, giltig
       </div>
 
       {/* Mandat — undre stapeln (bredd = totala mandat) + majoritetslinje */}
-      {hasMandat && (
+      {liveM && (
         <div>
           <div className="mb-1 flex items-baseline justify-between">
             <span className="text-[13px] font-semibold uppercase tracking-wide text-slate-300">
-              Mandat {liveM ? '2026' : '2022'} · <span className="text-slate-100">{mTotal}</span>
+              Mandat 2026 · <span className="text-slate-100">{mTotal}</span>
             </span>
             <span className="text-[12px] text-slate-400">{majoritet} för egen majoritet</span>
           </div>
           <BarRow>
-            <StackedBar segs={liveM ? mandat2026 : mandat2022} height={22} labels />
+            <StackedBar segs={mandat2026} height={22} labels />
             <MajorityLine />
           </BarRow>
-          {liveM && mandat2022.length > 0 && (
+          {mandat2022.length > 0 && (
             <div className="mt-1">
               <BarRow tag="’22">
                 <StackedBar segs={mandat2022} height={6} faded />
