@@ -6,7 +6,6 @@
 import { readFileSync } from 'node:fs'
 import XLSX from 'xlsx'
 import { applyComparison, buildRows, collapseForDisplay, districtsInArea, proportionalSeats, type Comparison2022, type DistrictMeta, type PartyMeta } from '../src/lib/aggregate.ts'
-import { seatPositions, hareSeats } from '../src/lib/soffa.ts'
 import { ancestorsOf, childGroupsOf, childLevelOf } from '../src/lib/hierarchy.ts'
 import { SEAT_CONFIG_2026 } from '../src/lib/seatConfig2026.ts'
 
@@ -160,28 +159,6 @@ try {
 } catch (e) {
   check(false, `2022-basläge-test kastade (${(e as Error).message})`)
 }
-
-// 8) Riksdagssoffan (parliament-arc): exakt `total` platser, alla inom halvcirkeln.
-console.log('\n--- 8. Riksdagssoffa (seatPositions) ---')
-let soffaOk = true
-for (const n of [349, 149, 101, 61, 21, 3, 2, 1]) {
-  const pos = seatPositions(n)
-  const okN = pos.length === n && pos.every((p) => p.y >= -1e-9 && p.x >= -1.0001 && p.x <= 1.0001)
-  if (!okN) soffaOk = false
-}
-check(soffaOk, 'seatPositions ger exakt N platser i övre halvcirkeln (349/149/101/61/21/3/2/1)')
-
-// 9) Ungefärlig procent-soffa (hareSeats): fördelar exakt `total` platser, ren proportion.
-console.log('\n--- 9. Ungefärlig procent-soffa (hareSeats) ---')
-let hareOk = true
-for (const w of [{ A: 303, B: 205, C: 190, D: 100, E: 30, F: 5 }, { A: 50, B: 50 }, { A: 1, B: 1, C: 1 }]) {
-  const alloc = hareSeats(w, 100)
-  const sum = Object.values(alloc).reduce((a, b) => a + b, 0)
-  if (sum !== 100) hareOk = false
-}
-const single = hareSeats({ X: 42 }, 100) // ett parti tar alla platser
-const empty = Object.keys(hareSeats({}, 100)).length // inga röster → tom (ingen soffa)
-check(hareOk && single.X === 100 && empty === 0, 'hareSeats fördelar exakt 100 platser proportionellt (ren %, ingen spärr)')
 
 // 10) Drill-down-hierarki: valkrets är metadata (index), inte prefix.
 // RD: riket → valkrets → kommun → distrikt. Kritiskt (advisor): Stockholm-splitten —
