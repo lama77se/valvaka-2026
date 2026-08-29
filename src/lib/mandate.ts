@@ -8,10 +8,11 @@
 // ⚠️ Verifieras steg för steg mot Valmyndighetens 2022-facit (scripts/
 // verify-mandate.ts): röstaggregat → spärrset → fasta mandat per valkrets
 // (diskriminerande: exakt match på "rena" valkretsar utan utjämningsmandat) →
-// 349 mot Riket-facit. Överhängsgrenen triggas inte av RD 2022 och täcks av ett
-// syntetiskt handräknat fall; den verifieras skarpt först när RF/KF (regioner/
-// kommuner har överhäng) kör genom modulen. Lott-brytning är deterministisk på
-// partikod — facit är auktoriteten, inte minnet.
+// 349 mot Riket-facit. Region/kommun nivellerar FULLSTÄNDIGT (Vallag 14 kap., inget
+// överskott) → `config.fullyLevels`, verifierat mot RF/KF-facit i verify-overhang.ts
+// (RF 20/20, KF 290/290). Riksdagens överskottsgren (39 FASTA utjämningsmandat →
+// överskottsmandat kan behållas) triggas inte av RD 2022 och täcks av ett syntetiskt
+// handräknat fall. Lott-brytning är deterministisk på partikod — facit, inte minnet.
 
 export type PartyVotes = Record<string, number> // partikod -> röster
 export type ConstituencyVotes = Record<string, PartyVotes> // valkretskod -> {partikod -> röster}
@@ -22,6 +23,11 @@ export interface MandateConfig {
   nationalThreshold: number // 0.04
   constituencyThreshold: number // 0.12 (klarar spärr om ≥ i EN valkrets)
   fixedSeatsByConstituency: Record<string, number> // valkretskod -> fasta mandat (summa = totalSeats - utjämning)
+  // Region/kommun (Vallag 14 kap.): utjämningsmandaten är INTE fixerade till ett antal
+  // utan nivellerar FULLSTÄNDIGT → slutfördelningen blir proportionell mot hela
+  // valområdet, inget överskott behålls. Riksdagen (default) har 39 FASTA
+  // utjämningsmandat och kan därför lämna överskottsmandat (överhängsgrenen nedan).
+  fullyLevels?: boolean
 }
 
 export interface MandateResult {
@@ -114,9 +120,20 @@ export function computeAssembly(
     config.firstDivisor,
   )
 
-  // Steg D — utjämning: target − fasta per parti. Överhäng (fasta > target)
-  // hanteras genom att sätta partiet åt sidan med sina fasta och räkna om
-  // resten proportionellt bland övriga (vallagen 4 kap.). Iterera tills stabilt.
+  // Region/kommun: fullständig utjämning → totalen ÄR den proportionella (nationalTarget),
+  // inget överskott behålls (Vallag 14 kap.). Fasta valkretsmandaten avgör bara VAR
+  // mandaten sitter, inte partitotalen. Verifierat mot 2022-facit (RF 20/20, KF 290/290)
+  // i scripts/verify-overhang.ts. Utan detta ger riksdagens överhängsgren fel RF/KF-totaler.
+  if (config.fullyLevels) {
+    const levelingByParty: Record<string, number> = {}
+    for (const p of qualified) levelingByParty[p] = Math.max(0, nationalTarget[p] - fixedByParty[p])
+    return { qualified, nationalVotes, seatsByParty: { ...nationalTarget }, nationalTarget, fixedByParty, fixedByConstituencyParty, levelingByParty, overhangParties: [] }
+  }
+
+  // Steg D (riksdag) — utjämning: target − fasta per parti. Överhäng (fasta > target)
+  // hanteras genom att sätta partiet åt sidan med sina fasta och räkna om resten
+  // proportionellt bland övriga (Vallag 14 kap. 3 §, riksdagens 39 fasta utjämnings-
+  // mandat kan lämna överskottsmandat). Iterera tills stabilt.
   const overhangParties: string[] = []
   let target = nationalTarget
   for (;;) {
