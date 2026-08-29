@@ -12,11 +12,13 @@
 // valkrets ur fasta-filen (kol "Fasta mandat"), röster grupperas per valkrets ur
 // rostern.
 //
-// FYND (2022): appens enkla metod matchar facit 20/20 (RF) + 290/290 (KF).
-// computeAssembly matchar INTE — dess överhängsgren avviker i 3 RF-regioner
-// (Kalmar/Blekinge/Västra Götaland), precis den gren mandate.ts flaggar som
-// overifierad för RF/KF. Slutsats: behåll proportionalSeats; wire:a inte in
-// computeAssembly för RF/KF förrän dess överhängsgren är fixad + verifierad här.
+// RESULTAT (2022, verifierat): region/kommun nivellerar FULLSTÄNDIGT (Vallag 14 kap.,
+// inget överskott behålls) — så BÅDE appens proportionalSeats OCH computeAssembly med
+// `fullyLevels: true` matchar facit exakt (RF 20/20, KF 290/290; KF:s enda miss är
+// Vårgårda-lottning vid exakt lika, träffar båda metoderna). UTAN fullyLevels ger
+// computeAssemblys riksdags-överhängsgren fel totaler i 3 RF-regioner (Kalmar/Blekinge/
+// Västra Götaland) — det är därför appen använder proportionalSeats, den legalt exakta
+// metoden för region/kommun. Detta skript är regressionstestet för den skillnaden.
 //
 //   2022 (nu):   npx tsx scripts/verify-overhang.ts [--valtyp RF|KF]   (utelämnat = båda)
 //   2026 (efter valnatten): byt röstkällan i loadRoster() till de skarpa resultaten
@@ -151,13 +153,14 @@ function simpleSeats(a: Assembly): PartyVotes {
   return modifiedSainteLague(qual, a.totalSeats, 1.2)
 }
 
-// Exakta metoden: fasta valkretsmandat + utjämning + överhäng. Ingen 12%-regel för
-// RF/KF → constituencyThreshold = Infinity (bara församlingsspärren gäller).
+// Exakta metoden: fasta valkretsmandat + FULL utjämning (fullyLevels — Vallag 14 kap.,
+// region/kommun behåller inget överskott). Ingen 12%-regel för RF/KF →
+// constituencyThreshold = Infinity (bara församlingsspärren gäller).
 function exactSeats(a: Assembly): PartyVotes {
   return computeAssembly(a.cv, {
     totalSeats: a.totalSeats, firstDivisor: 1.2,
     nationalThreshold: a.threshold, constituencyThreshold: Infinity,
-    fixedSeatsByConstituency: a.fixed,
+    fixedSeatsByConstituency: a.fixed, fullyLevels: true,
   }).seatsByParty
 }
 
