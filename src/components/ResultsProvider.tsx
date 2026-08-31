@@ -264,11 +264,23 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
         // EN valtyp (eq). Stora sidor (kapas av PostgREST:s max-rows) → stega `from` med
         // faktiskt returnerat antal. rapporteringstid kan saknas i ett kort deploy-fönster
         // → fall tillbaka utan kolumnen EN gång (börja om från 0 med de smalare kolumnerna).
+        // STABIL ORDNING (valdistriktskod, partikod = PK inom valtyp): utan explicit `order` är
+        // PostgREST:s radordning implementation-definierad och SKIFTAR när tabellen skrivs mitt i
+        // den flersidiga läsningen (edge re-upsertar hela tiden under valnatt/genrep) → offseten
+        // glider och HOPPAR ÖVER distrikt → ett hål som resyncen (tittar bara framåt) inte back-
+        // fyller. Med stabil nyckelordning + ren upsert-väg (inga delete:ar) kan offseten på sin
+        // höjd DUBBLERA en gränsrad (idempotent via store.set), aldrig hoppa över.
         const PAGE = 10000
         let cols = 'valtyp,valdistriktskod,partikod,roster,status,rapporteringstid,updated_at'
         let from = 0
         while (aliveRef.current) {
-          const { data, error } = await supabase.from('result').select(cols).eq('valtyp', vt).range(from, from + PAGE - 1)
+          const { data, error } = await supabase
+            .from('result')
+            .select(cols)
+            .eq('valtyp', vt)
+            .order('valdistriktskod', { ascending: true })
+            .order('partikod', { ascending: true })
+            .range(from, from + PAGE - 1)
           if (error) {
             if (cols.includes('rapporteringstid')) { cols = 'valtyp,valdistriktskod,partikod,roster,status,updated_at'; from = 0; continue }
             break // annat fel → lämna ok=false → retrybart nedan
@@ -326,6 +338,8 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
           .eq('valtyp', vt)
           .gte('updated_at', cursor)
           .order('updated_at', { ascending: true })
+          .order('valdistriktskod', { ascending: true }) // stabila tiebreakers → deterministisk
+          .order('partikod', { ascending: true })        // paginering även när deltan spänner flera sidor
           .range(from, from + PAGE - 1)
         if (error || !data || data.length === 0) break
         for (const r of data as unknown as Array<{ valdistriktskod: string; partikod: string; roster: number; status?: string | null; rapporteringstid?: string | null; updated_at?: string | null }>) {
@@ -493,6 +507,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
         const { data, error } = await supabase
           .from('district')
           .select('valdistriktskod,namn,kommun,lan,vk_rd,vk_rf,vk_kf')
+          .order('valdistriktskod', { ascending: true }) // stabil ordning → offset kan aldrig hoppa över ett distrikt
           .range(from, from + PAGE - 1)
         if (error || !data || data.length === 0) break
         for (const d of data) {
@@ -529,6 +544,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
         const { data, error } = await supabase
           .from('district_comparison')
           .select('valdistriktskod,jamforbarhet')
+          .order('valdistriktskod', { ascending: true }) // stabil ordning → ingen överhoppad rad
           .range(from, from + PAGE - 1)
         if (error || !data || data.length === 0) break
         for (const r of data) cmp.set(r.valdistriktskod, r.jamforbarhet)
@@ -577,6 +593,9 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
         const { data, error } = await supabase
           .from('uppsamling_result')
           .select('valtyp,kommunkod,lankod,partikod,roster')
+          .order('valtyp', { ascending: true }) // PK (valtyp,kod,partikod) → stabil ordning, ingen överhoppad rad
+          .order('kod', { ascending: true })
+          .order('partikod', { ascending: true })
           .range(from, from + PAGE - 1)
         if (error || !data || data.length === 0) break
         for (const r of data as unknown as Array<{ valtyp: string; kommunkod: string; lankod: string; partikod: string; roster: number }>) {
