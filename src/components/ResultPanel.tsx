@@ -329,12 +329,14 @@ export function ResultPanel() {
                   giltiga={view.giltiga}
                   sparr={SPARR[valtyp]}
                   reportPct={pct}
+                  showBlocks={valtyp === 'RD' && selectedArea.level === 'riket'}
                 />
               </div>
             )}
             <ResultTable
               title={`${ELECTION[valtyp]} — ${areaName}`}
               subtitle={`${view.reported.toLocaleString('sv-SE')} av ${view.total.toLocaleString('sv-SE')} valdistrikt räknade (${pct} %) · ${slutligText}`}
+              reportPct={view.total > 0 ? (view.reported / view.total) * 100 : 0}
               display={view.display}
               giltiga={view.giltiga}
               sparr={SPARR[valtyp]}

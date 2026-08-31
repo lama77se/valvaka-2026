@@ -19,6 +19,7 @@ const COLS = 8
 export interface ResultTableProps {
   title: string
   subtitle?: string
+  reportPct?: number // 0..100 → fyller progress-baren bakom undertexten (inrapporterat)
   status?: string
   display: DisplayRows
   giltiga: number
@@ -29,7 +30,7 @@ export interface ResultTableProps {
   showSparr?: boolean // spärr-linjen är en församlingsvid bestämning → dölj på distriktsnivå
 }
 
-export function ResultTable({ title, subtitle, status, display, giltiga, sparr, blanka, totalMandat, totalMandat2022, showSparr = true }: ResultTableProps) {
+export function ResultTable({ title, subtitle, reportPct, status, display, giltiga, sparr, blanka, totalMandat, totalMandat2022, showSparr = true }: ResultTableProps) {
   const { shown, ovriga, sparrIndex } = display
   const sparrLabel = `${(sparr * 100).toFixed(0)} %-spärr`
 
@@ -51,7 +52,20 @@ export function ResultTable({ title, subtitle, status, display, giltiga, sparr, 
         <h2 className="text-base font-bold tracking-tight">{title}</h2>
         {status && <span className="whitespace-nowrap text-xs text-sky-300">{status}</span>}
       </div>
-      {subtitle && <p className="mb-2 text-xs text-slate-400">{subtitle}</p>}
+      {subtitle &&
+        (reportPct == null ? (
+          <p className="mb-2 text-xs text-slate-400">{subtitle}</p>
+        ) : (
+          // Undertexten som progress-bar: fylld (grön) andel = inrapporterat, resten dimmad.
+          <div className="relative mb-2 overflow-hidden rounded border border-slate-800 bg-slate-800/40">
+            <div
+              className="absolute inset-y-0 left-0 bg-emerald-500/35 transition-[width] duration-500"
+              style={{ width: `${Math.min(100, Math.max(0, reportPct))}%` }}
+              aria-hidden
+            />
+            <p className="relative px-2 py-1 text-xs text-slate-300">{subtitle}</p>
+          </div>
+        ))}
 
       {/* min-w = golv mot ihoptryckning på riktigt smala telefoner; satt nära det
           NATURLIGA innehållet (~360px med de korta mobil-etiketterna) så tabellen ryms i

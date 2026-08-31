@@ -81,11 +81,19 @@ export interface MandatBarsProps {
   giltiga: number // 2026 giltiga röster; 0 → inga staplar (2022 visas aldrig som egen huvudstapel)
   sparr: number // riksspärr (0..1) för valtypen — partier under lämnas ur röstandelsstapeln
   reportPct?: number | null
+  showBlocks?: boolean // blockmajoritet (V+S+MP+C vs L+KD+M+SD) under staplarna — bara Riket/RD
 }
 
-export function MandatBars({ shown, ovriga, totalMandat, giltiga, sparr, reportPct }: MandatBarsProps) {
+export function MandatBars({ shown, ovriga, totalMandat, giltiga, sparr, reportPct, showBlocks }: MandatBarsProps) {
   const live = giltiga > 0
   const parties = [...shown].sort((a, b) => spectrumRank(a.forkortning) - spectrumRank(b.forkortning))
+
+  // Blocksummor för Riket/RD-vyn: V+S+MP+C (vänster) mot L+KD+M+SD (höger). Andel = summa
+  // partiandelar (0..1 av giltiga), mandat = summa mandat. Markör vid majoritet (>50 % / ≥175).
+  const blockSum = (labels: string[]) =>
+    parties.reduce((a, p) => (p.forkortning && labels.includes(p.forkortning) ? { andel: a.andel + p.andel, mandat: a.mandat + (p.mandat ?? 0), roster: a.roster + p.roster } : a), { andel: 0, mandat: 0, roster: 0 })
+  const blockL = blockSum(['V', 'S', 'MP', 'C'])
+  const blockR = blockSum(['L', 'KD', 'M', 'SD'])
 
   // Röstandelsstapeln: BARA partier över spärren för det år som visas; värdet är andelen
   // (0..1 av giltiga). Under-spärr-partier + Övriga utelämnas → segmenten summerar till
@@ -182,6 +190,34 @@ export function MandatBars({ shown, ovriga, totalMandat, giltiga, sparr, reportP
               </BarRow>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Blockmajoritet (endast Riket/RD): V+S+MP+C mot L+KD+M+SD — andel + mandat, markör
+          vid majoritet (✓ >50 % röster, grön ram + "egen majoritet" vid ≥ majoritet-mandat). */}
+      {showBlocks && (
+        <div className="pt-0.5">
+          <div className="grid grid-cols-2 gap-1.5 text-slate-100">
+            {([['V+S+MP+C', blockL, false], ['L+KD+M+SD', blockR, true]] as const).map(([label, b, right]) => {
+              const voteMaj = b.andel > 0.5
+              const seatMaj = liveM && b.mandat >= majoritet
+              return (
+                <div key={label} className={['rounded px-2 py-1', seatMaj ? 'bg-emerald-500/15 ring-1 ring-emerald-500/50' : 'bg-slate-800/40', right ? 'text-right' : 'text-left'].join(' ')}>
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-300">{label}</div>
+                  <div className={`mt-0.5 flex items-baseline gap-1.5 leading-none ${right ? 'justify-end' : ''}`}>
+                    <span className={`text-sm font-bold tabular-nums ${voteMaj ? 'text-emerald-300' : 'text-slate-100'}`}>
+                      {(b.andel * 100).toFixed(3).replace('.', ',')} %{voteMaj ? ' ✓' : ''}
+                    </span>
+                    {liveM && <span className={`text-[12px] tabular-nums ${seatMaj ? 'font-bold text-emerald-300' : 'text-slate-400'}`}>{b.mandat} mand.{seatMaj ? ' ✓' : ''}</span>}
+                  </div>
+                  {seatMaj && <div className="text-[10px] font-semibold uppercase tracking-wider text-emerald-300">egen majoritet</div>}
+                </div>
+              )
+            })}
+          </div>
+          <div className="pt-1.5 text-center text-[13px] text-slate-400">
+            <span className="font-bold tabular-nums text-slate-100">{Math.abs(blockR.roster - blockL.roster).toLocaleString('sv-SE')}</span> röster skiljer
+          </div>
         </div>
       )}
     </div>
