@@ -56,8 +56,9 @@ genrep-testdata hela natten**. Därför MÅSTE DB:n rensas innan skarpt flödar 
     med Realtime-repaint under burst — den egentliga acceptansen; kör även `npm run verify:realtime`).
     Ser du `/s/` under en valnatts-sim, kör `npm run ingest:slutlig` som backup.
 - [ ] **`.env.local` klar** med service-role (`SUPABASE_SERVICE_ROLE_KEY`) för det lokala skriptet.
-- [ ] **Infra:** Supabase-compute uppskalad (small/Pro), `Max rows = 10000` (Settings → API).
-  Vercel-env (`VITE_SUPABASE_URL/ANON_KEY/GEOMETRY_URL`) korrekta (appen är live).
+- [ ] **Infra:** Supabase-compute uppskalad — **Large för kvällen** (Pro), `Max rows = 10000`
+  (Settings → API). Vercel-env (`VITE_SUPABASE_URL/ANON_KEY/GEOMETRY_URL`) korrekta (appen är live).
+  Lastkapacitet, mätvärden och CDN-cache-contingencyn: [valnatt-lastkapacitet.md](./valnatt-lastkapacitet.md).
 - [ ] **Låt genrep-demon stå** tills nära natten — den visar att allt fungerar.
 
 ---
