@@ -14,7 +14,6 @@ import { onDark } from '@/lib/colors'
 import { VALTYP_LABEL, type Valtyp } from '@/lib/results'
 
 const NEUTRAL = '#64748b'
-const BUFCAP = 60 // hur många distrikt vi minns
 const VISIBLE = 20 // hur många rader som visas (20 senaste inrapporterade per tavla)
 
 type Row = { vd: string }
@@ -40,55 +39,35 @@ export function DepartureBoard({ valtyp, onRowSelect, fill, fullWidth }: { valty
     ensureValtypLoaded(valtyp)
   }, [valtyp, ensureValtypLoaded])
 
-  // Buffert utanför render: nyast-först-ordning + seen-set. Muteras synkront i
-  // lyssnaren, spolas till state rAF-koalescerat (tål valnattsburst). Klockslaget läses
-  // vid render ur store.reportTime (val.se:s riktiga rapporteringstid).
-  const bufRef = useRef<{ order: string[]; seen: Set<string> }>({ order: [], seen: new Set() })
+  // Ordning = val.se:s rapporteringstid DESC (nyast rapporterat överst), STABIL. Tidigare
+  // unshift:ades varje ändrat distrikt överst; under sim-churn re-ingesteras gamla distrikt
+  // (val.se uppdaterar filerna) och de poppade då upp överst med sin GAMLA tid → tavlan
+  // fladdrade. Nu räknas topplistan om från store:n (sorterad på rapporteringstid) rAF-
+  // koalescerat, så en re-ingest aldrig rör ordningen — bara en genuint nyare tid flyttar upp.
   const rafRef = useRef<number | null>(null)
 
   useEffect(() => {
     const store = storesRef.current[valtyp]
-    // Seed: NYAST rapporterade först enligt val.se:s rapporteringstid (ISO-strängar
-    // sorterar kronologiskt); distrikt utan tid hamnar sist.
-    const seeded = [...store.districts()]
-      .map((vd) => [vd, store.reportTime(vd) ?? ''] as const)
-      .sort((a, b) => b[1].localeCompare(a[1]))
-      .slice(0, BUFCAP)
-      .map(([vd]) => vd)
-    const buf = { order: seeded, seen: new Set(seeded) }
-    bufRef.current = buf
-    setRows(seeded.slice(0, VISIBLE).map((vd) => ({ vd })))
+    // ISO-tidsträngar sorterar kronologiskt → vanlig strängjämförelse (snabb; localeCompare
+    // skulle spika CPU:n på tusentals distrikt i bursten). Distrikt utan tid hamnar sist.
+    const compute = (): Row[] =>
+      [...store.districts()]
+        .map((vd) => [vd, store.reportTime(vd) ?? ''] as const)
+        .sort((a, b) => (a[1] < b[1] ? 1 : a[1] > b[1] ? -1 : 0))
+        .slice(0, VISIBLE)
+        .map(([vd]) => ({ vd }))
+    setRows(compute())
 
-    const flush = () => {
-      rafRef.current = null
-      const b = bufRef.current
-      setRows(b.order.slice(0, VISIBLE).map((vd) => ({ vd })))
-    }
-    const scheduleFlush = () => {
-      if (rafRef.current != null) return
-      rafRef.current = requestAnimationFrame(flush)
-    }
-
-    const unsub = subscribeChanges((vd, vt) => {
-      if (vt !== valtyp) return
-      const b = bufRef.current
-      if (!b.seen.has(vd)) {
-        b.seen.add(vd)
-        b.order.unshift(vd) // nytt distrikt = nyaste rapporten → överst
-        if (b.order.length > BUFCAP) {
-          for (const dropped of b.order.splice(BUFCAP)) b.seen.delete(dropped)
-        }
-      }
-      scheduleFlush() // även för redan sedda: ledande parti kan ha ändrats
-    })
+    const flush = () => { rafRef.current = null; setRows(compute()) }
+    const scheduleFlush = () => { if (rafRef.current != null) return; rafRef.current = requestAnimationFrame(flush) }
+    const unsub = subscribeChanges((_vd, vt) => { if (vt === valtyp) scheduleFlush() })
 
     return () => {
       unsub()
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
       rafRef.current = null
     }
-    // snapshotVersion: store:n är tom vid mount (snapshot laddas async) — reseeda när
-    // bulkladdningen är klar. Bumpas bara vid start, så ingen live-ordning slås sönder.
+    // snapshotVersion: store:n är tom vid mount (snapshot laddas async) — räkna om när klar.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [valtyp, snapshotVersion])
 
