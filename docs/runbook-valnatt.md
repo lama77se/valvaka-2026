@@ -59,6 +59,13 @@ genrep-testdata hela natten**. Därför MÅSTE DB:n rensas innan skarpt flödar 
 - [ ] **Infra:** Supabase-compute uppskalad — **Large för kvällen** (Pro), `Max rows = 10000`
   (Settings → API). Vercel-env (`VITE_SUPABASE_URL/ANON_KEY/GEOMETRY_URL`) korrekta (appen är live).
   Lastkapacitet, mätvärden och CDN-cache-contingencyn: [valnatt-lastkapacitet.md](./valnatt-lastkapacitet.md).
+- [ ] **🔺 Skala till Large I GOD TID + lasttesta på Large (inte i sista minuten).** Compute-resize
+  ger en kort omstart/nedtid → byt **dagen innan eller tidig eftermiddag 13 sep**, aldrig ~19:55.
+  Kör sedan lasttestet på Large och **läs CPU i Supabase-dashboarden** (klient-väggtid mäter INTE
+  server-CPU): `node --env-file=.env.local scripts/loadtest-heavy.mjs` (~1000 Realtime-anslutningar
+  + skrivburst + snapshot-herd). **Bäst:** kör det **ovanpå en genrep-sim** om en går innan 13 sep
+  (verklig churn/fan-out) → pessimistiskt tak; skarpa natten (monoton skrivning) är mildare. Godkänt
+  = CPU håller marginal och återhämtar sig (jfr 64 % på Small → väntat ~30 % på Large).
 - [ ] **Låt genrep-demon stå** tills nära natten — den visar att allt fungerar.
 
 ---
