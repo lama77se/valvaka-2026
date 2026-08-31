@@ -53,10 +53,12 @@ export function ResultTable({ title, subtitle, status, display, giltiga, sparr, 
       </div>
       {subtitle && <p className="mb-2 text-xs text-slate-400">{subtitle}</p>}
 
-      {/* Smala telefoner: 8-kolumnstabellen får hellre scrolla i sidled än tryckas ihop
-          (min-w tvingar bredd så overflow-x-auto biter). Desktop-panelen är bredare → ingen scroll. */}
+      {/* min-w = golv mot ihoptryckning på riktigt smala telefoner; satt nära det
+          NATURLIGA innehållet (~360px med de korta mobil-etiketterna) så tabellen ryms i
+          en vanlig telefon UTAN sidledsscroll och Parti-kolumnen inte suger upp slack.
+          overflow-x-auto biter först på riktigt smala skärmar. Desktop fyller via w-full. */}
       <div className="-mx-1 overflow-x-auto px-1">
-      <table className="w-full min-w-[460px] border-collapse text-sm tabular-nums">
+      <table className="w-full min-w-[360px] border-collapse text-sm tabular-nums">
         <thead>
           <tr className="text-[11px] uppercase tracking-wider text-slate-500">
             <th rowSpan={2} className="pr-2 text-left align-bottom font-medium">Parti</th>
@@ -101,7 +103,9 @@ export function ResultTable({ title, subtitle, status, display, giltiga, sparr, 
           {showSparr && sparrIndex >= shown.length && <SparrLine />}
           {ovriga && (
             <tr className="border-b border-slate-800/60 text-slate-400">
-              <td className="py-1 pr-2 italic">Övriga partier ({ovriga.count} st)</td>
+              {/* Mobil: bara "Övriga" (annars tvingar den långa strängen Parti-kolumnen bred
+                  → Mandat trycks ut ur vyn). Desktop har plats → full text + antal. */}
+              <td className="py-1 pr-2 italic whitespace-nowrap">Övriga<span className="hidden sm:inline"> partier ({ovriga.count} st)</span></td>
               <td className="py-1 px-1 text-right">{nf.format(ovriga.roster)}</td>
               <td className="py-1 px-1 text-right border-l border-slate-800">{pct(ovriga.andel)}</td>
               <td className="py-1 px-1 text-right">{pct(ovriga.andel2022)}</td>
@@ -114,7 +118,7 @@ export function ResultTable({ title, subtitle, status, display, giltiga, sparr, 
         </tbody>
         <tfoot className="text-xs text-slate-400">
           <tr>
-            <td className="pt-2">Giltiga röster</td>
+            <td className="pt-2">Giltiga<span className="hidden sm:inline"> röster</span></td>
             <td className="pt-2 px-1 text-right">{nf.format(giltiga)}</td>
             <td className="pt-2 px-1 text-right border-l border-slate-800">100 %</td>
             <td className="pt-2 px-1 text-right">{totalMandat2022 != null ? '100 %' : ''}</td>
