@@ -188,7 +188,24 @@ export function ResultPanel() {
     // RD-valkrets kollapsar kommun-nivån → barnen är distrikt, inte kommuner.
     const childLevel = (groups[0]?.level ?? childLevelOf(valtyp, selectedArea.level)) as ReturnType<typeof childLevelOf>
     const anyLive = items.some((it) => it.live) // finns 2026-röster alls? annars visas 2022
-    return { childLevel, items, cols, anyLive }
+    // Uppsamlingsröster för DETTA organ (RD→riket, RF→region, KF→kommun) → en egen rad längst ner
+    // i nedbrytningen. uppsamlingForArea returnerar hinken BARA på organnivån (null på djupare
+    // nivåer), så raden dyker upp bara där de sena rösterna hör hemma och är invägda i organtotalen
+    // → barnen + uppsamlingen reconcilerar mot totalen (annars en tyst glugg). Andel per parti som
+    // barnraderna, plus total röster. Icke-geografisk, icke-klickbar.
+    const uppBucket = uppsamlingForArea(valtyp, selectedArea.level, selectedArea.code, uppsamlingRef.current[valtyp])
+    let uppsamlingRow: { total: number; andel: Record<string, number> } | null = null
+    if (uppBucket) {
+      let total = 0
+      for (const v of Object.values(uppBucket)) total += v
+      if (total > 0) {
+        const andel: Record<string, number> = {}
+        for (const [pk, v] of Object.entries(uppBucket)) { const f = pmap.get(pk)?.forkortning; if (f) andel[f] = (andel[f] ?? 0) + v }
+        for (const f in andel) andel[f] /= total
+        uppsamlingRow = { total, andel }
+      }
+    }
+    return { childLevel, items, cols, anyLive, uppsamlingRow }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [valtyp, selectedArea, revision])
 
@@ -207,6 +224,7 @@ export function ResultPanel() {
   const isPrompt = selectedArea.level !== 'riket' && selectedArea.code == null
   const crumbs = ancestorsOf(valtyp, selectedArea, areaIndex)
   const drillItems = [...drill.items].sort((a, b) => nameOf(a).localeCompare(nameOf(b), 'sv'))
+  const uppRow = drill.uppsamlingRow // sena röster för organet → egen rad sist i nedbrytningen
   const levels = LEVELS[valtyp]
   const selectValue = isPrompt
     ? ''
@@ -434,6 +452,34 @@ export function ResultPanel() {
                         </td>
                       </tr>
                     )})}
+                    {uppRow && (
+                      // Uppsamlingsröster (sena röster) — egen icke-klickbar rad, visuellt skild från
+                      // de geografiska barnen (kursiv, dämpad, streckad neutral kantlinje). Andel per
+                      // parti + total röster i "Räkn."-kolumnen (rösterna som räknats, inte distrikt).
+                      <tr className="border-t border-slate-800 italic text-slate-400">
+                        <td
+                          className="max-w-[150px] truncate border-l-2 border-dashed border-slate-600 py-0.5 pl-1.5 pr-1 text-left"
+                          title="Uppsamlingsdistrikt: sena förtids-, utlands- och brevröster som inte hann sorteras till rätt distrikt i tid. Räknas vid onsdagsräkningen och vägs in i organtotalen (syns inte på kartan)."
+                        >
+                          Uppsamling
+                        </td>
+                        {drill.cols.map((c) => {
+                          const v = uppRow.andel[c.fork]
+                          const has = v && v > 0.0005
+                          return (
+                            <td key={c.fork} className="px-0.5 py-0.5 text-center align-top leading-tight">
+                              <div className={!has ? 'text-slate-600' : 'text-slate-300'}>{has ? (v * 100).toFixed(1) : '·'}</div>
+                            </td>
+                          )
+                        })}
+                        <td
+                          className="whitespace-nowrap py-0.5 pl-1 text-right text-slate-500"
+                          title={`${uppRow.total.toLocaleString('sv-SE')} sena röster`}
+                        >
+                          {uppRow.total.toLocaleString('sv-SE')}
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
