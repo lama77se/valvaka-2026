@@ -36,6 +36,11 @@ export const defaultAreaFor = (valtyp: Valtyp): Area => ({ level: NATIVE_LEVEL[v
 // "nivå:kod" (riket saknar kod; RF/KF-promptläget = default → utelämnas → ren länk).
 const AREA_LEVELS: Level[] = ['riket', 'region', 'kommun', 'valkrets', 'distrikt']
 
+// Auto-resync-intervall: hur ofta en synlig, laddad flik hämtar sin result-delta och läker
+// eventuell Realtime-släpning. 60 s → max-släpning ≤ 60 s; deltan är liten (bara det Realtime
+// tappat) så läslasten är försumbar vid frisk anslutning.
+const RESYNC_MS = 60000
+
 function parseAreaParam(raw: string | null, valtyp: Valtyp): Area {
   if (!raw) return defaultAreaFor(valtyp)
   if (raw === 'riket') return RIKET
@@ -244,6 +249,10 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
   const loadingValtyperRef = useRef<Set<Valtyp>>(new Set())
   const retryRef = useRef<Record<Valtyp, number>>({ RD: 0, RF: 0, KF: 0 })
   const aliveRef = useRef(true)
+  // Auto-resync-cursor: högsta `updated_at` klienten sett per valtyp. Sätts av snapshoten och
+  // flyttas fram av varje resync → nästa resync hämtar bara deltan (`updated_at >= cursor`).
+  const cursorRef = useRef<Record<Valtyp, string>>({ RD: '', RF: '', KF: '' })
+  const resyncingRef = useRef<Record<Valtyp, boolean>>({ RD: false, RF: false, KF: false })
 
   const ensureValtypLoaded = useCallback((vt: Valtyp) => {
     if (loadedValtyperRef.current.has(vt) || loadingValtyperRef.current.has(vt)) return
@@ -256,17 +265,19 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
         // faktiskt returnerat antal. rapporteringstid kan saknas i ett kort deploy-fönster
         // → fall tillbaka utan kolumnen EN gång (börja om från 0 med de smalare kolumnerna).
         const PAGE = 10000
-        let cols = 'valtyp,valdistriktskod,partikod,roster,status,rapporteringstid'
+        let cols = 'valtyp,valdistriktskod,partikod,roster,status,rapporteringstid,updated_at'
         let from = 0
         while (aliveRef.current) {
           const { data, error } = await supabase.from('result').select(cols).eq('valtyp', vt).range(from, from + PAGE - 1)
           if (error) {
-            if (cols.includes('rapporteringstid')) { cols = 'valtyp,valdistriktskod,partikod,roster,status'; from = 0; continue }
+            if (cols.includes('rapporteringstid')) { cols = 'valtyp,valdistriktskod,partikod,roster,status,updated_at'; from = 0; continue }
             break // annat fel → lämna ok=false → retrybart nedan
           }
           if (!data || data.length === 0) { ok = true; break }
-          for (const r of data as unknown as Array<{ valtyp: string; valdistriktskod: string; partikod: string; roster: number; status?: string | null; rapporteringstid?: string | null }>)
+          for (const r of data as unknown as Array<{ valtyp: string; valdistriktskod: string; partikod: string; roster: number; status?: string | null; rapporteringstid?: string | null; updated_at?: string | null }>) {
             storesRef.current[vt]?.set(r.valdistriktskod, r.partikod, r.roster, r.rapporteringstid, r.status)
+            if (r.updated_at && r.updated_at > cursorRef.current[vt]) cursorRef.current[vt] = r.updated_at
+          }
           from += data.length
         }
         if (!aliveRef.current) return // unmountad mitt i laddningen → varken markera klar eller retry
@@ -285,6 +296,77 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
       }
     })()
   }, [])
+
+  // --- Auto-resync: självläkning mot Realtime-släpning ----------------------------------
+  // Efter första snapshot lever store:n bara på Realtime-event, som TAPPAR stora txns (>~100
+  // rader) under bursts → en långöppen flik driver efter DB och läks idag bara av en full
+  // sidladdning. Denna resync hämtar deltan (`updated_at >= cursor`) och spelar upp den genom
+  // SAMMA per-distrikt-listeners som Realtime → hela appen (karta/tabell/räknare/tavla) kommer
+  // ikapp av sig själv. Returnerar antalet genuint nya rader (för DEV-verifiering).
+  //   `>=` (inte `>`): now() är txn-tid, en batch delar tidsstämpel och två samtidiga edge-anrop
+  //   kan commita på samma mikrosekund — med `>` skulle en rad på exakt cursor-tiden hoppas över
+  //   FÖR ALLTID (tyst hål, precis buggen detta ska döda). store.set är idempotent → att läsa om
+  //   gränsbatchen kostar inget. Listeners/revision eldas bara för rader som är genuint nyare än
+  //   cursorn (updated_at > cursor) så idle-varv (bara gränsbatchen) inte spammar ompaint.
+  const resyncValtyp = useCallback(async (vt: Valtyp): Promise<number> => {
+    if (!loadedValtyperRef.current.has(vt)) return 0 // cursorn är satt först när snapshoten är klar
+    if (resyncingRef.current[vt]) return 0            // ingen överlappning
+    resyncingRef.current[vt] = true
+    let changed = 0
+    try {
+      const cols = 'valdistriktskod,partikod,roster,status,rapporteringstid,updated_at'
+      const cursor = cursorRef.current[vt]
+      const PAGE = 10000
+      let from = 0
+      let maxTs = cursor
+      while (aliveRef.current) {
+        const { data, error } = await supabase
+          .from('result')
+          .select(cols)
+          .eq('valtyp', vt)
+          .gte('updated_at', cursor)
+          .order('updated_at', { ascending: true })
+          .range(from, from + PAGE - 1)
+        if (error || !data || data.length === 0) break
+        for (const r of data as unknown as Array<{ valdistriktskod: string; partikod: string; roster: number; status?: string | null; rapporteringstid?: string | null; updated_at?: string | null }>) {
+          storesRef.current[vt]?.set(r.valdistriktskod, r.partikod, r.roster, r.rapporteringstid, r.status) // idempotent (även gränsbatchen)
+          if (r.updated_at && r.updated_at > cursor) {
+            for (const fn of listenersRef.current) fn(r.valdistriktskod, vt) // bara genuint nya → kartan målar om
+            changed++
+          }
+          if (r.updated_at && r.updated_at > maxTs) maxTs = r.updated_at
+        }
+        from += data.length
+        if (data.length < PAGE) break
+      }
+      cursorRef.current[vt] = maxTs
+      if (changed > 0) setRevision((r) => r + 1) // en bump per delta (inte per rad) — tabellen räknar om
+    } finally {
+      resyncingRef.current[vt] = false
+    }
+    return changed
+  }, [])
+  // Stabil referens till senaste resyncValtyp för Realtime-effektens reconnect-hook (undviker
+  // att lägga resyncValtyp i den effektens deps → kanalen skulle rivas/återskapas i onödan).
+  const resyncRef = useRef(resyncValtyp)
+  resyncRef.current = resyncValtyp
+
+  // Periodisk självläkning: var RESYNC_MS hämtar varje LADDAD valtyp sin delta. Bara när fliken
+  // är synlig (en bakgrundsflik behöver inte vara färsk → sparar läslast); en resync körs direkt
+  // när fliken blir synlig igen.
+  useEffect(() => {
+    const tick = () => {
+      if (document.visibilityState !== 'visible') return
+      for (const vt of VALTYPER) if (loadedValtyperRef.current.has(vt)) void resyncValtyp(vt)
+    }
+    const id = setInterval(tick, RESYNC_MS)
+    const onVisible = () => { if (document.visibilityState === 'visible') tick() }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      clearInterval(id)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [resyncValtyp])
 
   // Realtime + snapshot + nämnare (mount-en gång). Prenumerera FÖRE snapshot så
   // inget event faller i gapet.
@@ -309,6 +391,9 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
         setRealtimeConnected(ok)
         if (ok) {
           ;(window as unknown as { __realtimeReady?: boolean }).__realtimeReady = true
+          // Reconnect efter en tapp: hämta gapet direkt (istället för att vänta på nästa intervall).
+          // Första SUBSCRIBED sker FÖRE snapshoten → loaded är tom → guarden i resyncValtyp no-op:ar.
+          for (const vt of VALTYPER) if (loadedValtyperRef.current.has(vt)) void resyncRef.current(vt)
         }
       })
 
@@ -366,8 +451,14 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
         RF: storesRef.current.RF.reportedCount,
         KF: storesRef.current.KF.reportedCount,
       }),
+      // Auto-resync-introspektion (headless-verifiering): läs cursorn, kör en resync manuellt
+      // (returnerar antal genuint nya rader), eller spola cursorn bakåt för att FRAMTVINGA en
+      // delta mot den live-churnande DB:n (bevisar hämta→applicera→cursor-framflyttning).
+      cursor: () => ({ ...cursorRef.current }),
+      resync: (vt: Valtyp) => resyncValtyp(vt),
+      setCursor: (vt: Valtyp, iso: string) => { cursorRef.current[vt] = iso },
     }
-  }, [])
+  }, [resyncValtyp])
 
   // Referensdata (mount-en gång): partifärger, distriktsmetadata, ±2022, jämförbarhet.
   useEffect(() => {
