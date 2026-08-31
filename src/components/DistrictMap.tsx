@@ -637,13 +637,19 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
                 <span className="ml-2 text-xs text-sky-300">{reportedPct}%</span>
               </span>
             </div>
-            <div className="mt-0.5 flex items-center justify-center gap-1.5 text-[11px] text-slate-400">
+            <div className="mt-0.5 flex items-center justify-center gap-1.5 text-xs text-slate-400">
               <span
                 className={`h-1.5 w-1.5 rounded-full ${realtimeConnected ? 'animate-pulse bg-emerald-400' : 'bg-slate-500'}`}
                 title={realtimeConnected ? 'Live — ansluten till realtidsflödet' : 'Ej ansluten till realtidsflödet'}
               />
               <span>{realtimeConnected ? 'Live' : 'Offline'}</span>
-              {lastUpdated && <span className="text-slate-500">· uppdaterad {lastUpdated}</span>}
+              {/* Klockslaget lyftes fram: större (text-sm) + ljusare (slate-300) + tabular så
+                  siffrorna inte hoppar. "· uppdaterad" hålls kvar dämpat runt om. */}
+              {lastUpdated && (
+                <span className="text-slate-500">
+                  · uppdaterad <span className="text-sm font-medium tabular-nums text-slate-300">{lastUpdated}</span>
+                </span>
+              )}
             </div>
           </div>
         )}
