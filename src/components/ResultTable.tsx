@@ -118,7 +118,7 @@ export function ResultTable({ title, subtitle, status, display, giltiga, sparr, 
         </tbody>
         <tfoot className="text-xs text-slate-400">
           <tr>
-            <td className="pt-2">Giltiga<span className="hidden sm:inline"> röster</span></td>
+            <td className="pt-2">Summa</td>
             <td className="pt-2 px-1 text-right">{nf.format(giltiga)}</td>
             <td className="pt-2 px-1 text-right border-l border-slate-800">100 %</td>
             <td className="pt-2 px-1 text-right">{totalMandat2022 != null ? '100 %' : ''}</td>
