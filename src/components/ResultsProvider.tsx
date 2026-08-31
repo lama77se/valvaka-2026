@@ -260,29 +260,40 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     ;(async () => {
       let ok = false
       try {
-        // Samma paginering/husregler som den forna gemensamma snapshoten, men filtrerad på
-        // EN valtyp (eq). Stora sidor (kapas av PostgREST:s max-rows) → stega `from` med
-        // faktiskt returnerat antal. rapporteringstid kan saknas i ett kort deploy-fönster
-        // → fall tillbaka utan kolumnen EN gång (börja om från 0 med de smalare kolumnerna).
-        // STABIL ORDNING (valdistriktskod, partikod = PK inom valtyp): utan explicit `order` är
-        // PostgREST:s radordning implementation-definierad och SKIFTAR när tabellen skrivs mitt i
-        // den flersidiga läsningen (edge re-upsertar hela tiden under valnatt/genrep) → offseten
-        // glider och HOPPAR ÖVER distrikt → ett hål som resyncen (tittar bara framåt) inte back-
-        // fyller. Med stabil nyckelordning + ren upsert-väg (inga delete:ar) kan offseten på sin
-        // höjd DUBBLERA en gränsrad (idempotent via store.set), aldrig hoppa över.
+        // Filtrerad på EN valtyp (eq). rapporteringstid kan saknas i ett kort deploy-fönster
+        // → fall tillbaka utan kolumnen EN gång (börja om med de smalare kolumnerna).
+        //
+        // KEYSET-PAGINERING (inte OFFSET): stega på sista sedda nyckeln (valdistriktskod, partikod)
+        // via ett `where (vd, pk) > (sista)`-villkor i stället för `.range(from, …)`. OFFSET N
+        // tvingar Postgres att skanna + slänga N rader per sida → hela snapshoten blir O(n²) i
+        // radantal (~162k rader ⇒ ~16 sidor, sista sidan skannar förbi ~150k). Dyrast är inte en
+        // ensam läsning utan HERDEN: vid valnatt monterar många flikar samtidigt och snapshotar på
+        // en gång — 50-flikars-lasttestet mätte 15 s median/läsning mot ~1,7 s solo. Keyset gör
+        // varje sida till en index-range-scan (hoppa direkt till nyckeln, läs framåt) → O(n) totalt.
+        //
+        // STABIL NYCKELORDNING dessutom korrekt under samtidiga skrivningar: (valdistriktskod,
+        // partikod) är PK inom valtyp, upsert-vägen byter aldrig nyckel och raderar aldrig → varje
+        // sida börjar strikt EFTER förra sidans sista nyckel, så en rad kan varken hoppas över eller
+        // dubbleras även när edge re-upsertar mitt i läsningen. Rader som skjuts in BAKOM cursorn
+        // mid-scan städas ändå av resyncen (updated_at >= cursor). '' < alla 8-siffriga koder
+        // lexikografiskt → tom startnyckel tar första sidan. Stega tills en TOM sida (inte tills
+        // sida < PAGE): PostgREST:s max-rows kan kapa sidan under PAGE utan att den är sista.
         const PAGE = 10000
         let cols = 'valtyp,valdistriktskod,partikod,roster,status,rapporteringstid,updated_at'
-        let from = 0
+        let lastVd = ''
+        let lastPk = ''
         while (aliveRef.current) {
-          const { data, error } = await supabase
+          let q = supabase
             .from('result')
             .select(cols)
             .eq('valtyp', vt)
             .order('valdistriktskod', { ascending: true })
             .order('partikod', { ascending: true })
-            .range(from, from + PAGE - 1)
+            .limit(PAGE)
+          if (lastVd !== '') q = q.or(`valdistriktskod.gt.${lastVd},and(valdistriktskod.eq.${lastVd},partikod.gt.${lastPk})`)
+          const { data, error } = await q
           if (error) {
-            if (cols.includes('rapporteringstid')) { cols = 'valtyp,valdistriktskod,partikod,roster,status,updated_at'; from = 0; continue }
+            if (cols.includes('rapporteringstid')) { cols = 'valtyp,valdistriktskod,partikod,roster,status,updated_at'; lastVd = ''; lastPk = ''; continue }
             break // annat fel → lämna ok=false → retrybart nedan
           }
           if (!data || data.length === 0) { ok = true; break }
@@ -290,7 +301,9 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
             storesRef.current[vt]?.set(r.valdistriktskod, r.partikod, r.roster, r.rapporteringstid, r.status)
             if (r.updated_at && r.updated_at > cursorRef.current[vt]) cursorRef.current[vt] = r.updated_at
           }
-          from += data.length
+          const tail = data[data.length - 1] as unknown as { valdistriktskod: string; partikod: string }
+          lastVd = tail.valdistriktskod
+          lastPk = tail.partikod
         }
         if (!aliveRef.current) return // unmountad mitt i laddningen → varken markera klar eller retry
       } finally {
