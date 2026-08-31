@@ -475,8 +475,11 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
     runFit(on ? 700 : 600)
     // Fönsterstorleksändring re-fit:ar mot nuvarande urval (utan animation — se resize-effekt).
     refitRef.current = () => runFit(0)
+    // snapshotVersion: distrikts-metadatan (allCodesRef/metaRef) laddas async och bumpar den när
+    // klar. Utan detta missar en initial URL-vy (t.ex. ?omrade=kommun:2184) sin inzoomning om
+    // effekten kör innan metadatan finns — selectedArea ändras aldrig sen, så den kör aldrig om.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedArea, valtyp, mapReady, boundsReady])
+  }, [selectedArea, valtyp, mapReady, boundsReady, snapshotVersion])
 
   // Fönsterstorleksändring: MapLibre resizar canvasen (trackResize) men BEHÅLLER zoom →
   // Sverige/området "fastnar" i den gamla storleken tills man laddar om eller zoomar. Re-fit:a
