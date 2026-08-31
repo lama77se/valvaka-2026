@@ -365,13 +365,65 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
   const resyncRef = useRef(resyncValtyp)
   resyncRef.current = resyncValtyp
 
-  // Periodisk självläkning: var RESYNC_MS hämtar varje LADDAD valtyp sin delta. Bara när fliken
-  // är synlig (en bakgrundsflik behöver inte vara färsk → sparar läslast); en resync körs direkt
-  // när fliken blir synlig igen.
+  // Uppsamling live: laddar om HELA uppsamlings-aggregatet (litet — max ~314 distrikt × parti ×
+  // valtyp, oftast 0 rader före onsdag). Anropas vid mount, Realtime-event, periodisk resync och
+  // reconnect. Full omladdning (inte cursor-delta som result): tabellen bucketas till organ-hinkar
+  // så per-rad-delta går inte att applicera inkrementellt, och den är liten nog att läsa om helt.
+  // Edge upsertar uppsamling i 500-radersklungor → Realtime (tappar >~100-rads-txns) missar den
+  // ofta, så den PERIODISKA omladdningen är primärmekanismen; Realtime en bonus för små ändringar.
+  // Busy/again-vakt koalescerar burst; på fel BEHÅLLS förra aggregatet (ingen tyst nollning live).
+  const uppsamlingBusyRef = useRef(false)
+  const uppsamlingAgainRef = useRef(false)
+  const loadUppsamling = useCallback(async () => {
+    if (uppsamlingBusyRef.current) { uppsamlingAgainRef.current = true; return }
+    uppsamlingBusyRef.current = true
+    try {
+      do {
+        uppsamlingAgainRef.current = false
+        const next: Record<Valtyp, Map<string, PartyVotes>> = { RD: new Map(), RF: new Map(), KF: new Map() }
+        const PAGE = 10000
+        let from = 0
+        let failed = false
+        while (aliveRef.current) {
+          const { data, error } = await supabase
+            .from('uppsamling_result')
+            .select('valtyp,kommunkod,lankod,partikod,roster')
+            .order('valtyp', { ascending: true }) // PK-ordning (valtyp,kod,partikod) → stabil, ingen överhoppad rad
+            .order('kod', { ascending: true })
+            .order('partikod', { ascending: true })
+            .range(from, from + PAGE - 1)
+          if (error) { failed = true; break }
+          if (!data || data.length === 0) break
+          for (const r of data as unknown as Array<{ valtyp: string; kommunkod: string; lankod: string; partikod: string; roster: number }>) {
+            const m = next[r.valtyp as Valtyp]
+            if (!m) continue
+            // Organ-nyckel: RD → riket (EN hink), RF → länet, KF → kommunen.
+            const key = r.valtyp === 'RD' ? '' : r.valtyp === 'RF' ? r.lankod : r.kommunkod
+            const bucket = m.get(key) ?? m.set(key, {}).get(key)!
+            bucket[r.partikod] = (bucket[r.partikod] ?? 0) + r.roster
+          }
+          from += data.length
+          if (data.length < PAGE) break
+        }
+        if (!aliveRef.current) return
+        // Fel (t.ex. tabell saknas i ett kort deploy-fönster) → behåll förra aggregatet, ingen krasch/nollning.
+        if (!failed) { uppsamlingRef.current = next; setRevision((r) => r + 1) }
+      } while (uppsamlingAgainRef.current && aliveRef.current)
+    } finally {
+      uppsamlingBusyRef.current = false
+    }
+  }, [])
+  const loadUppsamlingRef = useRef(loadUppsamling)
+  loadUppsamlingRef.current = loadUppsamling
+
+  // Periodisk självläkning: var RESYNC_MS hämtar varje LADDAD valtyp sin delta + laddar om
+  // uppsamling. Bara när fliken är synlig (en bakgrundsflik behöver inte vara färsk → sparar
+  // läslast); en resync körs direkt när fliken blir synlig igen.
   useEffect(() => {
     const tick = () => {
       if (document.visibilityState !== 'visible') return
       for (const vt of VALTYPER) if (loadedValtyperRef.current.has(vt)) void resyncValtyp(vt)
+      void loadUppsamling() // uppsamling: full omladdning (primärvägen — Realtime tappar dess 500-radersklungor)
     }
     const id = setInterval(tick, RESYNC_MS)
     const onVisible = () => { if (document.visibilityState === 'visible') tick() }
@@ -380,7 +432,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
       clearInterval(id)
       document.removeEventListener('visibilitychange', onVisible)
     }
-  }, [resyncValtyp])
+  }, [resyncValtyp, loadUppsamling])
 
   // Realtime + snapshot + nämnare (mount-en gång). Prenumerera FÖRE snapshot så
   // inget event faller i gapet.
@@ -400,6 +452,11 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
         for (const fn of listenersRef.current) fn(row.valdistriktskod, row.valtyp as Valtyp)
         bumpRevisionThrottled()
       })
+      // Uppsamling: valfri rad-payload räcker inte (aggregatet bucketas) → ladda om hela vid varje
+      // event. Bonus ovanpå den periodiska omladdningen (Realtime tappar ofta dess 500-radersklungor).
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'uppsamling_result' }, () => {
+        void loadUppsamlingRef.current()
+      })
       .subscribe((status) => {
         const ok = status === 'SUBSCRIBED'
         setRealtimeConnected(ok)
@@ -408,6 +465,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
           // Reconnect efter en tapp: hämta gapet direkt (istället för att vänta på nästa intervall).
           // Första SUBSCRIBED sker FÖRE snapshoten → loaded är tom → guarden i resyncValtyp no-op:ar.
           for (const vt of VALTYPER) if (loadedValtyperRef.current.has(vt)) void resyncRef.current(vt)
+          void loadUppsamlingRef.current() // uppsamling: stäng ev. gap efter tappet
         }
       })
 
@@ -471,8 +529,17 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
       cursor: () => ({ ...cursorRef.current }),
       resync: (vt: Valtyp) => resyncValtyp(vt),
       setCursor: (vt: Valtyp, iso: string) => { cursorRef.current[vt] = iso },
+      // Uppsamling-introspektion: antal organ-hinkar + total röster per valtyp, samt manuell
+      // omladdning (bevisar att live-vägen plockar upp nyinsatta uppsamlingsrader).
+      uppsamling: () => Object.fromEntries((['RD', 'RF', 'KF'] as Valtyp[]).map((vt) => {
+        const m = uppsamlingRef.current[vt]
+        let roster = 0
+        for (const b of m.values()) for (const v of Object.values(b)) roster += v
+        return [vt, { buckets: m.size, roster }]
+      })),
+      reloadUpp: () => loadUppsamling(),
     }
-  }, [resyncValtyp])
+  }, [resyncValtyp, loadUppsamling])
 
   // Referensdata (mount-en gång): partifärger, distriktsmetadata, ±2022, jämförbarhet.
   useEffect(() => {
@@ -578,44 +645,13 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  // Uppsamlingsröster (sena röster, onsdagsräkningen) → per-valtyp organ-hinkar. Vägs in
-  // i organ-aggregaten (KF-kommun/RF-region/RD-riket) i panelen så den slutgiltiga
-  // presentationen matchar val.se:s totaler. INGEN Realtime (dygnstakt, målar ej kartan) →
-  // läses en gång vid mount; saknas tabellen i ett kort deploy-fönster faller vi tyst
-  // tillbaka (organ-totalerna blir då rent geografiska, ingen krasch).
+  // Uppsamlingsröster (sena röster, onsdagsräkningen) → per-valtyp organ-hinkar, invägda i
+  // organ-aggregaten (KF-kommun/RF-region/RD-riket) i panelen så presentationen matchar val.se:s
+  // totaler. Laddas vid mount OCH live (Realtime + periodisk resync + reconnect, se `loadUppsamling`)
+  // så uppsamling som mot förmodan kommer redan på valnatten syns utan sidladdning.
   useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      const next: Record<Valtyp, Map<string, PartyVotes>> = { RD: new Map(), RF: new Map(), KF: new Map() }
-      const PAGE = 10000
-      let from = 0
-      while (!cancelled) {
-        const { data, error } = await supabase
-          .from('uppsamling_result')
-          .select('valtyp,kommunkod,lankod,partikod,roster')
-          .order('valtyp', { ascending: true }) // PK (valtyp,kod,partikod) → stabil ordning, ingen överhoppad rad
-          .order('kod', { ascending: true })
-          .order('partikod', { ascending: true })
-          .range(from, from + PAGE - 1)
-        if (error || !data || data.length === 0) break
-        for (const r of data as unknown as Array<{ valtyp: string; kommunkod: string; lankod: string; partikod: string; roster: number }>) {
-          const m = next[r.valtyp as Valtyp]
-          if (!m) continue
-          // Organ-nyckel: RD → riket (EN hink), RF → länet, KF → kommunen.
-          const key = r.valtyp === 'RD' ? '' : r.valtyp === 'RF' ? r.lankod : r.kommunkod
-          const bucket = m.get(key) ?? m.set(key, {}).get(key)!
-          bucket[r.partikod] = (bucket[r.partikod] ?? 0) + r.roster
-        }
-        from += data.length
-      }
-      if (cancelled) return
-      uppsamlingRef.current = next
-      setRevision((r) => r + 1)
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [])
+    void loadUppsamling()
+  }, [loadUppsamling])
 
   // Distriktsval → hämta det distriktets 2022-resultat (en gång, cache:at). Bumpar
   // revision när det landat så tabellen räknar om med 2022-kolumnerna ifyllda.
