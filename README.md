@@ -3,10 +3,11 @@
 Realtidsvisualisering av valresultat per valdistrikt för det svenska valet 2026,
 med [data.val.se](https://data.val.se) som enda källa.
 
-Klienterna rör aldrig val.se: en ingestion-worker pollar de statiska filerna,
-normaliserar till Postgres, och Supabase Realtime pushar förändringar ut till
-kartklienten. På så vis byggs en egen realtidsfeed ovanpå en källa som bara
-publicerar platta filer på schema.
+Klienterna rör aldrig val.se: en ingestion-worker pollar de statiska filerna och
+normaliserar till Postgres. Kartklienten håller sig själv färsk med en lätt
+inkrementell poll (en `updated_at`-delta, jittrad 45–90 s) och presenterar det som en
+nära-live-feed — distrikt rullar in på avgångstavlorna, kartan målas om per distrikt
+och en puls-indikator lyser — ovanpå en källa som bara publicerar platta filer på schema.
 
 **Live:** [valvaka.tech](https://valvaka.tech) — färgas just nu av Valmyndighetens
 **generalrepetition** (testdata) tills skarpa resultat flödar på valnatten 13 sep 2026.
@@ -23,9 +24,10 @@ valnatten byts källan till de skarpa resultatfilerna via en enda konstant, utan
 ## Vad den gör
 
 - **Realtidskarta** över alla 6 312 valdistrikt (reprojicerade SWEREF99 TM → WGS84,
-  MapLibre GL), färgade efter vinnarparti. `result`-ändringar pushas via Supabase
-  Realtime och målas om rAF-koalescerat så den tål valnattsburst; rapporteringsgrad-HUD
-  med Live/Offline-status och "uppdaterad"-tidsstämpel.
+  MapLibre GL), färgade efter vinnarparti. `result`-deltan hämtas av klientens
+  inkrementella poll och målas om rAF-koalescerat per distrikt (trillar in, tål
+  valnattsburst); rapporteringsgrad-HUD med pulsande **Live**-indikator (poll-hälsa) och
+  "uppdaterad"-tidsstämpel.
 - **Tre val på samma karta** — valtyp-väljare (Riksdag / Region / Kommun); en
   `ResultStore` per valtyp färgar om samma geometri utan omladdning.
 - **Mandatberäkning** med jämkade uddatalsmetoden, verifierad mot 2022-facit:
@@ -36,9 +38,13 @@ valnatten byts källan till de skarpa resultatfilerna via en enda konstant, utan
   staplar (röstandel + mandat) med 50 %-linjer, spärr-filtrering och 2022-baslinje.
   Breadcrumb + "Bryt ner"-matris drillar valtyp-medvetet genom valkretsar, kommuner och
   distrikt; klick i kartan öppnar ett enskilt distrikt.
+- **Valdeltagande i procent** för valt område (alla nivåer där röstberättigade finns), i
+  resultatpanelens rubrik. Tas direkt ur val.se:s resultatfiler (totala avgivna röster /
+  röstberättigade i räknade distrikt — verifierat mot summeringsfacit), ingen extra datakälla.
 - **Avgångstavlor** — tre live-tickers (en per val) med de senast inrapporterade
   distrikten: val.se:s riktiga rapporteringstid, full hierarkiväg och de fem största
-  partierna.
+  partierna. Nya distrikt **rullar in staggrat** (ett par åt gången) så tavlan känns
+  levande trots att data hämtas i poll-batchar.
 - **Statustagg per valtyp** — *Preliminärt → Sluträknas · X % → Slutgiltigt*, härledd ur
   räkningsläget. De **preliminära** filerna strömmas in av edge-funktionen; **alla slutliga**
   filer (riks-RD + samtliga region- och kommunfiler) tas av ett lokalt Node-skript under
@@ -81,7 +87,7 @@ Fullständigt underlag i **[docs/arkitektur.md](./docs/arkitektur.md)** och
 |-------|-----|
 | Frontend | React 18 + TypeScript + Vite + Tailwind + shadcn/ui |
 | Karta | MapLibre GL JS (pinnad v5.24) — statisk GeoJSON via Supabase Storage |
-| Realtid | Supabase Realtime |
+| Uppdatering | Klient-polling — inkrementell resync-delta (`updated_at`), jittrad 45–90 s |
 | Backend | Supabase edge functions (Deno), `pg_cron` + `pg_net` |
 | Databas | Postgres + PostGIS |
 
@@ -92,17 +98,19 @@ data.val.se (statiska CSV/JSON)
       │  cron: conditional GET (If-Modified-Since)
       ▼
 Ingest edge function (Deno) ──upsert──▶ Postgres + PostGIS
-                                             │ rollups, mandat, delta
-                                             ▼
-                                       Supabase Realtime ──websocket──▶ React-klient (MapLibre)
+                                             ▲   (rollups, mandat, updated_at-delta)
+                                             │
+       React-klient (MapLibre) ──poll: updated_at-delta var 45–90 s (jittrat, synlig flik)
 
 Statisk geometri (GeoJSON) ─────────────── laddas en gång ──────────▶ React-klient
 ```
 
 Geometrin går vid sidan om databasflödet: distrikten är statiska och laddas en gång som
 statisk GeoJSON (hostad i Supabase Storage, utpekad via `VITE_GEOMETRY_URL`), medan bara
-resultatvärdena flödar i realtid. (Komprimering till vektortiles är en senare optimering;
-i dag räcker den förenklade GeoJSON:en.)
+resultatvärdenas delta hämtas av klientens poll (`updated_at`-delta, jittrad 45–90 s; bara
+synlig flik pollar, bakgrundsflikar snappar färskt vid tab-fokus). Ingen Realtime/WAL-
+decoding-last — polling-lasten skalar med klienter/intervall, inte writes × prenumeranter.
+(Komprimering till vektortiles är en senare optimering; i dag räcker den förenklade GeoJSON:en.)
 
 Fullständig motivering, datafallgropar (`;`-avgränsare, BOM, inledande nollor,
 decimalkomma), schema och 2022-replay-harness finns i
@@ -122,7 +130,7 @@ npm run verify:mandate     # mandatmodul mot 2022 RD-facit (riksdag)
 npm run verify:mandate-rf  # mandatmodul mot 2022 RF-facit (region, 20 regioner)
 npm run verify:mandate-kf  # mandatmodul mot 2022 KF-facit (kommun, 290 kommuner)
 npm run simulate:valnatt   # simulera inrapportering (RD) för realtidsdemo
-npm run verify:realtime    # headless-acceptans: upsert → karta + tabell via Realtime
+npm run verify:realtime    # headless-acceptans: upsert → syns i karta + tabell (nu via klientens poll/resync; Realtime borttaget)
 npm run verify:aggregate   # resultattabellens aggregat + mandat + ±2022 mot 2022-facit
 npm run verify:uppsamling  # uppsamlingsröster → riktiga computeMandate mot genrepets mandatfacit (nätverk)
 npm run ingest:slutlig     # ingesta ALLA slutliga filer (riks-RD + alla region- och kommunfiler) — körs ons–fre under sluträkningen (service-role i .env.local)
