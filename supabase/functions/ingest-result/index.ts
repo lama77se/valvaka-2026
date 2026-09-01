@@ -104,11 +104,11 @@ async function streamFile(url: string, districtSet: Set<string>, partySet: Set<s
   const pendingUpp: Record<string, unknown>[] = []
   const pendingTurnout: Record<string, unknown>[] = []
 
-  // PRELIMINÄRT → 100 rader/upsert: Realtime tappar HELT stora txns (>~100 rader) → live-kartan
-  // skulle inte målas om på valnatten. SLUTLIGT → 1000 rader/upsert: Realtime behövs inte (sen-
-  // räkningen ons–fre, klienten läser via snapshot), och 10× färre upserts håller edge-resurserna
-  // (den slutliga RD-filen slog i WORKER_RESOURCE_LIMIT vid ~1070 upserts). Sätts när rakning läses.
-  let resultBatch = 100
+  // 1000 rader/upsert UNIFORMT. Realtime är borttaget (klienten pollar via resync var 45–90 s), så
+  // den gamla ≤100-rader-för-Realtime-begränsningen finns inte längre. Den var dessutom ROTORSAKEN
+  // till 2s-CPU-taket: RD:s ~50k result-rader vid 100/batch = ~505 upsert-anrop = >2 s CPU → filen
+  // blev aldrig markerad done → evig re-churn som spikade instansens CPU. 1000/batch → ~51 anrop.
+  const resultBatch = 1000
   const flush = async (force: boolean) => {
     while (pendingResult.length >= resultBatch || (force && pendingResult.length > 0)) {
       const batch = pendingResult.splice(0, resultBatch)
@@ -150,7 +150,7 @@ async function streamFile(url: string, districtSet: Set<string>, partySet: Set<s
     if (key === 'valtyp') { valtyp = value as string; meta.valtyp = valtyp; return }
     if (key === 'valtillfalle') { meta.valtillfalle = value as string; return }
     if (key === 'test') { meta.test = value as boolean; return }
-    if (key === 'rakningstillfalle') { rakning = value as string; meta.rakningstillfalle = rakning; resultBatch = rakning.startsWith('prelimin') ? 100 : 1000; return }
+    if (key === 'rakningstillfalle') { rakning = value as string; meta.rakningstillfalle = rakning; return }
     if (key === 'senasteUppdateringstid') { meta.senasteUppdateringstid = value as string; return }
     // deno-lint-ignore no-explicit-any
     const vd = value as any
