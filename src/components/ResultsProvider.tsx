@@ -36,10 +36,13 @@ export const defaultAreaFor = (valtyp: Valtyp): Area => ({ level: NATIVE_LEVEL[v
 // "nivå:kod" (riket saknar kod; RF/KF-promptläget = default → utelämnas → ren länk).
 const AREA_LEVELS: Level[] = ['riket', 'region', 'kommun', 'valkrets', 'distrikt']
 
-// Auto-resync-intervall: hur ofta en synlig, laddad flik hämtar sin result-delta och läker
-// eventuell Realtime-släpning. 60 s → max-släpning ≤ 60 s; deltan är liten (bara det Realtime
-// tappat) så läslasten är försumbar vid frisk anslutning.
-const RESYNC_MS = 60000
+// Poll-intervall: Realtime är BORTTAGET → resyncen (updated_at-delta) är PRIMÄR uppdateringsväg.
+// Jittrat 45–90 s så flikar inte pollar i takt (undviker synkron-herd på servern); en SYNLIG flik
+// pollar, en bakgrundsflik ligger tyst (och refreshar direkt vid tab-fokus). Deltan är liten (bara
+// det som ändrats sedan cursorn) → index-range-scan på (valtyp, updated_at) → lätt last som skalar
+// med klienter/intervall, inte writes×subscribers. UX förblir "live": staggrad reveal + puls-indikator.
+const RESYNC_MIN_MS = 45000
+const RESYNC_MAX_MS = 90000
 
 function parseAreaParam(raw: string | null, valtyp: Valtyp): Area {
   if (!raw) return defaultAreaFor(valtyp)
@@ -234,15 +237,6 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  // Strypt revision-bump (~750 ms) — tabellen behöver inte räkna om per rad.
-  const revTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const bumpRevisionThrottled = useCallback(() => {
-    if (revTimerRef.current != null) return
-    revTimerRef.current = setTimeout(() => {
-      revTimerRef.current = null
-      setRevision((r) => r + 1)
-    }, 750)
-  }, [])
 
   // --- Fas 3: efterfrågestyrd snapshot-laddning per valtyp -------------------------------
   // En vy laddar bara den valtyp den faktiskt visar. Mobil Karta/Resultat visar EN valtyp
@@ -447,12 +441,6 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     return changed
   }, [])
 
-  // Stabil referens till senaste resyncValtyp för Realtime-effektens reconnect-hook (undviker
-  // att lägga resyncValtyp i den effektens deps → kanalen skulle rivas/återskapas i onödan).
-  const resyncRef = useRef(resyncValtyp)
-  resyncRef.current = resyncValtyp
-  const resyncTurnoutRef = useRef(resyncTurnout)
-  resyncTurnoutRef.current = resyncTurnout
 
   // Uppsamling live: laddar om HELA uppsamlings-aggregatet (litet — max ~314 distrikt × parti ×
   // valtyp, oftast 0 rader före onsdag). Anropas vid mount, Realtime-event, periodisk resync och
@@ -502,67 +490,46 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
       uppsamlingBusyRef.current = false
     }
   }, [])
-  const loadUppsamlingRef = useRef(loadUppsamling)
-  loadUppsamlingRef.current = loadUppsamling
 
-  // Periodisk självläkning: var RESYNC_MS hämtar varje LADDAD valtyp sin delta + laddar om
-  // uppsamling. Bara när fliken är synlig (en bakgrundsflik behöver inte vara färsk → sparar
-  // läslast); en resync körs direkt när fliken blir synlig igen.
+  // Poll-loop — PRIMÄR uppdateringsväg sedan Realtime togs bort. Var 45–90 s (jittrat) hämtar varje
+  // LADDAD valtyp sin delta + laddar om uppsamling, men BARA när fliken är synlig (bakgrundsflik
+  // ligger tyst → sparar last). Refresh körs DIREKT när fliken blir synlig igen (tab-fokus). "Live"-
+  // pulsen tänds när vi pollar synligt, släcks i bakgrund.
   useEffect(() => {
-    const tick = () => {
-      if (document.visibilityState !== 'visible') return
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const pump = () => {
       for (const vt of VALTYPER) if (loadedValtyperRef.current.has(vt)) { void resyncValtyp(vt); void resyncTurnout(vt) }
-      void loadUppsamling() // uppsamling: full omladdning (primärvägen — Realtime tappar dess 500-radersklungor)
+      void loadUppsamling()
+      setRealtimeConnected(true) // aktiv, synlig pollning → "Live" pulserar
     }
-    const id = setInterval(tick, RESYNC_MS)
-    const onVisible = () => { if (document.visibilityState === 'visible') tick() }
+    const schedule = () => {
+      timer = setTimeout(() => {
+        if (document.visibilityState === 'visible') pump()
+        schedule() // jittra nästa varv
+      }, RESYNC_MIN_MS + Math.random() * (RESYNC_MAX_MS - RESYNC_MIN_MS))
+    }
+    if (document.visibilityState === 'visible') setRealtimeConnected(true) // "Live" direkt från mount
+    schedule()
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') pump()      // snappa färskt vid tab-fokus
+      else setRealtimeConnected(false)                         // bakgrund → dämpad indikator
+    }
     document.addEventListener('visibilitychange', onVisible)
     return () => {
-      clearInterval(id)
+      if (timer) clearTimeout(timer)
       document.removeEventListener('visibilitychange', onVisible)
     }
   }, [resyncValtyp, resyncTurnout, loadUppsamling])
 
-  // Realtime + snapshot + nämnare (mount-en gång). Prenumerera FÖRE snapshot så
-  // inget event faller i gapet.
+  // Nämnare (mount-en gång). Realtime är BORTTAGET → uppdateringar kommer via poll-loopen ovan;
+  // snapshoten laddas efterfrågestyrt per valtyp (ensureValtypLoaded), triggad av aktiv valtyp +
+  // monterade tavlor.
   useEffect(() => {
-    const channel = supabase
-      .channel('result-live')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'result' }, (payload) => {
-        const row = payload.new as { valtyp?: string; valdistriktskod?: string; partikod?: string; roster?: number; rapporteringstid?: string | null; status?: string | null }
-        if (!row?.valtyp || !row.valdistriktskod || !row.partikod) return
-        const store = storesRef.current[row.valtyp as Valtyp]
-        if (!store) return
-        if (import.meta.env.DEV) {
-          const w = window as unknown as { __eventCount?: number }
-          w.__eventCount = (w.__eventCount ?? 0) + 1
-        }
-        store.set(row.valdistriktskod, row.partikod, row.roster ?? 0, row.rapporteringstid, row.status)
-        for (const fn of listenersRef.current) fn(row.valdistriktskod, row.valtyp as Valtyp)
-        bumpRevisionThrottled()
-      })
-      // Uppsamling: valfri rad-payload räcker inte (aggregatet bucketas) → ladda om hela vid varje
-      // event. Bonus ovanpå den periodiska omladdningen (Realtime tappar ofta dess 500-radersklungor).
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'uppsamling_result' }, () => {
-        void loadUppsamlingRef.current()
-      })
-      .subscribe((status) => {
-        const ok = status === 'SUBSCRIBED'
-        setRealtimeConnected(ok)
-        if (ok) {
-          ;(window as unknown as { __realtimeReady?: boolean }).__realtimeReady = true
-          // Reconnect efter en tapp: hämta gapet direkt (istället för att vänta på nästa intervall).
-          // Första SUBSCRIBED sker FÖRE snapshoten → loaded är tom → guarden i resyncValtyp no-op:ar.
-          for (const vt of VALTYPER) if (loadedValtyperRef.current.has(vt)) { void resyncRef.current(vt); void resyncTurnoutRef.current(vt) }
-          void loadUppsamlingRef.current() // uppsamling: stäng ev. gap efter tappet
-        }
-      })
-
     let cancelled = false
     ;(async () => {
-      // Per-valtyp nämnare: distrikt som deltar (vk_<valtyp> satt). OBS: kolumnen är
-      // TOMSTRÄNG (inte null) där valet inte hålls — t.ex. Gotland saknar regionval →
-      // vk_rf = '' — så både null OCH '' måste exkluderas, annars räknas Gotland in i RF.
+      // Per-valtyp nämnare: distrikt som deltar (vk_<valtyp> satt). Kolumnen är TOMSTRÄNG (inte
+      // null) där valet inte hålls (t.ex. Gotland saknar regionval → vk_rf='') → exkludera både
+      // null OCH '', annars räknas Gotland in i RF.
       const counts = emptyCounts()
       for (const vt of VALTYPER) {
         const { count } = await supabase
@@ -573,18 +540,9 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
         counts[vt] = count ?? 0
       }
       if (!cancelled) setTotalByValtyp(counts)
-      // Själva resultat-snapshoten laddas INTE här längre (fas 3) — den är efterfrågestyrd
-      // per valtyp via ensureValtypLoaded, triggad av den aktiva valtypen + monterade tavlor.
-      // Realtime-kanalen ovan prenumererar fortfarande FÖRE någon snapshot (valtyp-effekten
-      // körs efter denna effekt) så inget event faller i gapet.
     })()
-
-    return () => {
-      cancelled = true
-      supabase.removeChannel(channel)
-      if (revTimerRef.current != null) clearTimeout(revTimerRef.current)
-    }
-  }, [bumpRevisionThrottled])
+    return () => { cancelled = true }
+  }, [])
 
   // Livstidsvakt för pagineringsloopar (ensureValtypLoaded lever över hela providerns liv,
   // inte en enskild effekts cleanup). StrictMode: false vid cleanup, true igen vid remount.
