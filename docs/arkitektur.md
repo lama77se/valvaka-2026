@@ -135,24 +135,32 @@ odokumenterad (se öppen punkt i §9), men dess form följer husstilen i §1.2
 ## 2. Arkitektur i stort
 
 Kärnprincipen: **klienterna rör aldrig val.se.** En enda ingestion-worker pollar
-data.val.se, normaliserar till Postgres, och Supabase Realtime pushar förändringar
-ut till alla anslutna klienter. Det löser tre problem samtidigt — CORS (val.se
-sätter knappast tillåtande headers), artighet mot källan (en fetch i stället för
-N×klienter), och möjligheten att räkna mandat/deltan centralt en gång.
+data.val.se, normaliserar till Postgres, och klienterna håller sig färska med en lätt
+**inkrementell poll** (`updated_at`-delta, jittrad 45–90 s) mot Postgres. Det löser tre
+problem samtidigt — CORS (val.se sätter knappast tillåtande headers), artighet mot källan
+(en fetch i stället för N×klienter), och möjligheten att räkna mandat/deltan centralt en gång.
+
+> **Uppdateringsväg: polling, inte Realtime (bytt 1 sep 2026).** Ursprungligen pushades
+> `result`-ändringar via Supabase Realtime (websocket). Det togs bort: (a) Realtime/WAL
+> logisk-decoding var den återkommande CPU-spiken på instansen, och (b) dess ≤100-rader-per-
+> txn-gräns tvingade fram små edge-batchar som slog i edge:ns 2 s-CPU-tak på riks-RD-filen →
+> filen markerades aldrig `done` → evig re-churn. Klienten pollar nu i stället en inkrementell
+> `updated_at`-delta (self-heal-resyncen, ursprungligen backup, nu primär) — jittrat 45–90 s,
+> bara synlig flik, refresh vid tab-fokus. Polling-lasten skalar med klienter/intervall, inte
+> writes × prenumeranter. UX förblir "live" (staggrad tavel-reveal + pulsande indikator).
 
 ```mermaid
 flowchart LR
     A[data.val.se\nstatiska CSV/JSON] -->|cron: conditional GET| B[Ingest Edge Function\nDeno]
     B -->|upsert| C[(Postgres + PostGIS)]
-    C -->|rollups, mandat, delta| C
-    C -->|CDC / Realtime| D[Supabase Realtime]
-    D -->|websocket push| E[React-klient\nMapLibre GL]
+    C -->|rollups, mandat, updated_at-delta| C
+    E[React-klient\nMapLibre GL] -->|poll: updated_at-delta var 45-90 s jittrat| C
     F[Static geometry\npmtiles / vector tiles] -->|en gång, vid laddning| E
     C -.->|append-only| G[(result_snapshot\nreplay/audit)]
 ```
 
 Notera att **geometrin går vid sidan om** databasflödet: distrikten är statiska och
-laddas en gång som vektortiles, medan bara *resultatvärdena* flödar i realtid.
+laddas en gång som vektortiles, medan bara *resultatvärdenas delta* hämtas via klientens poll.
 
 ---
 
@@ -331,10 +339,12 @@ skalar bättre för rikstäckande zoom.
 - **MapLibre GL JS** framför Leaflet — datadriven styling på 6 500 polygoner med
   `fill-color` som `match`/`interpolate`-uttryck på partikod/marginal, plus en
   "just inrapporterad"-puls. Leaflet orkar inte detta lika smidigt.
-- **Supabase Realtime**: prenumerera på `result`-ändringar (ev. filtrerat på
-  `valtyp`). Vid burst av upserts på kvällen — överväg att *inte* CDC:a varje rad,
-  utan låt edge-funktionen `broadcast`:a färdiga aggregat/distriktsdeltan på en
-  kanal, så slipper klienten räkna om allt. Debounce kartans repaint.
+- **Klient-polling (inte Realtime)**: klienten hämtar en inkrementell `updated_at`-delta
+  var 45–90 s (jittrat) via samma self-heal-resync som annars bara läkte Realtime-släpning
+  — nu **primär** uppdateringsväg. Bara synlig flik pollar; refresh vid tab-fokus. Deltan
+  appliceras genom per-distrikt-listeners → kartan gör rAF-koalescerad ompaint, tavlan
+  staggrar in nya distrikt. Kräver index `(valtyp, updated_at)` så deltan blir en index-
+  range-scan, inte tabellscan. (Realtime togs bort 1 sep — se §2.)
 - **Departure board-känsla**: en ticker över inrapporterade distrikt (du har redan
   mönstret från avgångstavlorna i transit-appen) — återanvänd.
 - Drill-down rike → län → kommun via aggregat-vyerna; recharts för stapeldiagram /
@@ -369,7 +379,8 @@ skalar bättre för rikstäckande zoom.
    BOM/`;`/nollor/decimalkomma/nyckelbygge end-to-end mot riktig data.
 4. **Resultatschema + mandatmodul** mot historisk 2022-data som stand-in tills
    2026-filerna finns (se §10).
-5. **Realtime + kart-paint** — koppla på pushen, animera inrapportering.
+5. **Kart-paint via poll** — klienten pollar `result`-deltan (`updated_at`) och animerar
+   inrapporteringen. (Ursprungligen Realtime-push; bytt till polling 1 sep — se §2.)
 6. **Generalrep** på 2022-datan uppspelad genom snapshot-tabellen som om det vore
    live (§10).
 
@@ -405,7 +416,7 @@ redan nu**. Du kan därför spela upp en *riktig* valnatt genom din pipeline.
    för att efterlikna verklig ojämnhet.
 3. **Driv klockan.** En `replay_clock` matar in distrikt i `result_snapshot` +
    `result` i den ordningen, i komprimerad tid (t.ex. 3 timmar → 3 minuter), så att
-   Realtime-push, kart-paint och mandatprojektion triggas precis som skarpt.
+   klientens poll-delta, kart-paint och mandatprojektion triggas precis som skarpt.
 4. **Validera mot facit.** När alla distrikt matats in ska dina aggregat och
    mandatberäkning matcha 2022 års slutliga mandatfil exakt. Det är ett skarpt
    regressionstest för hela ingest→aggregat→mandat-kedjan.
