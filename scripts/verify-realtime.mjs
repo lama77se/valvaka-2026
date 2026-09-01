@@ -1,11 +1,14 @@
-// Fas 5-acceptans (headless): en simulerad upsert syns i kartan inom sekunder, och
-// en burst av upserts reflekteras allihop. Bevisar Realtime→feature-state UTAN att
-// service-role någonsin rör webbläsaren: Node upsertar (service-role), sidan tar
-// emot över Realtime som anon.
+// Acceptans (headless): en simulerad upsert syns i kartan + panelen efter en resync, och
+// en burst av upserts reflekteras allihop. Bevisar upsert→poll→feature-state UTAN att
+// service-role någonsin rör webbläsaren: Node upsertar (service-role), klienten hämtar
+// deltan via sin resync (poll) som anon.
+//
+// OBS: Realtime togs bort 1 sep 2026 → klienten pollar var 45–90 s. För ett deterministiskt
+// test forcerar vi resyncen direkt via DEV-hooken `window.__results.resync(vt)` i stället för
+// att vänta på pollintervallet.
 //
 //   node --env-file=.env.local scripts/verify-realtime.mjs
-// Kräver att dev-servern kör (window.__map är DEV-only) och att
-// migrationen 20260728150000 (publikation) är applicerad på remote.
+// Kräver att dev-servern kör (window.__map + window.__results är DEV-only).
 import { chromium } from 'playwright'
 import ws from 'ws'
 import { createClient } from '@supabase/supabase-js'
@@ -55,12 +58,15 @@ page.on('pageerror', (e) => errors.push(e.stack ?? e.message))
 
 await page.goto(URL, { waitUntil: 'load', timeout: 60000 })
 
-// Vänta tills (a) kartkällan laddad och (b) Realtime SUBSCRIBED — annars kan
-// upserten hamna i gapet före prenumerationen.
+// Vänta tills (a) kartkällan laddad och (b) första RD-snapshoten klar (så resync-cursorn
+// är satt — annars ser resyncen inget delta).
 await page.waitForFunction(
-  () => window.__map?.isSourceLoaded('districts') && window.__realtimeReady === true,
+  () => window.__map?.isSourceLoaded('districts') && window.__results?.loaded?.().includes('RD'),
   { timeout: 45000 },
 )
+// Forcera klientens resync (poll) i st f att vänta på 45–90 s-intervallet, så upserts
+// reflekteras direkt. page.evaluate väntar in resync-promiset; kort paus för rAF/paint.
+const forceSync = async (vt) => { await page.evaluate((v) => window.__results?.resync(v), vt); await page.waitForTimeout(250) }
 
 let ok = true
 const check = (pass, msg) => {
@@ -73,6 +79,7 @@ const before = await stateOf(page, single)
 check(!before?.reported, `mål ${single} ej rapporterat vid start`)
 const t0 = Date.now()
 await upsert(single, 1500 + Math.floor(Math.random() * 500))
+await forceSync('RD')
 let ms = null
 for (let i = 0; i < 40; i++) {
   const s = await stateOf(page, single)
@@ -82,10 +89,11 @@ for (let i = 0; i < 40; i++) {
   }
   await page.waitForTimeout(250)
 }
-check(ms != null, `realtime→feature-state på ${single}${ms != null ? ` inom ${ms} ms` : ' (timeout 10 s)'}`)
+check(ms != null, `poll→feature-state på ${single}${ms != null ? ` inom ${ms} ms` : ' (timeout 10 s)'}`)
 
-// 2) Burst: 5 upserts i snabb följd → alla reflekterade (rAF-koalescerad repaint).
+// 2) Burst: 5 upserts i snabb följd → alla reflekterade (rAF-koalescerad repaint efter resync).
 await Promise.all(burst.map((vd) => upsert(vd, 900 + Math.floor(Math.random() * 500))))
+await forceSync('RD')
 let reflected = 0
 for (let i = 0; i < 40; i++) {
   const states = await Promise.all(burst.map((vd) => stateOf(page, vd)))
@@ -95,7 +103,7 @@ for (let i = 0; i < 40; i++) {
 }
 check(reflected === burst.length, `burst: ${reflected}/${burst.length} distrikt reflekterade`)
 
-// 2.5) Panel-tabellen går live via DELAD state: en Realtime-upsert höjer distrikt-
+// 2.5) Panel-tabellen går live via DELAD state: en upsert (via poll/resync) höjer distrikt-
 //      räknaren i resultattabellen (höger panel), inte bara kartan. Bevisar att
 //      ResultsProvider→revision→ResultTable-vägen fungerar (kartan mäts via __map).
 const panelReported = async () => {
@@ -109,7 +117,7 @@ const panelReported = async () => {
   return m ? Number(m[1].replace(/\D/g, '')) : null
 }
 // Vänta tills snapshot-laddningen stabiliserats (två lika läsningar i rad) så att
-// ökningen nedan otvetydigt kommer från Realtime-upserten, inte från snapshot.
+// ökningen nedan otvetydigt kommer från upserten (via forceSync/poll), inte från snapshot.
 let prevPanel = await panelReported()
 for (let i = 0; i < 40; i++) {
   await page.waitForTimeout(400)
@@ -119,6 +127,7 @@ for (let i = 0; i < 40; i++) {
 }
 const bPre = prevPanel ?? 0
 await upsert(dPanel, 1300 + Math.floor(Math.random() * 400))
+await forceSync('RD')
 let panelLive = false
 for (let i = 0; i < 40; i++) {
   const now = await panelReported()
@@ -128,7 +137,7 @@ for (let i = 0; i < 40; i++) {
   }
   await page.waitForTimeout(250)
 }
-check(panelLive, `panel-tabellen räknar upp distrikt vid Realtime-upsert (${bPre} → >${bPre})`)
+check(panelLive, `panel-tabellen räknar upp distrikt vid upsert+poll (${bPre} → >${bPre})`)
 
 // 2.6) Delad selectedArea driver panelen: välj en kommun i panel-dropdownen och
 //      verifiera att tabellrubriken byter till kommunens namn. Kartklick→drilldown
@@ -154,6 +163,8 @@ check(titleFlipped, `panel-dropdown → delad selectedArea → rubrik byter till
 await upsertVt('RF', dRF, 1200 + Math.floor(Math.random() * 400))
 await page.getByRole('button', { name: 'Region' }).first().click()
 await page.waitForFunction(() => window.__valtyp === 'RF', { timeout: 5000 })
+await page.waitForFunction(() => window.__results?.loaded?.().includes('RF'), { timeout: 10000 }).catch(() => {})
+await forceSync('RF')
 let rfReported = false
 let rdCleared = false
 for (let i = 0; i < 40; i++) {

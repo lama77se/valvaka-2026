@@ -9,6 +9,11 @@ om ordningsföljd gäller detta dokument.
 Valdagen: **söndag 13 september 2026** (andra söndagen i september). Idag är det
 ~7 veckor kvar — de datumstyrda milstolparna nedan är knutna till det datumet.
 
+> **⚠️ Arkitekturändring 1 sep 2026: Realtime → polling.** Fas 5–6 byggde Supabase Realtime;
+> det togs bort (CPU-spik + 2 s-CPU-tak i edge). Klienten pollar nu en inkrementell `updated_at`-
+> delta (45–90 s). Referenser till "Realtime"/"push" nedan är **historiska** — nuläget står i
+> [arkitektur.md §2](./arkitektur.md#2-arkitektur-i-stort).
+
 ---
 
 ## Infrastruktur — två sorters triggers
@@ -190,6 +195,12 @@ mandatfil exakt (regressionstest för hela kedjan).
   riks-mandaten och skjuts till när kart-paint kräver mandat per distrikt.
 
 ### Fas 5 — Realtime + kart-paint (§9.5)
+
+> **⚠️ Ersatt 1 sep 2026: Realtime → polling.** Supabase Realtime (som denna fas byggde) togs
+> bort — WAL logisk-decoding var den återkommande CPU-spiken, och ≤100-rader-batchningen (som
+> Realtime tvingade fram) sprängde edge:ns 2 s-CPU-tak på riks-RD-filen → evig re-churn. Klienten
+> pollar nu en inkrementell `updated_at`-delta (45–90 s; self-heal-resyncen, nu primär). Avsnittet
+> nedan beskriver den **historiska** Realtime-implementationen; se arkitektur.md §2 för nuläget.
 
 **Mål:** förändringar pushas och animeras i kartan.
 

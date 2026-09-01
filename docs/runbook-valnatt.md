@@ -7,7 +7,7 @@ detta dokument på natten. Bakgrund/detaljer: [resultat-ingest-genrep.md](./resu
 
 | Del | Vad | Var |
 |---|---|---|
-| **Edge `ingest-result`** | pollar val.se, **strömmar** in de **preliminära** filerna (`/p/`) → `result`/`uppsamling_result` → Realtime → karta | Supabase, pg_cron `30 s` |
+| **Edge `ingest-result`** | pollar val.se, **strömmar** in de **preliminära** filerna (`/p/`) → `result`/`uppsamling_result`; klienten pollar deltan (45–90 s) → karta | Supabase, pg_cron `30 s` |
 | **Storleksvakt + CPU-budget** | säkerhetsnät i edge (preliminära filer är små; slutliga filtreras redan bort) | i samma funktion |
 | **Lokalt skript** | `npm run ingest:slutlig` — **alla slutliga** filer (`/s/`): riks-RD + alla 21 RF + alla ~290 KF | din dator, **mån–fre** (Länsstyrelsen börjar måndag) |
 | **Frontend** | valvaka.tech, auto-deploy från `main` | Vercel |
@@ -52,9 +52,9 @@ testdata hela natten**. Därför MÅSTE DB:n rensas innan skarpt flödar (steg N
     /`slutlig` explicit (`..._preliminar_0114_KF.zip`) — använd det som oberoende diskriminator och
     hotfix: byt manifest-filtret i `ingest-result` från `.includes('/p/')` till
     `/_preliminar_/i.test(e.rel)` (och skriptets `/s/`→`/_slutlig_/`), deploya om. Ha detta i åtanke.
-  - Verifieras skarpt på genrep-sim **mån 31 aug 13–15** (då ska kartan fyllas helt från edge allena
-    med Realtime-repaint under burst — den egentliga acceptansen; kör även `npm run verify:realtime`).
-    Ser du `/s/` under en valnatts-sim, kör `npm run ingest:slutlig` som backup.
+  - Verifieras skarpt på en genrep-sim (då ska kartan fyllas helt från edge allena — klienten
+    pollar deltan och målar om per distrikt under burst — den egentliga acceptansen). Ser du `/s/`
+    under en valnatts-sim, kör `npm run ingest:slutlig` som backup.
 - [ ] **`.env.local` klar** med service-role (`SUPABASE_SERVICE_ROLE_KEY`) för det lokala skriptet.
 - [ ] **Infra:** Supabase-compute uppskalad — **Large för kvällen** (Pro), `Max rows = 10000`
   (Settings → API). Vercel-env (`VITE_SUPABASE_URL/ANON_KEY/GEOMETRY_URL`) korrekta (appen är live).
@@ -62,9 +62,10 @@ testdata hela natten**. Därför MÅSTE DB:n rensas innan skarpt flödar (steg N
 - [ ] **🔺 Skala till Large I GOD TID + lasttesta på Large (inte i sista minuten).** Compute-resize
   ger en kort omstart/nedtid → byt **dagen innan eller tidig eftermiddag 13 sep**, aldrig ~19:55.
   Kör sedan lasttestet på Large och **läs CPU i Supabase-dashboarden** (klient-väggtid mäter INTE
-  server-CPU): `node --env-file=.env.local scripts/loadtest-heavy.mjs` (~1000 Realtime-anslutningar
-  + skrivburst + snapshot-herd). **Bäst:** kör det **ovanpå en genrep-sim** om en går innan 13 sep
-  (verklig churn/fan-out) → pessimistiskt tak; skarpa natten (monoton skrivning) är mildare. Godkänt
+  server-CPU). Sedan **Realtime togs bort (1 sep)** är den kvarvarande lasten **mount-snapshot-herden**
+  — många samtidiga fulla snapshot-läsningar vid poll-close (~20:00) + lätt pollning — INTE Realtime-
+  fan-out. Lasttesta den herden (snapshot-herd-fasen i `scripts/loadtest-heavy.mjs`; Realtime-anslut-
+  ningsdelen är numera irrelevant). Räcker inte Large → CDN-cachen (valnatt-lastkapacitet.md). Godkänt
   = CPU håller marginal och återhämtar sig (jfr 64 % på Small → väntat ~30 % på Large).
 - [ ] **Låt genrep-demon stå** tills nära natten — den visar att allt fungerar.
 
