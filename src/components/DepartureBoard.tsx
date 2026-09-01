@@ -15,6 +15,11 @@ import { VALTYP_LABEL, type Valtyp } from '@/lib/results'
 
 const NEUTRAL = '#64748b'
 const VISIBLE = 20 // hur många rader som visas (20 senaste inrapporterade per tavla)
+// Staggrad reveal: nya distrikt från ett poll-svar rullar in ETT PAR åt gången (i st f alla på en
+// gång) så tavlan känns som en levande avgångstavla trots 45–90 s-pollning. Adaptiv chunk → en
+// burst rullar in på ≤ ~2 s oavsett storlek (MAX_DRIP_TICKS × REVEAL_MS), ingen lagg mot verkligheten.
+const REVEAL_MS = 140
+const MAX_DRIP_TICKS = 14
 
 type Row = { vd: string }
 
@@ -45,29 +50,64 @@ export function DepartureBoard({ valtyp, onRowSelect, fill, fullWidth }: { valty
   // fladdrade. Nu räknas topplistan om från store:n (sorterad på rapporteringstid) rAF-
   // koalescerat, så en re-ingest aldrig rör ordningen — bara en genuint nyare tid flyttar upp.
   const rafRef = useRef<number | null>(null)
+  const revealedRef = useRef<Set<string>>(new Set()) // vd:er tavlan får visa (staggrad reveal)
+  const queueRef = useRef<string[]>([])              // ej-avslöjade distrikt, NYAST FÖRST
+  const dripRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     const store = storesRef.current[valtyp]
-    // ISO-tidsträngar sorterar kronologiskt → vanlig strängjämförelse (snabb; localeCompare
-    // skulle spika CPU:n på tusentals distrikt i bursten). Distrikt utan tid hamnar sist.
+    const revealed = revealedRef.current
+    // Rader = top-VISIBLE av AVSLÖJADE distrikt, sorterade på rapporteringstid DESC (nyast överst).
+    // ISO-tidsträngar sorterar kronologiskt → snabb strängjämförelse (localeCompare skulle spika
+    // CPU:n på tusentals distrikt). Distrikt utan tid hamnar sist.
     const compute = (): Row[] =>
       [...store.districts()]
+        .filter((vd) => revealed.has(vd))
         .map((vd) => [vd, store.reportTime(vd) ?? ''] as const)
         .sort((a, b) => (a[1] < b[1] ? 1 : a[1] > b[1] ? -1 : 0))
         .slice(0, VISIBLE)
         .map(([vd]) => ({ vd }))
+
+    // Seed: allt som redan finns avslöjas DIREKT (tavlan är full från mount) — dripen gäller bara
+    // NYA arrivals efter det, annars skulle en snapshot rulla in tusentals rader.
+    revealed.clear()
+    for (const vd of store.districts()) revealed.add(vd)
+    queueRef.current = []
     setRows(compute())
 
-    const flush = () => { rafRef.current = null; setRows(compute()) }
+    // Drip: flytta en (adaptiv) chunk vd:er/​tick från kön → avslöjade. En burst rullar in på
+    // ≤ ~2 s oavsett storlek (chunk skalar med kölängd) så tavlan aldrig laggar mot verkligheten;
+    // små batchar rullar mjukt ett par åt gången. boardIn-animationen spelar per nytt radelement.
+    const drip = () => {
+      const q = queueRef.current
+      const chunk = Math.max(1, Math.ceil(q.length / MAX_DRIP_TICKS))
+      for (let i = 0; i < chunk && q.length; i++) revealed.add(q.shift()!)
+      setRows(compute())
+      dripRef.current = q.length ? setTimeout(drip, REVEAL_MS) : null
+    }
+    const onChange = () => {
+      // Ej-avslöjade distrikt → kö NYAST FÖRST så de rullar in överst. Inga nya (bara omräknad
+      // andel/tid på redan visade) → räkna bara om raderna (färska siffror), ingen drip.
+      const pending = [...store.districts()].filter((vd) => !revealed.has(vd))
+      if (pending.length === 0) { setRows(compute()); return }
+      pending.sort((a, b) => { const x = store.reportTime(a) ?? '', y = store.reportTime(b) ?? ''; return x < y ? 1 : x > y ? -1 : 0 })
+      queueRef.current = pending
+      if (dripRef.current == null) drip() // starta dripen (self-schedulerar); pågår den redan läser den nya kön
+    }
+
+    // rAF-koalescera bursten av per-distrikt-notiser → en onChange/frame.
+    const flush = () => { rafRef.current = null; onChange() }
     const scheduleFlush = () => { if (rafRef.current != null) return; rafRef.current = requestAnimationFrame(flush) }
     const unsub = subscribeChanges((_vd, vt) => { if (vt === valtyp) scheduleFlush() })
 
     return () => {
       unsub()
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
+      if (dripRef.current != null) clearTimeout(dripRef.current)
       rafRef.current = null
+      dripRef.current = null
     }
-    // snapshotVersion: store:n är tom vid mount (snapshot laddas async) — räkna om när klar.
+    // snapshotVersion: store:n är tom vid mount (snapshot laddas async) — seed:a om när klar.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [valtyp, snapshotVersion])
 
