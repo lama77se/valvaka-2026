@@ -20,10 +20,10 @@ detta dokument på natten. Bakgrund/detaljer: [resultat-ingest-genrep.md](./resu
 
 ## 🔴 Den enda kritiska fallgropen
 
-Genrep lämnar rader i `result`/`uppsamling_result` med **`status='slutlig'`**. No-downgrade-
-triggern (`result_no_status_downgrade`) **blockerar** då de skarpa val2026-**preliminära**
-upserterna (samma `(valtyp, valdistriktskod, partikod)`-nyckel) → **kartan skulle frysa på
-genrep-testdata hela natten**. Därför MÅSTE DB:n rensas innan skarpt flödar (steg N1 nedan).
+Genrep lämnar rader i `result`/`uppsamling_result`/`turnout` med **`status='slutlig'`**. No-downgrade-
+triggrarna (`result_no_status_downgrade`, `turnout_no_status_downgrade`) **blockerar** då de skarpa
+val2026-**preliminära** upserterna (samma PK) → **kartan/valdeltagandet skulle frysa på genrep-
+testdata hela natten**. Därför MÅSTE DB:n rensas innan skarpt flödar (steg N1 nedan).
 
 ---
 
@@ -76,8 +76,8 @@ genrep-testdata hela natten**. Därför MÅSTE DB:n rensas innan skarpt flödar 
 ```bash
 npm run results:reset -- --ingest-state
 ```
-Rensar `result` + `uppsamling_result` (+ `ingest_state` för en helt ren omingest). Appen visar
-nu "inga 2026-röster än" (bara 2022-kolumner) tills skarpt flödar — korrekt startläge.
+Rensar `result` + `uppsamling_result` + `turnout` (+ `ingest_state` för en helt ren omingest). Appen
+visar nu "inga 2026-röster än" (bara 2022-kolumner) tills skarpt flödar — korrekt startläge.
 
 **N2. Byt datakälla → `val2026` (un-draft:a + merga den förberedda switch-PR:en,
 `chore/valnatt-switch-val2026`):** deployar edge-funktionen (`deploy-functions.yml`). På första

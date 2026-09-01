@@ -49,6 +49,7 @@ export function ResultPanel() {
     selectedArea,
     setSelectedArea,
     storesRef,
+    turnoutStoresRef,
     metaRef,
     partyRef,
     allCodesRef,
@@ -103,6 +104,10 @@ export function ResultPanel() {
     const display = collapseForDisplay(areaResult)
     const reported = codes.reduce((n, c) => n + (store.has(c) ? 1 : 0), 0)
     const has2022 = areaResult.rows.some((r) => r.andel2022 != null)
+    // Valdeltagande för området: Σtotalt / Σröstberättigade över dess (reguljära) distrikt.
+    // null när nämnaren är 0 (inga rapporterade distrikt med röstlängd än) → visas ej.
+    const t = turnoutStoresRef.current[valtyp].aggregate(codes)
+    const turnout = t.rb > 0 ? (t.total / t.rb) * 100 : null
     return {
       display,
       giltiga: areaResult.giltiga,
@@ -111,6 +116,7 @@ export function ResultPanel() {
       has2022,
       reported,
       total: codes.length,
+      turnout,
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [valtyp, selectedArea, revision])
@@ -353,7 +359,7 @@ export function ResultPanel() {
             )}
             <ResultTable
               title={`${ELECTION[valtyp]} — ${areaName}`}
-              subtitle={`${view.reported.toLocaleString('sv-SE')} av ${view.total.toLocaleString('sv-SE')} valdistrikt räknade (${pct} %) · ${slutligText}`}
+              subtitle={`${view.reported.toLocaleString('sv-SE')} av ${view.total.toLocaleString('sv-SE')} valdistrikt räknade (${pct} %) · ${slutligText}${view.turnout != null ? ` · Valdeltagande ${view.turnout.toLocaleString('sv-SE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %` : ''}`}
               reportPct={view.total > 0 ? (view.reported / view.total) * 100 : 0}
               display={view.display}
               giltiga={view.giltiga}

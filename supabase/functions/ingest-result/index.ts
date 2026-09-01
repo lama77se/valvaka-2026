@@ -67,6 +67,7 @@ interface StreamResult {
   meta?: FileMeta
   resultUp?: number
   uppUp?: number
+  turnoutUp?: number
   bytes?: number // strömmade zip-bytes (CPU-proxy för invokeringens budget); ~0 för toobig
   error?: string
 }
@@ -96,8 +97,10 @@ async function streamFile(url: string, districtSet: Set<string>, partySet: Set<s
   let sawFinal = false
   let resultUp = 0
   let uppUp = 0
+  let turnoutUp = 0
   const pendingResult: Record<string, unknown>[] = []
   const pendingUpp: Record<string, unknown>[] = []
+  const pendingTurnout: Record<string, unknown>[] = []
 
   // PRELIMINÄRT → 100 rader/upsert: Realtime tappar HELT stora txns (>~100 rader) → live-kartan
   // skulle inte målas om på valnatten. SLUTLIGT → 1000 rader/upsert: Realtime behövs inte (sen-
@@ -120,6 +123,16 @@ async function streamFile(url: string, districtSet: Set<string>, partySet: Set<s
         if (error) throw new Error('upsert uppsamling: ' + error.message)
       }
       uppUp += batch.length
+    }
+    // turnout (valdeltagande): 1 rad/distrikt, EJ på Realtime → stor batch (1000) minimerar
+    // edge-round-trips (~7 anrop för RD prel i st f 63 vid 100/batch).
+    while (pendingTurnout.length >= 1000 || (force && pendingTurnout.length > 0)) {
+      const batch = pendingTurnout.splice(0, 1000)
+      if (!probe) {
+        const { error } = await supabase.from('turnout').upsert(batch, { onConflict: 'valtyp,valdistriktskod' })
+        if (error) throw new Error('upsert turnout: ' + error.message)
+      }
+      turnoutUp += batch.length
     }
   }
 
@@ -155,6 +168,13 @@ async function streamFile(url: string, districtSet: Set<string>, partySet: Set<s
     if (typeof kod !== 'string' || kod.length !== 8 || !districtSet.has(kod)) return // uppsamling/okänd
     // val.se:s egna rapporteringstid per distrikt (naiv svensk lokaltid) → avgångstavlan.
     const rapporteringstid = typeof vd.rapporteringsTid === 'string' ? vd.rapporteringsTid : null
+    // Valdeltagande: totaltAntalRoster (alla avgivna röster) + antalRostberattigade per distrikt.
+    // Bara RAPPORTERADE distrikt (totaltAntalRoster > 0): val.se:s aggregat-valdeltagande använder
+    // röstberättigade i RÄKNADE distrikt som nämnare, så orapporterade distrikt (total = 0/null)
+    // får INTE ligga i store:n → annars blåses nämnaren upp och valdeltagandet understryks live.
+    if (typeof vd.totaltAntalRoster === 'number' && vd.totaltAntalRoster > 0 && typeof vd.antalRostberattigade === 'number' && vd.antalRostberattigade > 0) {
+      pendingTurnout.push({ valtyp, valdistriktskod: kod, totalt_antal_roster: vd.totaltAntalRoster, antal_rostberattigade: vd.antalRostberattigade, status })
+    }
     for (const p of vd.rostfordelning?.rosterPaverkaMandat?.partiRoster ?? []) {
       if (!partySet.has(p.partikod)) continue
       pendingResult.push({ valtyp, valdistriktskod: kod, partikod: p.partikod, roster: p.antalRoster, status, rapporteringstid })
@@ -213,7 +233,7 @@ async function streamFile(url: string, districtSet: Set<string>, partySet: Set<s
   // → trunkerad nedladdning som ändå avslutades "rent". Våra RD/RF/KF-zip HAR alltid en
   // rostfordelning → !final = ofullständig (aldrig "saknar den") → transient, försök igen.
   if (!sawFinal) return { status: 'incomplete', bytes: bytesRead }
-  return { status: 'ok', meta, resultUp, uppUp, bytes: bytesRead }
+  return { status: 'ok', meta, resultUp, uppUp, turnoutUp, bytes: bytesRead }
 }
 
 Deno.serve(async (req) => {
@@ -268,6 +288,7 @@ Deno.serve(async (req) => {
   //    stanna innan edge-taket, resten nästa varv. Filen markeras done UTOM vid transient fel.
   let upserted = 0
   let uppUpserted = 0
+  let turnoutUpserted = 0
   let skipped = 0
   let meta: FileMeta | null = null
   const deadline = Date.now() + BUDGET_MS
@@ -286,6 +307,7 @@ Deno.serve(async (req) => {
       if (r.meta && r.meta.valtyp) meta = r.meta
       upserted += r.resultUp ?? 0
       uppUpserted += r.uppUp ?? 0
+      turnoutUpserted += r.turnoutUp ?? 0
     } else {
       skipped++ // 'toobig' (delegeras till lokala skriptet) eller 'corrupt' — markeras ändå done
     }
@@ -310,5 +332,5 @@ Deno.serve(async (req) => {
     }, { onConflict: 'id' })
   }
 
-  return json({ ok: true, source: base.includes('genrep') ? 'genrep2026' : 'val2026', changed: changed.length, upserted, uppUpserted, skipped, remaining: allChanged.length - changed.length })
+  return json({ ok: true, source: base.includes('genrep') ? 'genrep2026' : 'val2026', changed: changed.length, upserted, uppUpserted, turnoutUpserted, skipped, remaining: allChanged.length - changed.length })
 })

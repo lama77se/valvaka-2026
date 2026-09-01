@@ -62,6 +62,7 @@ async function processFile(f, sets) {
 
   const rows = []
   const uppRows = []
+  const turnoutRows = []
   for (const vd of j.valdistrikt ?? []) {
     const kod = vd.valdistriktskod
     if (vd.valdistriktstyp === 'uppsamlingsdistrikt') {
@@ -76,13 +77,19 @@ async function processFile(f, sets) {
     }
     if (typeof kod !== 'string' || kod.length !== 8 || !sets.districtSet.has(kod)) continue
     const rapporteringstid = typeof vd.rapporteringsTid === 'string' ? vd.rapporteringsTid : null
+    // Valdeltagande per distrikt: bara RAPPORTERADE (totaltAntalRoster > 0) med giltig nämnare, så
+    // nämnaren = röstberättigade i räknade distrikt (som val.se:s aggregat) och orapporterade inte
+    // blåser upp den. (Slutliga filer har allt rapporterat, men gaten håller även vid partiell.)
+    if (typeof vd.totaltAntalRoster === 'number' && vd.totaltAntalRoster > 0 && typeof vd.antalRostberattigade === 'number' && vd.antalRostberattigade > 0) {
+      turnoutRows.push({ valtyp: j.valtyp, valdistriktskod: kod, totalt_antal_roster: vd.totaltAntalRoster, antal_rostberattigade: vd.antalRostberattigade, status: rakstatus })
+    }
     for (const p of vd.rostfordelning?.rosterPaverkaMandat?.partiRoster ?? []) {
       if (!sets.partySet.has(p.partikod)) continue
       rows.push({ valtyp: j.valtyp, valdistriktskod: kod, partikod: p.partikod, roster: p.antalRoster, status: rakstatus, rapporteringstid })
     }
   }
   const geoDistricts = new Set(rows.map((r) => r.valdistriktskod)).size
-  log(`  byggt: ${rows.length} result-rader (${geoDistricts} distrikt) · ${uppRows.length} uppsamling-rader — upsertar…`)
+  log(`  byggt: ${rows.length} result-rader (${geoDistricts} distrikt) · ${uppRows.length} uppsamling-rader · ${turnoutRows.length} valdeltagande-rader — upsertar…`)
 
   // Slutligt → 1000 rader/upsert (Realtime behövs ej ons–fre; klienten läser via snapshot).
   for (let i = 0; i < rows.length; i += 1000) {
@@ -93,7 +100,11 @@ async function processFile(f, sets) {
     const { error } = await db.from('uppsamling_result').upsert(uppRows.slice(i, i + 1000), { onConflict: 'valtyp,kod,partikod' })
     if (error) { console.error(`  uppsamling_result upsert: ${error.message}`); return false }
   }
-  log(`  klart: ${rows.length} result · ${uppRows.length} uppsamling`)
+  for (let i = 0; i < turnoutRows.length; i += 1000) {
+    const { error } = await db.from('turnout').upsert(turnoutRows.slice(i, i + 1000), { onConflict: 'valtyp,valdistriktskod' })
+    if (error) { console.error(`  turnout upsert: ${error.message}`); return false }
+  }
+  log(`  klart: ${rows.length} result · ${uppRows.length} uppsamling · ${turnoutRows.length} valdeltagande`)
   return true
 }
 

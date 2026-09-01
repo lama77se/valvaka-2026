@@ -13,7 +13,7 @@
 // gör en full ompaint, tabellen räknar om.
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { supabase } from '@/lib/supabase'
-import { ResultStore, VALTYPER, VALTYP_VK_COLUMN, type Valtyp } from '@/lib/results'
+import { ResultStore, TurnoutStore, VALTYPER, VALTYP_VK_COLUMN, type Valtyp } from '@/lib/results'
 import { buildGroups, type AreaComparison, type AreaGroups, type Comparison2022, type DistrictMeta, type Level, type PartyMeta } from '@/lib/aggregate'
 import type { PartyVotes } from '@/lib/mandate'
 import type { AreaIndex } from '@/lib/hierarchy'
@@ -91,6 +91,7 @@ export interface ResultsContextValue {
 
   // Stabila referens-refar (läses vid beräkning; useMemo nycklar på revision).
   storesRef: RefObject<Record<Valtyp, ResultStore>>
+  turnoutStoresRef: RefObject<Record<Valtyp, TurnoutStore>>
   partyRef: RefObject<Map<string, PartyMeta>>
   metaRef: RefObject<Map<string, DistrictMeta>>
   allCodesRef: RefObject<string[]>
@@ -162,6 +163,12 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
   const storesRef = useRef<Record<Valtyp, ResultStore>>(null!)
   if (!storesRef.current) {
     storesRef.current = { RD: new ResultStore(), RF: new ResultStore(), KF: new ResultStore() }
+  }
+  // Valdeltagande per valtyp (stabil ref, muteras in-place, byts aldrig — som storesRef). Laddas
+  // i ensureValtypLoaded och hålls färsk av samma inkrementella resync som result.
+  const turnoutStoresRef = useRef<Record<Valtyp, TurnoutStore>>(null!)
+  if (!turnoutStoresRef.current) {
+    turnoutStoresRef.current = { RD: new TurnoutStore(), RF: new TurnoutStore(), KF: new TurnoutStore() }
   }
   const partyRef = useRef<Map<string, PartyMeta>>(new Map())
   const metaRef = useRef<Map<string, DistrictMeta>>(new Map())
@@ -253,6 +260,10 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
   // flyttas fram av varje resync → nästa resync hämtar bara deltan (`updated_at >= cursor`).
   const cursorRef = useRef<Record<Valtyp, string>>({ RD: '', RF: '', KF: '' })
   const resyncingRef = useRef<Record<Valtyp, boolean>>({ RD: false, RF: false, KF: false })
+  // Egen resync-cursor för turnout (updated_at), skild från result-cursorn. Sätts av turnout-
+  // snapshoten och flyttas fram av varje turnout-resync.
+  const turnoutCursorRef = useRef<Record<Valtyp, string>>({ RD: '', RF: '', KF: '' })
+  const turnoutResyncingRef = useRef<Record<Valtyp, boolean>>({ RD: false, RF: false, KF: false })
 
   const ensureValtypLoaded = useCallback((vt: Valtyp) => {
     if (loadedValtyperRef.current.has(vt) || loadingValtyperRef.current.has(vt)) return
@@ -305,6 +316,28 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
           lastVd = tail.valdistriktskod
           lastPk = tail.partikod
         }
+        // Valdeltagande-snapshot för samma valtyp — BEST-EFFORT (ett fel här får inte blockera
+        // resultatvisningen; resync-ticken fyller på ändå). Keyset på valdistriktskod (turnouts PK
+        // är enkel geo-nyckel → enklare än result). Egen cursor (turnoutCursorRef).
+        try {
+          let tLast = ''
+          while (aliveRef.current) {
+            let tq = supabase
+              .from('turnout')
+              .select('valdistriktskod,totalt_antal_roster,antal_rostberattigade,updated_at')
+              .eq('valtyp', vt)
+              .order('valdistriktskod', { ascending: true })
+              .limit(PAGE)
+            if (tLast !== '') tq = tq.gt('valdistriktskod', tLast)
+            const { data, error } = await tq
+            if (error || !data || data.length === 0) break
+            for (const r of data as unknown as Array<{ valdistriktskod: string; totalt_antal_roster: number; antal_rostberattigade: number; updated_at?: string | null }>) {
+              turnoutStoresRef.current[vt]?.set(r.valdistriktskod, r.totalt_antal_roster, r.antal_rostberattigade)
+              if (r.updated_at && r.updated_at > turnoutCursorRef.current[vt]) turnoutCursorRef.current[vt] = r.updated_at
+            }
+            tLast = data[data.length - 1].valdistriktskod
+          }
+        } catch { /* turnout best-effort; resync fyller på nästa varv */ }
         if (!aliveRef.current) return // unmountad mitt i laddningen → varken markera klar eller retry
       } finally {
         loadingValtyperRef.current.delete(vt)
@@ -373,10 +406,53 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     }
     return changed
   }, [])
+
+  // Valdeltagande-resync: samma inkrementella delta-mönster som result (updated_at >= cursor), men
+  // enklare — inga per-distrikt-listeners (valdeltagande matar bara panel-aggregatet, som räknar om
+  // på revision). Offset-paginering räcker: deltan är liten (bara ändrade distrikt). Ingen Realtime
+  // på turnout → detta (+ snapshoten) är enda live-vägen; körs i 60s-ticken.
+  const resyncTurnout = useCallback(async (vt: Valtyp): Promise<number> => {
+    if (!loadedValtyperRef.current.has(vt)) return 0 // cursorn sätts först när snapshoten är klar
+    if (turnoutResyncingRef.current[vt]) return 0     // ingen överlappning
+    turnoutResyncingRef.current[vt] = true
+    let changed = 0
+    try {
+      const cursor = turnoutCursorRef.current[vt]
+      const PAGE = 10000
+      let from = 0
+      let maxTs = cursor
+      while (aliveRef.current) {
+        const { data, error } = await supabase
+          .from('turnout')
+          .select('valdistriktskod,totalt_antal_roster,antal_rostberattigade,updated_at')
+          .eq('valtyp', vt)
+          .gte('updated_at', cursor)
+          .order('updated_at', { ascending: true })
+          .order('valdistriktskod', { ascending: true }) // stabil tiebreaker → deterministisk paginering
+          .range(from, from + PAGE - 1)
+        if (error || !data || data.length === 0) break
+        for (const r of data as unknown as Array<{ valdistriktskod: string; totalt_antal_roster: number; antal_rostberattigade: number; updated_at?: string | null }>) {
+          turnoutStoresRef.current[vt]?.set(r.valdistriktskod, r.totalt_antal_roster, r.antal_rostberattigade) // idempotent
+          if (r.updated_at && r.updated_at > cursor) changed++
+          if (r.updated_at && r.updated_at > maxTs) maxTs = r.updated_at
+        }
+        from += data.length
+        if (data.length < PAGE) break
+      }
+      turnoutCursorRef.current[vt] = maxTs
+      if (changed > 0) setRevision((r) => r + 1) // en bump per delta → panelen räknar om valdeltagandet
+    } finally {
+      turnoutResyncingRef.current[vt] = false
+    }
+    return changed
+  }, [])
+
   // Stabil referens till senaste resyncValtyp för Realtime-effektens reconnect-hook (undviker
   // att lägga resyncValtyp i den effektens deps → kanalen skulle rivas/återskapas i onödan).
   const resyncRef = useRef(resyncValtyp)
   resyncRef.current = resyncValtyp
+  const resyncTurnoutRef = useRef(resyncTurnout)
+  resyncTurnoutRef.current = resyncTurnout
 
   // Uppsamling live: laddar om HELA uppsamlings-aggregatet (litet — max ~314 distrikt × parti ×
   // valtyp, oftast 0 rader före onsdag). Anropas vid mount, Realtime-event, periodisk resync och
@@ -435,7 +511,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const tick = () => {
       if (document.visibilityState !== 'visible') return
-      for (const vt of VALTYPER) if (loadedValtyperRef.current.has(vt)) void resyncValtyp(vt)
+      for (const vt of VALTYPER) if (loadedValtyperRef.current.has(vt)) { void resyncValtyp(vt); void resyncTurnout(vt) }
       void loadUppsamling() // uppsamling: full omladdning (primärvägen — Realtime tappar dess 500-radersklungor)
     }
     const id = setInterval(tick, RESYNC_MS)
@@ -445,7 +521,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
       clearInterval(id)
       document.removeEventListener('visibilitychange', onVisible)
     }
-  }, [resyncValtyp, loadUppsamling])
+  }, [resyncValtyp, resyncTurnout, loadUppsamling])
 
   // Realtime + snapshot + nämnare (mount-en gång). Prenumerera FÖRE snapshot så
   // inget event faller i gapet.
@@ -477,7 +553,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
           ;(window as unknown as { __realtimeReady?: boolean }).__realtimeReady = true
           // Reconnect efter en tapp: hämta gapet direkt (istället för att vänta på nästa intervall).
           // Första SUBSCRIBED sker FÖRE snapshoten → loaded är tom → guarden i resyncValtyp no-op:ar.
-          for (const vt of VALTYPER) if (loadedValtyperRef.current.has(vt)) void resyncRef.current(vt)
+          for (const vt of VALTYPER) if (loadedValtyperRef.current.has(vt)) { void resyncRef.current(vt); void resyncTurnoutRef.current(vt) }
           void loadUppsamlingRef.current() // uppsamling: stäng ev. gap efter tappet
         }
       })
@@ -551,8 +627,13 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
         return [vt, { buckets: m.size, roster }]
       })),
       reloadUpp: () => loadUppsamling(),
+      // Valdeltagande-introspektion: kör en turnout-resync, eller läs aggregatet för en
+      // uppsättning distriktskoder (Σtotal/Σröstberättigade → %). tCursor spolar cursorn.
+      turnoutCursor: () => ({ ...turnoutCursorRef.current }),
+      resyncTurnout: (vt: Valtyp) => resyncTurnout(vt),
+      turnout: (vt: Valtyp, codes: string[]) => turnoutStoresRef.current[vt].aggregate(codes),
     }
-  }, [resyncValtyp, loadUppsamling])
+  }, [resyncValtyp, resyncTurnout, loadUppsamling])
 
   // Referensdata (mount-en gång): partifärger, distriktsmetadata, ±2022, jämförbarhet.
   useEffect(() => {
@@ -710,6 +791,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
   }, [snapshotVersion])
 
   const value: ResultsContextValue = {
+    turnoutStoresRef,
     valtyp,
     setValtyp,
     selectedArea,

@@ -120,3 +120,33 @@ export class ResultStore {
     return this.byDistrict.size
   }
 }
+
+// Valdeltagande per distrikt: totaltAntalRoster (alla avgivna röster) + antalRostberattigade.
+// Egen store (skild från ResultStore) eftersom valdeltagande INTE kan härledas ur partiröster —
+// täljaren är alla avgivna röster inkl. blanka/ogiltiga, inte summan av giltiga partiröster.
+// Aggregat för ett område = Σtotalt / Σröstberättigade (aldrig medel av distrikts-%).
+export class TurnoutStore {
+  private byDistrict = new Map<string, { total: number; rb: number }>()
+
+  set(valdistriktskod: string, totalAntalRoster: number, antalRostberattigade: number): void {
+    this.byDistrict.set(valdistriktskod, { total: totalAntalRoster, rb: antalRostberattigade })
+  }
+
+  has(valdistriktskod: string): boolean {
+    return this.byDistrict.has(valdistriktskod)
+  }
+
+  // Summera täljare + nämnare över en uppsättning distrikt. Andelen (procent) beräknas av anroparen
+  // först på aggregatet: pct = total / rb * 100. rb=0 → inget att visa (returnera null-läge där).
+  aggregate(codes: Iterable<string>): { total: number; rb: number } {
+    let total = 0
+    let rb = 0
+    for (const vd of codes) {
+      const t = this.byDistrict.get(vd)
+      if (!t) continue
+      total += t.total
+      rb += t.rb
+    }
+    return { total, rb }
+  }
+}
