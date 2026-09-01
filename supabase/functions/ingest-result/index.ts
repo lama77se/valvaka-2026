@@ -43,10 +43,12 @@ const BUDGET_MS = 300_000
 // CPU-BUDGET per invokering (SÄKERHETSNÄT sedan edge är preliminär-only): edge har ~2 s CPU/
 // REQUEST (inte kumulativt över varv). Att parsa flera MEDELSTORA filer (~15–40 MB uppackat) i EN
 // invokering kan summera >2 s CPU → WORKER_RESOURCE_LIMIT. Sluta lägga till filer när kumulativa
-// STRÖMMADE zip-bytes passerar detta (~zip×10 uppackat → ~0,5 s CPU vid 6 MB). Preliminära filer
-// är små så detta bör aldrig lösa ut i praktiken; kvar ifall en fil oväntat växer. Upptäckt vid
-// runbook-rehearsal (dåvarande arkitektur tog slutliga i edge; klungor av dem kraschade).
-const INVOKE_BYTE_BUDGET = 6_000_000
+// STRÖMMADE zip-bytes passerar detta. Preliminära filer är små så detta bör sällan lösa ut; kvar
+// ifall en fil oväntat växer eller en FULL BACKLOG (alla filer ändrade, t.ex. N2-switchen på
+// valnatten) processas i en invokering. SÄNKT 6 → 4 MB efter att turnout-fångsten (PR #69) la till
+// per-distrikt-arbete/upsertar → tunnare marginal; en manuell max=25-POST slog i taket vid full
+// genrep-backlog. 4 MB ger headroom under 2s även vid full backlog; cron:en (30 s) dränerar ändå.
+const INVOKE_BYTE_BUDGET = 4_000_000
 // STORLEKSVAKT (SÄKERHETSNÄT): filer med större zip än så här PARSAR edge inte utan markerar done
 // (413) och delegerar till det lokala skriptet. Slutliga giganter (RD ~24 MB zip / 260 MB uppackat
 // dödar isolatet på ~4 s, WORKER_RESOURCE_LIMIT) filtreras redan bort av manifest-filtret (/p/
