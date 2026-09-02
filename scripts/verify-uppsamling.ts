@@ -28,7 +28,12 @@ interface RostFile {
   valdistrikt: RostVd[]
 }
 interface MandatFile {
-  valomrade: { kod: string; totaltAntalMandat: number; mandatfordelning: { partiLista: { partikod: string; antalMandat: number }[] } }
+  valomrade: {
+    kod: string
+    totaltAntalMandat: number
+    mandatfordelning?: { partiLista: { partikod: string; antalMandat: number }[] } // finns BARA på preliminära /p/-filer
+    rostfordelning?: { rosterPaverkaMandat?: { partiRoster?: { partikod: string; deltaMandatfordelning?: string }[] } } // slutlig: spärr-flagga per parti (ingen per-parti-mandatlista)
+  }
 }
 
 async function fetchOrgan(rel: string): Promise<{ rost: RostFile; mandat: MandatFile }> {
@@ -78,13 +83,14 @@ const seatDiff = (a: Record<string, number>, facit: Record<string, number>) => {
 
 let ok = true
 let foldMatters = 0
+let prelRdFacit: Record<string, number> | null = null // RD-rikets per-parti-facit ur /p/ → informativ diff mot slutlig
 const log = (pass: boolean, label: string) => { if (!pass) ok = false; console.log(`${pass ? 'OK ' : '❌ '} ${label}`) }
 
 async function testOrgan(rel: string, valtyp: Valtyp, level: Level) {
   const { rost, mandat } = await fetchOrgan(rel)
   const { aggregate, upp, groups, uppCodes } = build(rost)
   const areaCode = valtyp === 'RD' ? null : mandat.valomrade.kod
-  const facit = Object.fromEntries(mandat.valomrade.mandatfordelning.partiLista.map((p) => [p.partikod, p.antalMandat]))
+  const partiLista = mandat.valomrade.mandatfordelning?.partiLista // bara /p/; slutlig saknar per-parti-mandat
   const label = `${valtyp} ${mandat.valomrade.kod} (${mandat.valomrade.totaltAntalMandat} mandat)`
 
   // 1) Uppsamlingskoderna måste vara UNIKA inom filen (annars kollapsar PK vid ingest).
@@ -103,12 +109,39 @@ async function testOrgan(rel: string, valtyp: Valtyp, level: Level) {
   const noUpp = computeMandate(valtyp, level, areaCode, aggregate, groups) // param utelämnad → NO-OP
 
   const full = rost.antalValdistriktRaknade === rost.antalValdistriktSomSkaRaknas
-  const diffs = withUpp ? seatDiff(withUpp.seatsByParty, facit) : ['computeMandate gav null']
-  if (full) {
-    log(diffs.length === 0, `${label}: geo+uppsamling → computeMandate == val.se-facit${diffs.length ? ' — ' + diffs.join(', ') : ''}`)
-    log(withUpp?.totalMandat === mandat.valomrade.totaltAntalMandat, `${label}: totalsumma ${withUpp?.totalMandat} == ${mandat.valomrade.totaltAntalMandat}`)
+  const facitTotal = mandat.valomrade.totaltAntalMandat
+  if (partiLista) {
+    // PRELIMINÄRA /p/-filer bär per-parti-facit → diffa computeMandate rakt mot den.
+    const facit = Object.fromEntries(partiLista.map((p) => [p.partikod, p.antalMandat]))
+    if (valtyp === 'RD' && level === 'riket') prelRdFacit = facit // spara för slutlig-jämförelsen nedan
+    const diffs = withUpp ? seatDiff(withUpp.seatsByParty, facit) : ['computeMandate gav null']
+    if (full) {
+      log(diffs.length === 0, `${label}: geo+uppsamling → computeMandate == val.se-facit${diffs.length ? ' — ' + diffs.join(', ') : ''}`)
+      log(withUpp?.totalMandat === facitTotal, `${label}: totalsumma ${withUpp?.totalMandat} == ${facitTotal}`)
+    } else {
+      console.log(`ℹ  ${label}: EJ färdigräknad (${rost.antalValdistriktRaknade}/${rost.antalValdistriktSomSkaRaknas}) — hoppar hård facit-assert`)
+    }
   } else {
-    console.log(`ℹ  ${label}: EJ färdigräknad (${rost.antalValdistriktRaknade}/${rost.antalValdistriktSomSkaRaknas}) — hoppar hård facit-assert`)
+    // SLUTLIGA /s/-filer: ingen per-parti-mandatlista i filen. Facit ur det filen FAKTISKT publicerar:
+    // (a) totalsumman (totaltAntalMandat), (b) mandatbärande partier == spärr-passerade (deltaMandatfordelning='ja').
+    const overSparr = new Set(
+      (mandat.valomrade.rostfordelning?.rosterPaverkaMandat?.partiRoster ?? [])
+        .filter((p) => p.deltaMandatfordelning === 'ja').map((p) => p.partikod))
+    const seated = new Set(Object.entries(withUpp?.seatsByParty ?? {}).filter(([, n]) => n > 0).map(([k]) => k))
+    const onlyOurs = [...seated].filter((k) => !overSparr.has(k))
+    const onlyFile = [...overSparr].filter((k) => !seated.has(k))
+    const setOk = onlyOurs.length === 0 && onlyFile.length === 0
+    if (full) {
+      log(withUpp?.totalMandat === facitTotal, `${label}: computeMandate totalsumma ${withUpp?.totalMandat} == ${facitTotal} (definitiv fil)`)
+      log(setOk, `${label}: mandatbärande partier == spärr-passerade (deltaMandatfordelning)${setOk ? '' : ` — vi extra: [${onlyOurs}] fil extra: [${onlyFile}]`}`)
+      // Informativt: reproducerar slutlig-rösterna den preliminära per-parti-fördelningen?
+      if (prelRdFacit && withUpp) {
+        const d = seatDiff(withUpp.seatsByParty, prelRdFacit)
+        console.log(`   ↳ per parti vs preliminär-facit: ${d.length ? d.join(', ') : 'identisk fördelning ✓'}`)
+      }
+    } else {
+      console.log(`ℹ  ${label}: EJ färdigräknad (${rost.antalValdistriktRaknade}/${rost.antalValdistriktSomSkaRaknas}) — hoppar hård facit-assert`)
+    }
   }
   // Syns fold-in:en här? (uppsamling flyttar ett mandat). Rent informativt.
   const flips = withUpp && noUpp ? seatDiff(withUpp.seatsByParty, noUpp.seatsByParty).length > 0 : false
