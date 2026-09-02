@@ -13,8 +13,12 @@
 //
 // Kräver service-role i .env.local (kringgår RLS, skriver result). Egna ingest_state-nycklar
 // (STATE_PREFIX) → krockar aldrig med edge:ns state för samma fil.
+import ws from 'ws'
 import { createClient } from '@supabase/supabase-js'
 import { unzipSync } from 'fflate'
+// Node <22 saknar native WebSocket; supabase-js konstruerar RealtimeClient eagerly och kraschar
+// annars redan i createClient (samma polyfill som monitor-flow.mjs). Ingesten använder inte Realtime.
+globalThis.WebSocket ??= ws
 
 // ⚠️ VALNATTEN/DEFINITIVT: byt till '…/val2026' SAMTIDIGT som ingest-result RESULT_BASE_DEFAULT.
 // Om edge står på val2026 men detta skript på genrep laddas de slutliga filerna från TESTDATA.
