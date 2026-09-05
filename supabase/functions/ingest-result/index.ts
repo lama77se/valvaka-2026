@@ -1,7 +1,7 @@
 // Fas 7 — RESULTAT-ingestion (valnatt + definitivt). Den skarpa vägen "2026-resultat
 // flödar in": pollar Valmyndighetens resultatfiler, packar upp röstfördelnings-JSON och
-// upsertar `result` (→ Realtime → kart-paint) + `uppsamling_result`. Speglar ingest-parti
-// (Deno edge + pg_cron + ingest_state), men för röster.
+// upsertar `result` (→ klientens delta-poll → kart-paint) + `uppsamling_result` + `turnout`.
+// Speglar ingest-parti (Deno edge + pg_cron + ingest_state), men för röster.
 //
 // KÄLLA — just nu GENERALREPET (`genrep2026`): Valmyndighetens generalrepetition är en LIVE,
 // kontinuerligt uppdaterad test-feed (`test: true`) med exakt samma format som skarpa
@@ -13,11 +13,13 @@
 // slutliga i EN invokering summerar >2 s CPU → WORKER_RESOURCE_LIMIT. Att helt utesluta /s/ här
 // tar bort hela den krasch-risken. Se manifest-filtret nedan.
 //
-// STREAMANDE PARSNING (bounded minne oavsett filstorlek): fflate streaming-unzip →
-// @streamparser/json (SAX) → batch-upsert (~110 MB peak; edge-taket 256 MB). Ersätter den gamla
-// unzipSync + JSON.parse-vägen. Storleksvakt + CPU-budget nedan finns kvar som SÄKERHETSNÄT ifall
-// en oväntat stor preliminär fil dyker upp (i praktiken små), men slutliga giganter kommer ändå
-// aldrig hit efter manifest-filtret.
+// FULL PARSE (unzipSync + JSON.parse), INTE strömmande SAX (bytt 5 sep, PR F): edge har ett HÅRT
+// CPU-tak på 2 000 ms per invokering. Den strömmande vägen (fflate Unzip → @streamparser/json)
+// höll minnet på ~18 MB men brände ~2 s CPU på riks-RD:s 38 MB JSON → isolatet dödades i sista
+// flushen ("CPU Time exceeded", cpu_time_used 2035) — RD markerades aldrig klar, togs om varje varv
+// och blockerade allt efter sig. Bevisat under kallstart-repetitionen mot genrep 5 sep. Full parse
+// av samma fil: ~0,3–0,5 s CPU (native JSON.parse), ~150 MB minne (taket är 256 MB). Sedan /s/
+// filtreras bort kommer aldrig en fil > 4 MB zip hit, så minnesargumentet för strömning är borta.
 //
 // FORMAT (verifierat mot genrep 2026-08):
 //   resultat.val.se/resultatfiler/<base>/index.md5  = manifest: "<md5>␠␠./p/<vt>/<fil>.zip"
@@ -31,8 +33,7 @@
 //
 // SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY auto-injiceras i edge-runtime.
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { Unzip, UnzipInflate } from 'https://esm.sh/fflate@0.8.2'
-import { JSONParser } from 'https://esm.sh/@streamparser/json@0.0.21'
+import { unzipSync } from 'https://esm.sh/fflate@0.8.2'
 
 // Generalrepet nu → byt till 'https://resultat.val.se/resultatfiler/val2026' på valnatten.
 const RESULT_BASE_DEFAULT = 'https://resultat.val.se/resultatfiler/genrep2026'
@@ -44,34 +45,35 @@ const MAX_FILES_DEFAULT = 25
 // 300 s → körningar stackade under tung DB och strömmade samma filer parallellt (se leasen nedan).
 const BUDGET_MS = 25_000
 // Ingest-lease (RPC ingest_claim/ingest_release, migration 20260905120000): exakt EN invokering
-// åt gången. TTL > budgeten så en död isolat släpper leasen av sig själv.
+// åt gången. TTL > budgeten så en död isolat släpper leasen av sig själv (60 s: en CPU-dödad
+// körning ska inte blockera mer än ett par varv).
 const LEASE_NAME = 'ingest-result'
-const LEASE_TTL_S = 90
-// CPU-BUDGET per invokering (SÄKERHETSNÄT sedan edge är preliminär-only): edge har ~2 s CPU/
-// REQUEST (inte kumulativt över varv). Att parsa flera MEDELSTORA filer (~15–40 MB uppackat) i EN
-// invokering kan summera >2 s CPU → WORKER_RESOURCE_LIMIT. Sluta lägga till filer när kumulativa
-// STRÖMMADE zip-bytes passerar detta. Preliminära filer är små så detta bör sällan lösa ut; kvar
-// ifall en fil oväntat växer eller en FULL BACKLOG (alla filer ändrade, t.ex. N2-switchen på
-// valnatten) processas i en invokering. SÄNKT 6 → 4 MB efter att turnout-fångsten (PR #69) la till
-// per-distrikt-arbete/upsertar → tunnare marginal; en manuell max=25-POST slog i taket vid full
-// genrep-backlog. 4 MB ger headroom under 2s även vid full backlog; cron:en (30 s) dränerar ändå.
+const LEASE_TTL_S = 60
+// CPU-BUDGET per invokering: edge har ~2 s CPU per REQUEST. Sluta lägga till filer när kumulativa
+// zip-bytes passerar detta (KF-filer är ~30 KB, RF ~100–300 KB, riks-RD ~2 MB).
 const INVOKE_BYTE_BUDGET = 4_000_000
+// STOR FIL = EGEN KÖRNING: en fil större än så här (i praktiken bara riks-RD) avslutar körningen
+// efter sig, så dess CPU aldrig summeras med 24 KF-parsningar i samma invokering.
+const BIG_FILE_BYTES = 1_000_000
 // STORLEKSVAKT (SÄKERHETSNÄT): filer med större zip än så här PARSAR edge inte utan markerar done
-// (413) och delegerar till det lokala skriptet. Slutliga giganter (RD ~24 MB zip / 260 MB uppackat
-// dödar isolatet på ~4 s, WORKER_RESOURCE_LIMIT) filtreras redan bort av manifest-filtret (/p/
-// only), så detta träffar bara en hypotetiskt uppsvälld preliminär fil. ~4 MB zip är den bevisat
-// säkra gränsen. De slutliga tas av `npm run ingest:slutlig` (scripts/ingest-slutlig.mjs).
+// (413). Slutliga giganter (RD ~24 MB zip / 260 MB uppackat) filtreras redan bort av manifest-
+// filtret (/p/ only), så detta träffar bara en hypotetiskt uppsvälld preliminär fil. ⚠️ En sådan
+// fil har då INGEN ingestväg (skriptet tar bara /s/) — loggas därför högt.
 const MAX_EDGE_ZIP_BYTES = 4_000_000
+// Prioritet mellan valtyper när flera filer väntar (beslut 5 sep): Riksdag → Kommun → Region.
+// Utan detta styrde MANIFESTORDNINGEN (p/kf < p/rd < p/rf) → efter switchen/resetten togs 291
+// KF-filer före riks-RD, som därmed kom ~5 min sent. Inom en valtyp: osedd/äldst först.
+const VALTYP_PRIO: Record<string, number> = { RD: 0, KF: 1, RF: 2 }
+const vtOf = (rel: string) => rel.match(/_(RD|RF|KF)\.zip$/i)?.[1].toUpperCase() ?? ''
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 
 interface FileMeta { valtyp?: string; valtillfalle?: string; test?: boolean; rakningstillfalle?: string; senasteUppdateringstid?: string }
-interface StreamResult {
+interface FileResult {
   // ok → markera done. fetchfail/dberror/incomplete → transient, markera EJ done (försök igen
   // nästa varv → självläker). corrupt → dålig data för denna md5, markera done (annars svält).
-  // toobig → för stor för edge (delegeras till lokala Node-skriptet), markera done så den
-  // inte väljs varje varv.
+  // toobig → för stor för edge, markera done (413) och LOGGA — ingen annan väg tar /p/.
   // nodata → zip:en är komplett men saknar rostfordelning (t.ex. riks-SUMMERINGARNA `_OS_KF/_OS_RF`
   // under /p/) — inget att ingesta för denna md5, markera done (annars evig retry som äter filplatser).
   status: 'ok' | 'fetchfail' | 'dberror' | 'incomplete' | 'corrupt' | 'toobig' | 'nodata'
@@ -79,185 +81,146 @@ interface StreamResult {
   resultUp?: number
   uppUp?: number
   turnoutUp?: number
-  bytes?: number // strömmade zip-bytes (CPU-proxy för invokeringens budget); ~0 för toobig
+  bytes?: number // zip-bytes (CPU-proxy för invokeringens budget); ~0 för toobig
   error?: string
 }
 
-// Streama EN organ-zip → upserta result (status ur rakningstillfalle) + uppsamling_result i
-// klungor. Returnerar status-kod som styr om filen markeras done (transienta fel → försök igen).
-async function streamFile(url: string, districtSet: Set<string>, partySet: Set<string>, supabase: SupabaseClient, probe: boolean): Promise<StreamResult> {
+// Hämta EN organ-zip → packa upp → JSON.parse → upserta result (status ur rakningstillfalle) +
+// uppsamling_result + turnout i stora klungor. Returnerar status som styr om filen markeras done.
+async function processFile(url: string, districtSet: Set<string>, partySet: Set<string>, supabase: SupabaseClient, probe: boolean): Promise<FileResult> {
   let res: Response
   try {
-    res = await fetch(url)
-  } catch {
-    return { status: 'fetchfail' }
+    res = await fetch(url, { signal: AbortSignal.timeout(20_000) })
+  } catch (e) {
+    return { status: 'fetchfail', error: (e as Error).message }
   }
-  if (!res.ok || !res.body) return { status: 'fetchfail' }
+  if (!res.ok || !res.body) return { status: 'fetchfail', error: `http ${res.status}` }
 
-  // Storleksvakt FÖRE nedladdning: Content-Length (GET-header = zip-storleken) → avbryt kroppen
-  // och delegera till lokala skriptet om den är för stor för edge. Ingen extra HEAD, ingen 24 MB
-  // hämtad i onödan, ingen krasch-loop på giganterna.
+  // Storleksvakt FÖRE nedladdning (Content-Length = zip-storleken) → avbryt kroppen.
   if ((Number(res.headers.get('content-length')) || 0) > MAX_EDGE_ZIP_BYTES) {
     await res.body.cancel().catch(() => {})
     return { status: 'toobig' }
   }
+  let zip: Uint8Array | null
+  try {
+    zip = new Uint8Array(await res.arrayBuffer())
+  } catch (e) {
+    return { status: 'fetchfail', error: (e as Error).message }
+  }
+  const bytes = zip.length
+  if (bytes > MAX_EDGE_ZIP_BYTES) return { status: 'toobig', bytes }
+  if (bytes === 0) return { status: 'incomplete', bytes }
 
-  const meta: FileMeta = {}
-  let valtyp = ''
-  let rakning = ''
-  let sawFinal = false
-  let sawEntry = false // minst en zip-post sågs → zip:en var läsbar (skiljer "saknar rostfordelning" från trunkerad)
-  let resultUp = 0
-  let uppUp = 0
-  let turnoutUp = 0
-  const pendingResult: Record<string, unknown>[] = []
-  const pendingUpp: Record<string, unknown>[] = []
-  const pendingTurnout: Record<string, unknown>[] = []
-
-  // 1000 rader/upsert UNIFORMT. Realtime är borttaget (klienten pollar via resync var 45–90 s), så
-  // den gamla ≤100-rader-för-Realtime-begränsningen finns inte längre. Den var dessutom ROTORSAKEN
-  // till 2s-CPU-taket: RD:s ~50k result-rader vid 100/batch = ~505 upsert-anrop = >2 s CPU → filen
-  // blev aldrig markerad done → evig re-churn som spikade instansens CPU. 1000/batch → ~51 anrop.
-  const resultBatch = 1000
-  const flush = async (force: boolean) => {
-    while (pendingResult.length >= resultBatch || (force && pendingResult.length > 0)) {
-      const batch = pendingResult.splice(0, resultBatch)
-      if (!probe) {
-        const { error } = await supabase.from('result').upsert(batch, { onConflict: 'valtyp,valdistriktskod,partikod' })
-        if (error) throw new Error('upsert result: ' + error.message)
-      }
-      resultUp += batch.length
-    }
-    while (pendingUpp.length >= 500 || (force && pendingUpp.length > 0)) {
-      const batch = pendingUpp.splice(0, 500)
-      if (!probe) {
-        const { error } = await supabase.from('uppsamling_result').upsert(batch, { onConflict: 'valtyp,kod,partikod' })
-        if (error) throw new Error('upsert uppsamling: ' + error.message)
-      }
-      uppUp += batch.length
-    }
-    // turnout (valdeltagande): 1 rad/distrikt, EJ på Realtime → stor batch (1000) minimerar
-    // edge-round-trips (~7 anrop för RD prel i st f 63 vid 100/batch).
-    while (pendingTurnout.length >= 1000 || (force && pendingTurnout.length > 0)) {
-      const batch = pendingTurnout.splice(0, 1000)
-      if (!probe) {
-        const { error } = await supabase.from('turnout').upsert(batch, { onConflict: 'valtyp,valdistriktskod' })
-        if (error) throw new Error('upsert turnout: ' + error.message)
-      }
-      turnoutUp += batch.length
-    }
+  // Packa upp + parsa. Släpp referenserna så fort de inte behövs (peak-minne: zip + uppackat +
+  // sträng + objektträd ≈ 150 MB för riks-RD; edge-taket 256 MB).
+  // deno-lint-ignore no-explicit-any
+  let j: any
+  try {
+    const unz = unzipSync(zip)
+    zip = null
+    const names = Object.keys(unz)
+    const name = names.find((n) => /rostfordelning.*\.json$/i.test(n))
+    // Poster fanns men ingen rostfordelning → 'nodata' (riks-summeringarna). Inga poster alls →
+    // trunkerad/tom → transient.
+    if (!name) return { status: names.length ? 'nodata' : 'incomplete', bytes }
+    const text = new TextDecoder().decode(unz[name])
+    j = JSON.parse(text)
+  } catch (e) {
+    // Korrupt zip/JSON för denna md5 → done (annars svält); en trunkerad nedladdning ger oftast
+    // fflate-fel här också — men md5:n byts när val.se publicerar om, så den kommer tillbaka.
+    return { status: 'corrupt', error: (e as Error).message, bytes }
   }
 
-  // SAX: emittera bara toppnivå-metafälten + varje valdistrikt-element. valdistrikt ligger SIST
-  // i JSON:en → meta/valtyp/rakning är satta innan första distriktet kommer.
-  const parser = new JSONParser({
-    paths: ['$.valtyp', '$.valtillfalle', '$.test', '$.rakningstillfalle', '$.senasteUppdateringstid', '$.valdistrikt.*'],
-    keepStack: false,
-  })
-  // deno-lint-ignore no-explicit-any
-  parser.onValue = (info: any) => {
-    const { value, key } = info
-    if (key === 'valtyp') { valtyp = value as string; meta.valtyp = valtyp; return }
-    if (key === 'valtillfalle') { meta.valtillfalle = value as string; return }
-    if (key === 'test') { meta.test = value as boolean; return }
-    if (key === 'rakningstillfalle') {
-      rakning = String(value ?? '')
-      meta.rakningstillfalle = rakning
-      if (!/^(prelimin|slutlig)/i.test(rakning)) console.warn('[ingest-result] okänt rakningstillfalle', JSON.stringify({ url, rakning }))
-      return
-    }
-    if (key === 'senasteUppdateringstid') { meta.senasteUppdateringstid = value as string; return }
-    // deno-lint-ignore no-explicit-any
-    const vd = value as any
-    if (!vd || typeof vd !== 'object' || !('valdistriktskod' in vd)) return
+  const meta: FileMeta = {
+    valtyp: typeof j.valtyp === 'string' ? j.valtyp : undefined,
+    valtillfalle: typeof j.valtillfalle === 'string' ? j.valtillfalle : undefined,
+    test: typeof j.test === 'boolean' ? j.test : undefined,
+    rakningstillfalle: typeof j.rakningstillfalle === 'string' ? j.rakningstillfalle : undefined,
+    senasteUppdateringstid: typeof j.senasteUppdateringstid === 'string' ? j.senasteUppdateringstid : undefined,
+  }
+  const valtyp = String(j.valtyp ?? '')
+  const rakning = String(j.rakningstillfalle ?? '')
+  if (!/^(prelimin|slutlig)/i.test(rakning)) console.warn('[ingest-result] okänt rakningstillfalle', JSON.stringify({ url, rakning }))
+  // Edge tar BARA /p/ (preliminära) → default 'preliminar'. Tidigare var default 'slutlig' och
+  // jämförelsen skiftlägeskänslig: hade val2026 skrivit "Preliminär" eller utelämnat fältet hade
+  // första ingesten skrivit ALLT som slutlig, varpå no-downgrade-triggrarna tyst kastat varje
+  // senare uppdatering hela natten. Nu krävs ett explicit "slutlig…" för att sätta slutlig.
+  const status = /^slutlig/i.test(rakning) ? 'slutlig' : 'preliminar'
+
+  const rows: Record<string, unknown>[] = []
+  const upp: Record<string, unknown>[] = []
+  const turnout: Record<string, unknown>[] = []
+  for (const vd of (Array.isArray(j.valdistrikt) ? j.valdistrikt : [])) {
+    if (!vd || typeof vd !== 'object' || !('valdistriktskod' in vd)) continue
     const kod = vd.valdistriktskod
-    // Edge tar BARA /p/ (preliminära) → default 'preliminar'. Tidigare var default 'slutlig' och
-    // jämförelsen skiftlägeskänslig: hade val2026 skrivit "Preliminär" eller utelämnat fältet hade
-    // första ingesten skrivit ALLT som slutlig, varpå no-downgrade-triggrarna tyst kastat varje
-    // senare uppdatering hela natten. Nu krävs ett explicit "slutlig…" för att sätta slutlig.
-    const status = /^slutlig/i.test(rakning) ? 'slutlig' : 'preliminar'
+    const partier = vd.rostfordelning?.rosterPaverkaMandat?.partiRoster ?? []
     if (vd.valdistriktstyp === 'uppsamlingsdistrikt') {
       const kommunkod = typeof vd.kommunkod === 'string' ? vd.kommunkod : null
       const lankod = typeof vd.lankod === 'string' ? vd.lankod : null
-      if (typeof kod !== 'string' || !kommunkod || !lankod) return
-      for (const p of vd.rostfordelning?.rosterPaverkaMandat?.partiRoster ?? []) {
+      if (typeof kod !== 'string' || !kommunkod || !lankod) continue
+      for (const p of partier) {
         if (!partySet.has(p.partikod)) continue
-        pendingUpp.push({ valtyp, kod, kommunkod, lankod, partikod: p.partikod, roster: p.antalRoster, status })
+        upp.push({ valtyp, kod, kommunkod, lankod, partikod: p.partikod, roster: p.antalRoster, status })
       }
-      return
+      continue
     }
-    if (typeof kod !== 'string' || kod.length !== 8 || !districtSet.has(kod)) return // uppsamling/okänd
+    if (typeof kod !== 'string' || kod.length !== 8 || !districtSet.has(kod)) continue // uppsamling/okänd
     // val.se:s egna rapporteringstid per distrikt (naiv svensk lokaltid) → avgångstavlan.
     const rapporteringstid = typeof vd.rapporteringsTid === 'string' ? vd.rapporteringsTid : null
-    // Valdeltagande: totaltAntalRoster (alla avgivna röster) + antalRostberattigade per distrikt.
-    // Bara RAPPORTERADE distrikt (totaltAntalRoster > 0): val.se:s aggregat-valdeltagande använder
-    // röstberättigade i RÄKNADE distrikt som nämnare, så orapporterade distrikt (total = 0/null)
-    // får INTE ligga i store:n → annars blåses nämnaren upp och valdeltagandet understryks live.
+    // Valdeltagande: bara RAPPORTERADE distrikt (totaltAntalRoster > 0) — val.se:s aggregat använder
+    // röstberättigade i RÄKNADE distrikt som nämnare; orapporterade får inte blåsa upp nämnaren.
     if (typeof vd.totaltAntalRoster === 'number' && vd.totaltAntalRoster > 0 && typeof vd.antalRostberattigade === 'number' && vd.antalRostberattigade > 0) {
-      pendingTurnout.push({ valtyp, valdistriktskod: kod, totalt_antal_roster: vd.totaltAntalRoster, antal_rostberattigade: vd.antalRostberattigade, status })
+      turnout.push({ valtyp, valdistriktskod: kod, totalt_antal_roster: vd.totaltAntalRoster, antal_rostberattigade: vd.antalRostberattigade, status })
     }
-    for (const p of vd.rostfordelning?.rosterPaverkaMandat?.partiRoster ?? []) {
+    for (const p of partier) {
       if (!partySet.has(p.partikod)) continue
-      pendingResult.push({ valtyp, valdistriktskod: kod, partikod: p.partikod, roster: p.antalRoster, status, rapporteringstid })
+      rows.push({ valtyp, valdistriktskod: kod, partikod: p.partikod, roster: p.antalRoster, status, rapporteringstid })
     }
   }
-  parser.onError = (e: Error) => { throw e }
+  j = null // objektträdet kan GC:as innan upsertarna
 
-  // Streaming-unzip: fflate Unzip (sync UnzipInflate) → mata rostfordelnings-filens bytes
-  // direkt till SAX-parsern. `final` = fflate har levererat hela filen (integritetssignal).
-  const uz = new Unzip()
-  uz.register(UnzipInflate)
-  uz.onfile = (file) => {
-    sawEntry = true
-    if (/rostfordelning.*\.json$/i.test(file.name)) {
-      file.ondata = (err, data, final) => {
-        if (err) throw err
-        parser.write(data)
-        if (final) sawFinal = true
-      }
-      file.start()
+  // Stora klungor → få PostgREST-anrop (riks-RD: 50k rader → 26 anrop à 2000 i stället för 51).
+  const upsert = async (table: string, arr: Record<string, unknown>[], size: number, onConflict: string) => {
+    for (let i = 0; i < arr.length; i += size) {
+      if (probe) continue
+      const { error } = await supabase.from(table).upsert(arr.slice(i, i + size), { onConflict })
+      if (error) throw new Error(`upsert ${table}: ${error.message}`)
     }
   }
-
-  // Mata fflate i SMÅ bitar (64 KB komprimerat → ~0,6 MB uppackat per push) och töm klungor
-  // EFTER varje bit. Kritiskt i edge: en enda push av en stor käll-chunk skulle sync-inflate
-  // en MB-burst och spika minnet över 256 MB-taket (edge levererar färre/större chunkar än
-  // lokalt). Med små bitar + tät flush stannar peak-minnet på några MB oavsett filstorlek.
-  const SUBCHUNK = 65536
-  const reader = res.body.getReader()
-  let bytesRead = 0
   try {
-    for (;;) {
-      let step: ReadableStreamReadResult<Uint8Array>
-      try {
-        step = await reader.read()
-      } catch (netErr) {
-        // Nätverksavbrott MITT i strömmen (260 MB-fönstret gör detta troligare) → transient,
-        // markera EJ done → nästa cron-varv laddar om från början och självläker.
-        return { status: 'fetchfail', error: (netErr as Error).message }
-      }
-      if (step.done) break
-      const buf = step.value
-      bytesRead += buf.length // CPU-proxy för invokeringens budget
-      for (let off = 0; off < buf.length; off += SUBCHUNK) {
-        uz.push(buf.subarray(off, Math.min(off + SUBCHUNK, buf.length)), false)
-        await flush(false)
-      }
-    }
-    uz.push(new Uint8Array(0), true)
-    await flush(true)
+    await upsert('result', rows, 2000, 'valtyp,valdistriktskod,partikod')
+    await upsert('uppsamling_result', upp, 1000, 'valtyp,kod,partikod')
+    await upsert('turnout', turnout, 2000, 'valtyp,valdistriktskod')
   } catch (e) {
-    const msg = (e as Error).message
-    // upsert-fel = transient DB → försök igen; annars korrupt zip/JSON för denna md5 → done.
-    return msg.startsWith('upsert') ? { status: 'dberror', error: msg } : { status: 'corrupt', error: msg }
+    return { status: 'dberror', error: (e as Error).message, bytes }
   }
-  // Strömmen tog slut utan att rostfordelnings-filen blev komplett (fflate nådde ej `final`):
-  //  - zip-poster sågs men ingen rostfordelning → zip:en saknar den (BEVISAT: `_OS_KF/_OS_RF` under
-  //    /p/ är riks-summeringar med bara summering_*.json) → 'nodata', markera done. Före fixen
-  //    retry:ades de var 30:e sekund för evigt och upptog 2 av 25 filplatser per körning.
-  //  - inga poster alls → trunkerad/tom nedladdning → transient, försök igen.
-  if (!sawFinal) return { status: sawEntry ? 'nodata' : 'incomplete', bytes: bytesRead }
-  return { status: 'ok', meta, resultUp, uppUp, turnoutUp, bytes: bytesRead }
+  return { status: 'ok', meta, resultUp: rows.length, uppUp: upp.length, turnoutUp: turnout.length, bytes }
+}
+
+// SNAPSHOT-BLOBBAR (CDN-contingencyn, migration 20260905150000): Postgres bygger en kompakt JSON
+// per valtyp (RPC snapshot_json → text), vi laddar upp till Storage-bucketen `snapshots` (publik,
+// Cloudflare-cachad, cacheControl 30 s). Klienten seedar från bloben vid mount i stället för ~30
+// PostgREST-sidor → mount-herden blir CDN-trafik. Best-effort: ett fel påverkar inte ingesten
+// (klienten faller tillbaka på keyset-vägen). Anropas (a) efter en ingest-körning för de valtyper
+// som ändrades och (b) från refresh-cronen (varje minut) för alla tre — (b) är säkerhetsnätet som
+// gör att en blob aldrig blir äldre än ~1 min även om (a) dör på CPU-taket efter en tung fil.
+async function refreshSnapshotBlobs(supabase: SupabaseClient, valtyper: string[]): Promise<Record<string, string>> {
+  const out: Record<string, string> = {}
+  for (const vt of valtyper) {
+    const t0 = Date.now()
+    const { data: text, error: rpcErr } = await supabase.rpc('snapshot_json', { p_valtyp: vt })
+    if (rpcErr || typeof text !== 'string') {
+      out[vt] = `rpc-fel: ${rpcErr?.message ?? 'tomt svar'}`
+      console.error('[ingest-result] snapshot_json', vt, out[vt])
+      continue
+    }
+    const { error: upErr } = await supabase.storage
+      .from('snapshots')
+      .upload(`${vt}.json`, new Blob([text], { type: 'application/json' }), { upsert: true, contentType: 'application/json', cacheControl: '30' })
+    out[vt] = upErr ? `upload-fel: ${upErr.message}` : `${(text.length / 1024).toFixed(0)} kB på ${Date.now() - t0} ms`
+    if (upErr) console.error('[ingest-result] snapshot-upload', vt, upErr.message)
+  }
+  return out
 }
 
 Deno.serve(async (req) => {
@@ -271,38 +234,53 @@ Deno.serve(async (req) => {
     return json({ ok: false, error: 'base måste ligga under https://resultat.val.se/resultatfiler/' }, 400)
   }
   const max = Number(body.max ?? MAX_FILES_DEFAULT)
-  // Diagnostik: probe=true streamar + parsar + räknar men UPSERTAR inte och markerar inte done.
-  // Låter oss mäta om parse/ström ALLENA ryms i edge (då är upserts flaskhalsen) utan sidoeffekt.
+  // Diagnostik: probe=true hämtar + parsar + räknar men UPSERTAR inte och markerar inte done.
   const probe = !!body.probe
   const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+
+  // 0. REFRESH-VÄG (cronen varje minut): bara blobbar, ingen ingest, ingen lease → kan aldrig bli
+  //    `busy` bakom en krasch-loopande ingest och konkurrerar inte om ingestens CPU-budget.
+  if (body.refreshSnapshots) {
+    const snapshots = await refreshSnapshotBlobs(supabase, ['RD', 'RF', 'KF'])
+    return json({ ok: !Object.values(snapshots).some((s) => s.includes('-fel')), refreshed: true, snapshots })
+  }
 
   // 1. Manifest → organ-zip-poster. Edge tar BARA de PRELIMINÄRA (/p/) — det är allt som finns
   //    på valnatten och de ryms i CPU-taket. ALLA slutliga (/s/) tas av det lokala Node-skriptet
   //    (scripts/ingest-slutlig.mjs): slutliga filer bär personröster och en KLUNGA medelstora
   //    slutliga i EN invokering summerar >2 s CPU → WORKER_RESOURCE_LIMIT. Att helt utesluta /s/
-  //    här tar bort hela den krasch-risken; skriptet körs ändå ons–fre under sluträkningen.
-  const idxRes = await fetch(`${base}/index.md5`)
-  if (!idxRes.ok) return json({ error: `manifest ${idxRes.status}`, base }, 502)
+  //    här tar bort hela den krasch-risken; skriptet körs ändå mån–fre under sluträkningen.
+  let idxRes: Response
+  try {
+    idxRes = await fetch(`${base}/index.md5`, { signal: AbortSignal.timeout(15_000) })
+  } catch (e) {
+    return json({ ok: false, error: `manifest: ${(e as Error).message}`, base }, 502)
+  }
+  if (!idxRes.ok) return json({ ok: false, error: `manifest ${idxRes.status}`, base }, 502)
   const files = (await idxRes.text())
     .split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
     .map((l) => { const p = l.split(/\s+/); return { md5: p[0], rel: p[p.length - 1] } })
     .filter((e) => /_(RD|RF|KF)\.zip$/i.test(e.rel) && e.rel.includes('/p/'))
     .map((e) => ({ ...e, url: base + e.rel.replace(/^\./, '') }))
-  if (files.length === 0) return json({ error: 'inga organ-zip i manifestet', base }, 502)
+  if (files.length === 0) return json({ ok: false, error: 'inga organ-zip i manifestet', base }, 502)
 
   // 2. Ändrade sedan sist? Manifest-md5 i ingest_state.etag. Prefix-filter på base (ALDRIG
-  //    .in() med alla URL:er → överlång URI). Äldst/osedd först så manifestets svans inte svälts.
+  //    .in() med alla URL:er → överlång URI). Ordning: valtyp-prioritet (RD → KF → RF), sedan
+  //    osedd/äldst först inom valtypen så manifestets svans inte svälts. En fil som just FÖRSÖKTS
+  //    (försöksmarkören nedan sätter last_ok=nu) hamnar därmed sist — en fil som dödar isolatet
+  //    blockerar inte kön.
   const { data: states } = await supabase
     .from('ingest_state')
     .select('file_path,etag,last_ok')
     .like('file_path', `${base}/%`)
-  const seen = new Map((states ?? []).map((s) => [s.file_path, s.etag]))
+  const seen = new Map((states ?? []).map((s) => [s.file_path, s.etag as string | null]))
   const lastOk = new Map((states ?? []).map((s) => [s.file_path, s.last_ok as string | null]))
+  const tsOf = (url: string) => Date.parse(lastOk.get(url) ?? '') || 0
   const allChanged = files
     .filter((f) => seen.get(f.url) !== f.md5)
-    .sort((a, b) => (Date.parse(lastOk.get(a.url) ?? '') || 0) - (Date.parse(lastOk.get(b.url) ?? '') || 0))
+    .sort((a, b) => ((VALTYP_PRIO[vtOf(a.rel)] ?? 9) - (VALTYP_PRIO[vtOf(b.rel)] ?? 9)) || (tsOf(a.url) - tsOf(b.url)))
   const changed = allChanged.slice(0, max)
-  if (changed.length === 0 && !body.refreshSnapshots) return json({ ok: true, changed: 0, total: files.length })
+  if (changed.length === 0) return json({ ok: true, changed: 0, total: files.length })
 
   // 2b. LEASE: exakt en skrivande invokering åt gången (probe skriver inget → ingen lease). Saknas
   //     RPC:n (migrationen släpar efter deployen några sekunder) → kör utan, men logga.
@@ -332,8 +310,8 @@ Deno.serve(async (req) => {
     return json({ ok: false, error: `referensdata ofullständig (district=${districtSet.size}, party=${partySet.size})` }, 503)
   }
 
-  // 4. Per ändrad organ-fil: streama → upserta. Väggtidsbudget (preliminär RD ~2 MB ryms lätt) →
-  //    stanna innan edge-taket, resten nästa varv. Filen markeras done UTOM vid transient fel.
+  // 4. Per ändrad organ-fil: hämta → parsa → upserta. Väggtidsbudget → stanna innan edge-taket,
+  //    resten nästa varv. Filen markeras done UTOM vid transient fel.
   let upserted = 0
   let uppUpserted = 0
   let turnoutUpserted = 0
@@ -343,13 +321,22 @@ Deno.serve(async (req) => {
   const touched = new Set<string>() // valtyper vars data ändrades denna körning → regenerera deras blobbar
   let meta: FileMeta | null = null
   const deadline = Date.now() + BUDGET_MS
-  let invokeBytes = 0 // kumulativa strömmade zip-bytes denna invokering (CPU-budget, se ovan)
+  let invokeBytes = 0 // kumulativa zip-bytes denna invokering (CPU-budget, se ovan)
   for (const f of changed) {
-    // Stanna innan CPU-taket: väggtid ELLER kumulativa bytes (flera medelstora filer summerar
-    // >2 s CPU). Kontrollen är FÖRE filen → föregående fil fick gå klart; resten nästa varv.
+    // Stanna innan CPU-taket: väggtid ELLER kumulativa bytes. Kontrollen är FÖRE filen →
+    // föregående fil fick gå klart; resten nästa varv.
     if (Date.now() > deadline || invokeBytes > INVOKE_BYTE_BUDGET) break
-    const r = await streamFile(f.url, districtSet, partySet, supabase, probe)
-    invokeBytes += r.bytes ?? 0 // toobig strömmar ~0 (kroppen avbruten) → äter inte budgeten
+    // FÖRSÖKSMARKÖR: skriv last_ok=nu (etag OFÖRÄNDRAD → filen räknas fortfarande som ändrad) INNAN
+    // vi rör filen. Dör isolatet mitt i (CPU-taket) ligger markören kvar → filen sorteras sist
+    // inom sin valtyp nästa varv och resten av kön får gå före. 102 = "processing".
+    if (!probe) {
+      await supabase.from('ingest_state').upsert(
+        { file_path: f.url, etag: seen.get(f.url) ?? null, last_ok: new Date().toISOString(), last_status: 102 },
+        { onConflict: 'file_path' },
+      )
+    }
+    const r = await processFile(f.url, districtSet, partySet, supabase, probe)
+    invokeBytes += r.bytes ?? 0 // toobig hämtar ~0 (kroppen avbruten) → äter inte budgeten
     if (r.status === 'fetchfail' || r.status === 'dberror' || r.status === 'incomplete') {
       // Transient (nätverk/DB/trunkerad) → markera INTE done, försök igen nästa varv (självläker).
       failed++
@@ -363,24 +350,27 @@ Deno.serve(async (req) => {
       upserted += r.resultUp ?? 0
       uppUpserted += r.uppUp ?? 0
       turnoutUpserted += r.turnoutUp ?? 0
-      const vt = f.rel.match(/_(RD|RF|KF)\.zip$/i)?.[1].toUpperCase()
+      const vt = vtOf(f.rel)
       if (vt && !probe) touched.add(vt)
     } else {
-      skipped++ // 'toobig' (delegeras till lokala skriptet), 'corrupt' eller 'nodata' — markeras ändå done
+      skipped++ // 'toobig', 'corrupt' eller 'nodata' — markeras ändå done
       // toobig/corrupt är ALDRIG tysta: en /p/-fil > 4 MB har ingen annan ingestväg (skriptet tar bara /s/).
       if (r.status !== 'nodata') console.error('[ingest-result] hoppar', `${r.status} ${f.rel}${r.error ? ': ' + r.error : ''}`)
     }
-    if (probe) continue // diagnostik → rör inte ingest_state
-    const lastStatus = r.status === 'ok' ? 200 : r.status === 'toobig' ? 413 : r.status === 'nodata' ? 204 : 422
-    const { error: stateErr } = await supabase.from('ingest_state').upsert(
-      { file_path: f.url, etag: f.md5, last_ok: new Date().toISOString(), last_status: lastStatus },
-      { onConflict: 'file_path' },
-    )
-    if (stateErr) console.error('[ingest-result] ingest_state-upsert misslyckades', f.rel, stateErr.message)
+    if (!probe) {
+      const lastStatus = r.status === 'ok' ? 200 : r.status === 'toobig' ? 413 : r.status === 'nodata' ? 204 : 422
+      const { error: stateErr } = await supabase.from('ingest_state').upsert(
+        { file_path: f.url, etag: f.md5, last_ok: new Date().toISOString(), last_status: lastStatus },
+        { onConflict: 'file_path' },
+      )
+      if (stateErr) console.error('[ingest-result] ingest_state-upsert misslyckades', f.rel, stateErr.message)
+    }
+    // Stor fil (riks-RD) → egen körning: lägg inte 24 KF-parsningar ovanpå i samma CPU-budget.
+    if ((r.bytes ?? 0) > BIG_FILE_BYTES) break
   }
 
   // 5. Provenance för UI-badgen (best-effort). En gång per körning, från senaste filens meta.
-  if (meta) {
+  if (meta && !probe) {
     await supabase.from('dataset_meta').upsert({
       id: 1,
       source: base.includes('genrep') ? 'genrep2026' : 'val2026',
@@ -392,28 +382,9 @@ Deno.serve(async (req) => {
     }, { onConflict: 'id' })
   }
 
-  // 6. SNAPSHOT-BLOBBAR (CDN-contingencyn, migration 20260905150000): Postgres bygger en kompakt
-  //    JSON per valtyp (RPC snapshot_json → text), vi laddar upp till Storage-bucketen `snapshots`
-  //    (publik, Cloudflare-cachad, cacheControl 30 s). Klienten seedar från bloben vid mount i
-  //    stället för ~30 PostgREST-sidor → mount-herden blir CDN-trafik. Regenereras för de valtyper
-  //    som ändrades denna körning, eller alla vid refreshSnapshots (5-min-cronen). Best-effort:
-  //    ett fel här påverkar inte ingesten (klienten faller tillbaka på keyset-vägen).
-  const snapshots: Record<string, string> = {}
-  const toRefresh = body.refreshSnapshots ? ['RD', 'RF', 'KF'] : [...touched]
-  for (const vt of toRefresh) {
-    const t0 = Date.now()
-    const { data: text, error: rpcErr } = await supabase.rpc('snapshot_json', { p_valtyp: vt })
-    if (rpcErr || typeof text !== 'string') {
-      snapshots[vt] = `rpc-fel: ${rpcErr?.message ?? 'tomt svar'}`
-      console.error('[ingest-result] snapshot_json', vt, snapshots[vt])
-      continue
-    }
-    const { error: upErr } = await supabase.storage
-      .from('snapshots')
-      .upload(`${vt}.json`, new Blob([text], { type: 'application/json' }), { upsert: true, contentType: 'application/json', cacheControl: '30' })
-    snapshots[vt] = upErr ? `upload-fel: ${upErr.message}` : `${(text.length / 1024).toFixed(0)} kB på ${Date.now() - t0} ms`
-    if (upErr) console.error('[ingest-result] snapshot-upload', vt, upErr.message)
-  }
+  // 6. Snapshot-blobbar för de valtyper som ändrades denna körning (refresh-cronen tar resten).
+  const toRefresh = [...touched]
+  const snapshots = toRefresh.length ? await refreshSnapshotBlobs(supabase, toRefresh) : {}
 
   // ok = inga transienta fel denna körning. HTTP 200 ändå (delvis framgång är framgång — de
   // misslyckade filerna försöks igen nästa varv), men `ok:false` + `errors` i kroppen gör att

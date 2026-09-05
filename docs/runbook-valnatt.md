@@ -79,12 +79,15 @@ val2026-deployen hunnit landa via CI. Ordningen är därför **N0 pausa → N1 r
   login` (engångs, interaktivt) och sedan
   `npx supabase@latest functions deploy ingest-result --project-ref emtjnmyberugrkdplnsh`.
   Gör `login` i förväg — inte kl 20:00.
-- [ ] **🔁 Kallstart-repetition mot genrep (går fortfarande — gör den!).** Exakt nattens sekvens:
-  N0 pausa cron → N1 `results:reset --ingest-state` → N3 aktivera cron (edge kvar på genrep) → kör
-  `scripts/monitor-flow.mjs` och mät hur många cron-varv/minuter en full ingest av ~313 `/p/`-filer
-  tar (`MAX_FILES_DEFAULT=25` ⇒ ≥7 varv ≈ 3,5–6,5 min per svep). Det är *det* acceptanstestet för
-  natten: kartan ska fyllas från edge allena, klienter som öppnats *under* tom DB ska börja måla
-  (tom-cursor-buggen fixad i PR A), och `dataset_meta` ska skrivas om.
+- [x] **🔁 Kallstart-repetition mot genrep — GJORD 5 sep 09:47–10:02.** N0 (SQL-editor) → N1
+  `results:reset --ingest-state` (207 907 + 9 103 + 18 896 rader + blobbar bort, verifierat 0) →
+  N3 (SQL-editor) → `monitor-flow`. Resultat: **313/313 på 12,8 min**; en riktig Chromium-flik som
+  öppnats på TOM DB pollade utan ett enda 400-fel och fyllde på via delta (155k rader) utan omladdning;
+  tavlorna gick till 6 312/6 312; blobbarna regenererades. **Två fynd, båda fixade i PR F:**
+  (1) riks-RD dödades av edge-CPU-taket ("CPU Time exceeded", 2 035 ms) i sista flushen och togs om
+  varje varv (~4 min) — strömmande SAX-parse av 38 MB JSON; nu full `JSON.parse` (~0,4 s CPU);
+  (2) ordningen styrdes av manifestet (`p/kf` < `p/rd` < `p/rf`) → Riksdag kom efter 291 KF-filer;
+  nu prioritet RD → KF → RF. Kör gärna om efter PR F: förväntat RD i varv 1, allt inne på ~6 min.
 - [ ] **🔺 Skala till Large I GOD TID + lasttesta på Large (inte i sista minuten).** Compute-resize
   ger en kort omstart/nedtid → byt **dagen innan eller tidig eftermiddag 13 sep**, aldrig ~19:55.
   Kör sedan lasttestet på Large och **läs CPU i Supabase-dashboarden** (klient-väggtid mäter INTE
