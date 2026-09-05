@@ -78,6 +78,17 @@ bucket `snapshots` + klient-seed från blob med keyset-fallback.
   vid 300 flikar, p95 < 160 ms. Extrapolerat 500 flikar ≈ 20/s — Large har bred marginal.
 - **Prod verifierad i riktig Chromium** (bundle `index-D197b_rc.js`): mount = `RD.json`+`RF.json`+`KF.json`
   från CDN, **0 keyset-sidor** mot `result`.
+- **Exakt CPU-topp under hela 50/150/300-körningen: 19,45 %** (Small, avläst i dashboarden).
+
+### Edge-CPU (kallstart-repetition 5 sep) — den andra flaskhalsen
+
+Edge har ett **hårt tak på 2 000 ms CPU per invokering**. Under kallstarten (313 filer från tom DB)
+mättes: ett KF-varv med 25 filer = **439 ms** CPU (`reason: EarlyDrop` = normal), men **riks-RD ensam
+= 2 035 ms → `CPU Time exceeded`** i sista flushen (50 000 av 50 496 rader inne, `ingest_state`
+aldrig skriven, minne bara 18 MB). Rotorsak: strömmande SAX-parse (`@streamparser/json`) av RD:s
+38 MB JSON. Full `unzipSync + JSON.parse` av samma fil: ~0,3–0,5 s CPU, ~150 MB minne (tak 256 MB).
+Bytt i PR F; RD får dessutom en egen körning (`BIG_FILE_BYTES`) och en försöksmarkör gör att en
+fil som ändå dödar isolatet hamnar sist i kön i stället för att blockera den.
 
 **Beslut står: Large för natten** (marginal för delta-poll, edge-upsertar och sluträkning), men mount-
 herden är inte längre dimensionerande. Acceptanstest på Large: `npm run loadtest:poll -- --steps 100,300
