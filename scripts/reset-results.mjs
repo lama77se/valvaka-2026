@@ -39,6 +39,16 @@ if (process.argv.includes('--ingest-state')) {
   console.log(`[reset-results] raderade ${r.count ?? '?'} rader ur ingest_state (full omingest nästa cron-varv).`)
 }
 
+// Snapshot-blobbarna (Storage `snapshots/{RD,RF,KF}.json`, CDN-cachade) speglar den data som just
+// raderades. Låter vi dem ligga kvar seedar varje ny flik GAMMAL data vid mount (och cronen som
+// regenererar dem är pausad under N0–N3). Ta bort dem → klienten faller tillbaka på keyset-vägen
+// (tom tabell = tom karta, korrekt) tills nästa ingest-körning skriver nya blobbar.
+{
+  const { error } = await db.storage.from('snapshots').remove(['RD.json', 'RF.json', 'KF.json'])
+  if (error) fail(`snapshot-blobbar: ${error.message}`)
+  console.log('[reset-results] tog bort snapshot-blobbarna (snapshots/RD|RF|KF.json).')
+}
+
 // Verifiera sluttillståndet — det är DETTA som gör N1 säkert att bocka av.
 for (const table of ['result', 'uppsamling_result', 'turnout']) {
   const { count, error } = await db.from(table).select('*', { count: 'exact', head: true })

@@ -21,6 +21,10 @@
 //
 // Flaggor: --steps 50,150,300 · --hold 90 · --herd-window 10 · --valtyper RD,RF,KF (desktop; mobil = RD)
 //          --poll-min 45 · --poll-max 90 · --writer 0 · --writer-interval 10
+//          --no-blob  (tvinga keyset-snapshot direkt mot Postgres, dvs. läget FÖRE CDN-blobbarna — för jämförelse)
+//
+// MOUNT-VÄG (som klienten sedan 5 sep): snapshot-blob från CDN (storage/v1/object/public/snapshots/<VT>.json)
+// → fallback keyset mot Postgres om bloben saknas/är för gammal. Blob-tider rapporteras separat.
 import ws from 'ws'
 import { createClient } from '@supabase/supabase-js'
 globalThis.WebSocket ??= ws
@@ -39,6 +43,8 @@ const POLL_MIN = Number(arg('--poll-min', '45')) * 1000
 const POLL_MAX = Number(arg('--poll-max', '90')) * 1000
 const WRITER_N = Number(arg('--writer', '0'))
 const WRITER_MS = Number(arg('--writer-interval', '10')) * 1000
+const NO_BLOB = process.argv.includes('--no-blob')
+const BLOB_MAX_AGE_MS = 15 * 60_000
 const PAGE = 10000
 const OVERLAP_MS = 30_000
 const EPOCH = '1970-01-01T00:00:00Z'
@@ -54,12 +60,13 @@ const fetchWithTimeout = (input, init) => fetch(input, { ...init, signal: init?.
 const newTab = () => createClient(URL, ANON, { auth: { persistSession: false }, global: { fetch: fetchWithTimeout } })
 
 // ---- mätvärden -------------------------------------------------------------------------------
-const M = { snapshot: [], delta: [], poll: [], errors: new Map(), rows: 0, req: 0 }
+const M = { blob: [], blobBytes: 0, blobMiss: 0, snapshot: [], delta: [], poll: [], errors: new Map(), rows: 0, req: 0 }
 const err = (e) => { const k = `${e?.code ?? '?'} ${String(e?.message ?? e).slice(0, 60)}`; M.errors.set(k, (M.errors.get(k) ?? 0) + 1) }
-const resetStep = () => { M.snapshot = []; M.delta = []; M.poll = []; M.errors = new Map(); M.rows = 0; M.req = 0 }
+const resetStep = () => { M.blob = []; M.blobBytes = 0; M.blobMiss = 0; M.snapshot = []; M.delta = []; M.poll = []; M.errors = new Map(); M.rows = 0; M.req = 0 }
 const report = (label) => {
   log(`── ${label}`)
-  log(`   snapshot/valtyp: ${fmt(M.snapshot)}`)
+  log(`   blob/valtyp (CDN): ${fmt(M.blob)} · ${(M.blobBytes / 1048576).toFixed(1)} MB · miss→keyset: ${M.blobMiss}`)
+  log(`   keyset-snapshot/valtyp: ${fmt(M.snapshot)}`)
   log(`   delta/valtyp:    ${fmt(M.delta)}`)
   log(`   poll-varv/flik:  ${fmt(M.poll)}`)
   log(`   requests: ${M.req} · rader: ${M.rows.toLocaleString('sv-SE')} · fel: ${[...M.errors].map(([k, v]) => `${v}× ${k}`).join(' | ') || 'inga'}`)
@@ -69,7 +76,27 @@ const report = (label) => {
 class Tab {
   constructor(id) { this.id = id; this.db = newTab(); this.cursor = {}; this.tCursor = {}; this.overlap = {}; this.tOverlap = {}; this.alive = true; this.timer = null }
 
+  // Blob-väg (primär): en CDN-hämtning per valtyp. false → anroparen tar keyset-vägen.
+  async blob(vt) {
+    if (NO_BLOB) return false
+    const t0 = Date.now()
+    try {
+      const res = await fetch(`${URL}/storage/v1/object/public/snapshots/${vt}.json`, { signal: AbortSignal.timeout(30_000) }); M.req++
+      if (!res.ok) { M.blobMiss++; return false }
+      const text = await res.text()
+      const b = JSON.parse(text)
+      if (b?.v !== 1 || b.valtyp !== vt || Date.now() - Date.parse(b.generated_at) > BLOB_MAX_AGE_MS) { M.blobMiss++; return false }
+      M.blobBytes += text.length
+      M.rows += b.result.length + b.turnout.length
+      this.cursor[vt] = b.hwm; this.tCursor[vt] = b.turnout_hwm
+      this.overlap[vt] = true; this.tOverlap[vt] = true
+      M.blob.push(Date.now() - t0)
+      return true
+    } catch (e) { err(e); M.blobMiss++; return false }
+  }
+
   async snapshot(vt) {
+    if (await this.blob(vt)) return true
     const t0 = Date.now()
     let lastVd = '', lastPk = '', cursor = EPOCH
     for (;;) {
