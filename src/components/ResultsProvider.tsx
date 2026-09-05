@@ -43,6 +43,8 @@ const AREA_LEVELS: Level[] = ['riket', 'region', 'kommun', 'valkrets', 'distrikt
 // med klienter/intervall, inte writes×subscribers. UX förblir "live": staggrad reveal + puls-indikator.
 const RESYNC_MIN_MS = 45000
 const RESYNC_MAX_MS = 90000
+// Giltig timestamptz som "ingenting sett än" — se kommentaren vid cursorRef.
+const CURSOR_EPOCH = '1970-01-01T00:00:00Z'
 
 function parseAreaParam(raw: string | null, valtyp: Valtyp): Area {
   if (!raw) return defaultAreaFor(valtyp)
@@ -252,11 +254,15 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
   const aliveRef = useRef(true)
   // Auto-resync-cursor: högsta `updated_at` klienten sett per valtyp. Sätts av snapshoten och
   // flyttas fram av varje resync → nästa resync hämtar bara deltan (`updated_at >= cursor`).
-  const cursorRef = useRef<Record<Valtyp, string>>({ RD: '', RF: '', KF: '' })
+  // Startvärdet MÅSTE vara en giltig timestamptz: en snapshot av en TOM tabell (t.ex. efter
+  // valnattens N1-reset, innan första skarpa filen) lyckas med 0 rader och lämnar cursorn orörd.
+  // Med '' skickade nästa resync `.gte('updated_at','')` → PostgREST 400 (22007) → break → cursorn
+  // flyttades aldrig → fliken förblev tom hela natten trots grön Live-prick. Epoch matchar allt.
+  const cursorRef = useRef<Record<Valtyp, string>>({ RD: CURSOR_EPOCH, RF: CURSOR_EPOCH, KF: CURSOR_EPOCH })
   const resyncingRef = useRef<Record<Valtyp, boolean>>({ RD: false, RF: false, KF: false })
   // Egen resync-cursor för turnout (updated_at), skild från result-cursorn. Sätts av turnout-
   // snapshoten och flyttas fram av varje turnout-resync.
-  const turnoutCursorRef = useRef<Record<Valtyp, string>>({ RD: '', RF: '', KF: '' })
+  const turnoutCursorRef = useRef<Record<Valtyp, string>>({ RD: CURSOR_EPOCH, RF: CURSOR_EPOCH, KF: CURSOR_EPOCH })
   const turnoutResyncingRef = useRef<Record<Valtyp, boolean>>({ RD: false, RF: false, KF: false })
 
   const ensureValtypLoaded = useCallback((vt: Valtyp) => {
