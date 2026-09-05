@@ -24,7 +24,7 @@ function TestdataBanner() {
 // Kompakt rapporteringsstatus, härledd ur providerns store (inte kartans lokala state,
 // så den funkar även innan Karta-fliken öppnats). Bumpas av revision/snapshotVersion.
 function ReportingStatus() {
-  const { valtyp, totalByValtyp, storesRef, realtimeConnected, revision, snapshotVersion } = useResults()
+  const { valtyp, totalByValtyp, storesRef, realtimeConnected, pollError, revision, snapshotVersion } = useResults()
   void revision
   void snapshotVersion
   const store = storesRef.current[valtyp]
@@ -50,8 +50,8 @@ function ReportingStatus() {
         <span className="ml-1 text-sky-300">{pct}%</span>
       </span>
       <span
-        className={`h-1.5 w-1.5 rounded-full ${realtimeConnected ? 'animate-pulse bg-emerald-400' : 'bg-slate-500'}`}
-        title={realtimeConnected ? 'Live' : 'Offline'}
+        className={`h-1.5 w-1.5 rounded-full ${realtimeConnected ? 'animate-pulse bg-emerald-400' : pollError ? 'bg-amber-400' : 'bg-slate-500'}`}
+        title={realtimeConnected ? 'Live' : pollError ?? 'Pausad'}
       />
     </div>
   )

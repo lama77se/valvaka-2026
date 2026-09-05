@@ -158,7 +158,12 @@ export interface ResultsContextValue {
   ensureValtypLoaded: (vt: Valtyp) => void
   revision: number
   snapshotVersion: number
-  realtimeConnected: boolean // Realtime-kanalens status (SUBSCRIBED) → live-indikator
+  // Poll-hälsa → live-indikatorn. realtimeConnected = fliken är synlig OCH senaste lyckade poll/
+  // snapshot är färskare än 2× max-intervallet. Förut sattes den ovillkorligt vid varje pump →
+  // grön prick även när alla anrop misslyckades i timmar. pollError = text att visa i stället för
+  // "Live" när senaste försöket misslyckades ("Uppdatering misslyckades HH:MM · försöker igen").
+  realtimeConnected: boolean
+  pollError: string | null
   dataset: DatasetMeta | null // datakällans provenance (genrep/skarpt) → UI-banner
 }
 
@@ -194,7 +199,45 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
   const [regioner, setRegioner] = useState<NamedCode[]>([])
   const [totalByValtyp, setTotalByValtyp] = useState<Record<Valtyp, number>>(emptyCounts)
   const [realtimeConnected, setRealtimeConnected] = useState(false)
+  const [pollError, setPollError] = useState<string | null>(null)
   const [dataset, setDataset] = useState<DatasetMeta | null>(null)
+  // Poll-hälsa (se ResultsContextValue). Refs muteras av resync/snapshot; en 10 s-ticker + varje
+  // pump speglar dem till state så staleness syns även när inga events kommer.
+  const pollOkAtRef = useRef<number | null>(null)
+  const pollErrorAtRef = useRef<number | null>(null)
+  const pollErrorMsgRef = useRef<string | null>(null)
+  const POLL_STALE_MS = 2 * RESYNC_MAX_MS
+  const refreshPollHealth = useCallback(() => {
+    const visible = typeof document === 'undefined' || document.visibilityState === 'visible'
+    const okAt = pollOkAtRef.current
+    const errAt = pollErrorAtRef.current
+    const fresh = okAt !== null && Date.now() - okAt < POLL_STALE_MS
+    const latestIsError = errAt !== null && (okAt === null || errAt > okAt)
+    // Grön = synlig, färsk OCH senaste händelsen var en lyckad poll. Ett fel som är nyare än senaste
+    // lyckade poll vinner alltid — annars maskerar 180 s-fönstret ett pågående avbrott (testat).
+    setRealtimeConnected(visible && fresh && !latestIsError)
+    // Fel visas om senaste händelsen var ett fel (nyare än senaste lyckade), eller om vi är stale.
+    if (latestIsError) {
+      const hhmm = new Date(errAt).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })
+      setPollError(`Uppdatering misslyckades ${hhmm} · försöker igen`)
+    } else if (okAt !== null && !fresh && visible) {
+      const hhmm = new Date(okAt).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })
+      setPollError(`Ingen uppdatering sedan ${hhmm} · försöker igen`)
+    } else {
+      setPollError(null)
+    }
+  }, [POLL_STALE_MS])
+  const markPollOk = useCallback(() => { pollOkAtRef.current = Date.now(); refreshPollHealth() }, [refreshPollHealth])
+  const markPollError = useCallback((msg: string) => {
+    pollErrorAtRef.current = Date.now()
+    pollErrorMsgRef.current = msg
+    console.warn('[valvaka] poll misslyckades:', msg)
+    refreshPollHealth()
+  }, [refreshPollHealth])
+  useEffect(() => {
+    const t = setInterval(refreshPollHealth, 10_000)
+    return () => clearInterval(t)
+  }, [refreshPollHealth])
 
   const storesRef = useRef<Record<Valtyp, ResultStore>>(null!)
   if (!storesRef.current) {
@@ -409,15 +452,21 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
       if (ok) {
         loadedValtyperRef.current.add(vt)
         retryRef.current[vt] = 0
+        markPollOk() // första gröna pricken kommer från en LYCKAD laddning, inte från mount
         // Bumpa signalkanalerna → tavlorna reseedar, kartan/tabellen räknar om för denna valtyp.
         setSnapshotVersion((v) => v + 1)
         setRevision((r) => r + 1)
-      } else if (aliveRef.current && retryRef.current[vt] < 5) {
-        retryRef.current[vt]++ // transient fel → bunden backoff (2s, 4s, …, 10s), ger inte upp tyst
-        setTimeout(() => ensureValtypLoaded(vt), 2000 * retryRef.current[vt])
+      } else if (aliveRef.current) {
+        // Transient fel → exponentiell backoff MED jitter, OBEGRÄNSAT: 2 s, 4 s, 8 s … max 5 min,
+        // ×(0,5–1,5). Förut 5 försök à 2–10 s utan jitter → vid en 429-storm 20:00 gav hundratals
+        // flikar upp i låst takt efter ~30 s och stod med tom karta resten av natten.
+        retryRef.current[vt]++
+        markPollError(`snapshot ${vt}`)
+        const base = Math.min(300_000, 2000 * 2 ** (retryRef.current[vt] - 1))
+        setTimeout(() => ensureValtypLoaded(vt), base * (0.5 + Math.random()))
       }
     })()
-  }, [])
+  }, [markPollOk, markPollError])
 
   // --- Auto-resync: självläkning mot Realtime-släpning ----------------------------------
   // Efter första snapshot lever store:n bara på Realtime-event, som TAPPAR stora txns (>~100
@@ -441,6 +490,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
       const override = overlapSinceRef.current[vt]
       overlapSinceRef.current[vt] = null // förbrukas
       const since = override && override < cursor ? override : cursor // se OVERLAP_*_MS
+      let failedPoll = false
       const PAGE = 10000
       let from = 0
       let maxTs = cursor
@@ -454,7 +504,8 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
           .order('valdistriktskod', { ascending: true }) // stabila tiebreakers → deterministisk
           .order('partikod', { ascending: true })        // paginering även när deltan spänner flera sidor
           .range(from, from + PAGE - 1)
-        if (error || !data || data.length === 0) break
+        if (error) { markPollError(`delta ${vt}: ${error.message}`); failedPoll = true; break }
+        if (!data || data.length === 0) break
         for (const r of data as unknown as Array<{ valdistriktskod: string; partikod: string; roster: number; status?: string | null; rapporteringstid?: string | null; updated_at?: string | null }>) {
           const wasNew = storesRef.current[vt]?.set(r.valdistriktskod, r.partikod, r.roster, r.rapporteringstid, r.status) ?? false // idempotent
           // Måla om om raden är nyare än cursorn ELLER faktiskt ändrade store:n (= kom in bakom cursorn).
@@ -468,14 +519,16 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
         from += data.length
         if (data.length < PAGE) break
       }
-      if (maxTs > cursor) overlapSinceRef.current[vt] = minusMs(maxTs, OVERLAP_DELTA_MS) // flyttades cursorn → överlappa EN gång till
+      if (failedPoll) overlapSinceRef.current[vt] = override // behåll överlappet till nästa försök
+      else if (maxTs > cursor) overlapSinceRef.current[vt] = minusMs(maxTs, OVERLAP_DELTA_MS) // flyttades cursorn → överlappa EN gång till
       cursorRef.current[vt] = maxTs
+      if (!failedPoll) markPollOk()
       if (changed > 0) setRevision((r) => r + 1) // en bump per delta (inte per rad) — tabellen räknar om
     } finally {
       resyncingRef.current[vt] = false
     }
     return changed
-  }, [])
+  }, [markPollOk, markPollError])
 
   // Valdeltagande-resync: samma inkrementella delta-mönster som result (updated_at >= cursor), men
   // enklare — inga per-distrikt-listeners (valdeltagande matar bara panel-aggregatet, som räknar om
@@ -491,6 +544,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
       const override = turnoutOverlapSinceRef.current[vt]
       turnoutOverlapSinceRef.current[vt] = null // förbrukas
       const since = override && override < cursor ? override : cursor // se OVERLAP_*_MS
+      let failedPoll = false
       const PAGE = 10000
       let from = 0
       let maxTs = cursor
@@ -503,7 +557,8 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
           .order('updated_at', { ascending: true })
           .order('valdistriktskod', { ascending: true }) // stabil tiebreaker → deterministisk paginering
           .range(from, from + PAGE - 1)
-        if (error || !data || data.length === 0) break
+        if (error) { markPollError(`turnout ${vt}: ${error.message}`); failedPoll = true; break }
+        if (!data || data.length === 0) break
         for (const r of data as unknown as Array<{ valdistriktskod: string; totalt_antal_roster: number; antal_rostberattigade: number; updated_at?: string | null }>) {
           const wasNew = turnoutStoresRef.current[vt]?.set(r.valdistriktskod, r.totalt_antal_roster, r.antal_rostberattigade) ?? false // idempotent
           if (wasNew || (r.updated_at && r.updated_at > cursor)) changed++
@@ -512,14 +567,15 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
         from += data.length
         if (data.length < PAGE) break
       }
-      if (maxTs > cursor) turnoutOverlapSinceRef.current[vt] = minusMs(maxTs, OVERLAP_DELTA_MS)
+      if (failedPoll) turnoutOverlapSinceRef.current[vt] = override
+      else if (maxTs > cursor) turnoutOverlapSinceRef.current[vt] = minusMs(maxTs, OVERLAP_DELTA_MS)
       turnoutCursorRef.current[vt] = maxTs
       if (changed > 0) setRevision((r) => r + 1) // en bump per delta → panelen räknar om valdeltagandet
     } finally {
       turnoutResyncingRef.current[vt] = false
     }
     return changed
-  }, [])
+  }, [markPollError])
 
 
   // Uppsamling live: laddar om HELA uppsamlings-aggregatet (litet — max ~314 distrikt × parti ×
@@ -563,7 +619,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
             .order('kod', { ascending: true })
             .order('partikod', { ascending: true })
             .range(from, from + PAGE - 1)
-          if (error) { failed = true; break }
+          if (error) { markPollError(`uppsamling: ${error.message}`); failed = true; break }
           if (!data || data.length === 0) break
           for (const r of data as unknown as Array<{ valtyp: string; kommunkod: string; lankod: string; partikod: string; roster: number; updated_at?: string | null }>) {
             const m = next[r.valtyp as Valtyp]
@@ -584,7 +640,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     } finally {
       uppsamlingBusyRef.current = false
     }
-  }, [])
+  }, [markPollError])
 
   // Dataset-provenance + GENERATIONSVAKT (se effekten längre ned). Byter datasetet identitet
   // (source/valtillfalle) medan fliken är öppen — valnattens N1-reset (`source='reset'`) och sedan
@@ -621,7 +677,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
       for (const vt of VALTYPER) if (loadedValtyperRef.current.has(vt)) { void resyncValtyp(vt); void resyncTurnout(vt) }
       void loadUppsamling()
       void refreshDatasetMeta() // banner-färskhet + generationsvakt (reload om datasetet bytts)
-      setRealtimeConnected(true) // aktiv, synlig pollning → "Live" pulserar
+      refreshPollHealth() // "Live" = senaste LYCKADE poll är färsk — inte "vi försökte just"
     }
     const schedule = () => {
       timer = setTimeout(() => {
@@ -629,18 +685,17 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
         schedule() // jittra nästa varv
       }, RESYNC_MIN_MS + Math.random() * (RESYNC_MAX_MS - RESYNC_MIN_MS))
     }
-    if (document.visibilityState === 'visible') setRealtimeConnected(true) // "Live" direkt från mount
     schedule()
     const onVisible = () => {
       if (document.visibilityState === 'visible') pump()      // snappa färskt vid tab-fokus
-      else setRealtimeConnected(false)                         // bakgrund → dämpad indikator
+      else refreshPollHealth()                                 // bakgrund → dämpad indikator
     }
     document.addEventListener('visibilitychange', onVisible)
     return () => {
       if (timer) clearTimeout(timer)
       document.removeEventListener('visibilitychange', onVisible)
     }
-  }, [resyncValtyp, resyncTurnout, loadUppsamling, refreshDatasetMeta])
+  }, [resyncValtyp, resyncTurnout, loadUppsamling, refreshDatasetMeta, refreshPollHealth])
 
   // Nämnare (mount-en gång). Realtime är BORTTAGET → uppdateringar kommer via poll-loopen ovan;
   // snapshoten laddas efterfrågestyrt per valtyp (ensureValtypLoaded), triggad av aktiv valtyp +
@@ -891,6 +946,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     revision,
     snapshotVersion,
     realtimeConnected,
+    pollError,
     dataset,
   }
 

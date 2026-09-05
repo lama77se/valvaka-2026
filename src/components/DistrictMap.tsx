@@ -52,6 +52,7 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
     subscribeChanges,
     snapshotVersion,
     realtimeConnected,
+    pollError,
     dataset,
     kommuner,
     regioner,
@@ -639,10 +640,12 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
             </div>
             <div className="mt-0.5 flex items-center justify-center gap-1.5 text-xs text-slate-400">
               <span
-                className={`h-1.5 w-1.5 rounded-full ${realtimeConnected ? 'animate-pulse bg-emerald-400' : 'bg-slate-500'}`}
-                title={realtimeConnected ? 'Live — ansluten till realtidsflödet' : 'Ej ansluten till realtidsflödet'}
+                className={`h-1.5 w-1.5 rounded-full ${realtimeConnected ? 'animate-pulse bg-emerald-400' : pollError ? 'bg-amber-400' : 'bg-slate-500'}`}
+                title={realtimeConnected ? 'Live — senaste uppdatering lyckades nyss' : pollError ?? 'Pausad (fliken i bakgrunden)'}
               />
-              <span>{realtimeConnected ? 'Live' : 'Offline'}</span>
+              <span className={pollError && !realtimeConnected ? 'text-amber-300' : undefined}>
+                {realtimeConnected ? 'Live' : pollError ?? 'Pausad'}
+              </span>
               {/* Klockslaget lyftes fram: större (text-sm) + ljusare (slate-300) + tabular så
                   siffrorna inte hoppar. "· uppdaterad" hålls kvar dämpat runt om. */}
               {lastUpdated && (
