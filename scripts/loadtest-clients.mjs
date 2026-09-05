@@ -5,7 +5,9 @@
 //  • en SNAPSHOT-HERD (M samtidiga fulla snapshot-läsningar).
 // Skriver stegade wall-clock-tidsstämplar så CPU-grafen i Supabase kan korreleras per steg.
 // Städar inget (skrivaren rör bara updated_at). Kör: node --env-file=.env.local scripts/loadtest-clients.mjs
+import ws from 'ws'
 import { createClient } from '@supabase/supabase-js'
+globalThis.WebSocket ??= ws // supabase-js kräver WebSocket-konstruktor även utan Realtime; Node 20 saknar nativ
 
 const URL = process.env.VITE_SUPABASE_URL
 const ANON = process.env.VITE_SUPABASE_ANON_KEY

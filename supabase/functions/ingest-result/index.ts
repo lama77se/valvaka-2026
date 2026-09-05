@@ -65,7 +65,9 @@ interface StreamResult {
   // nästa varv → självläker). corrupt → dålig data för denna md5, markera done (annars svält).
   // toobig → för stor för edge (delegeras till lokala Node-skriptet), markera done så den
   // inte väljs varje varv.
-  status: 'ok' | 'fetchfail' | 'dberror' | 'incomplete' | 'corrupt' | 'toobig'
+  // nodata → zip:en är komplett men saknar rostfordelning (t.ex. riks-SUMMERINGARNA `_OS_KF/_OS_RF`
+  // under /p/) — inget att ingesta för denna md5, markera done (annars evig retry som äter filplatser).
+  status: 'ok' | 'fetchfail' | 'dberror' | 'incomplete' | 'corrupt' | 'toobig' | 'nodata'
   meta?: FileMeta
   resultUp?: number
   uppUp?: number
@@ -97,6 +99,7 @@ async function streamFile(url: string, districtSet: Set<string>, partySet: Set<s
   let valtyp = ''
   let rakning = ''
   let sawFinal = false
+  let sawEntry = false // minst en zip-post sågs → zip:en var läsbar (skiljer "saknar rostfordelning" från trunkerad)
   let resultUp = 0
   let uppUp = 0
   let turnoutUp = 0
@@ -189,6 +192,7 @@ async function streamFile(url: string, districtSet: Set<string>, partySet: Set<s
   const uz = new Unzip()
   uz.register(UnzipInflate)
   uz.onfile = (file) => {
+    sawEntry = true
     if (/rostfordelning.*\.json$/i.test(file.name)) {
       file.ondata = (err, data, final) => {
         if (err) throw err
@@ -231,16 +235,24 @@ async function streamFile(url: string, districtSet: Set<string>, partySet: Set<s
     // upsert-fel = transient DB → försök igen; annars korrupt zip/JSON för denna md5 → done.
     return msg.startsWith('upsert') ? { status: 'dberror', error: msg } : { status: 'corrupt', error: msg }
   }
-  // Strömmen tog slut men rostfordelnings-filen blev aldrig komplett (fflate nådde ej `final`)
-  // → trunkerad nedladdning som ändå avslutades "rent". Våra RD/RF/KF-zip HAR alltid en
-  // rostfordelning → !final = ofullständig (aldrig "saknar den") → transient, försök igen.
-  if (!sawFinal) return { status: 'incomplete', bytes: bytesRead }
+  // Strömmen tog slut utan att rostfordelnings-filen blev komplett (fflate nådde ej `final`):
+  //  - zip-poster sågs men ingen rostfordelning → zip:en saknar den (BEVISAT: `_OS_KF/_OS_RF` under
+  //    /p/ är riks-summeringar med bara summering_*.json) → 'nodata', markera done. Före fixen
+  //    retry:ades de var 30:e sekund för evigt och upptog 2 av 25 filplatser per körning.
+  //  - inga poster alls → trunkerad/tom nedladdning → transient, försök igen.
+  if (!sawFinal) return { status: sawEntry ? 'nodata' : 'incomplete', bytes: bytesRead }
   return { status: 'ok', meta, resultUp, uppUp, turnoutUp, bytes: bytesRead }
 }
 
 Deno.serve(async (req) => {
   const body = await req.json().catch(() => ({})) as { base?: string; max?: number; probe?: boolean }
   const base = (body.base ?? RESULT_BASE_DEFAULT).replace(/\/+$/, '')
+  // ALLOWLIST: funktionen anropas med anon-JWT (ligger i klient-bundlen) och skriver med
+  // service_role. Utan denna spärr kan vem som helst peka `base` mot en egen server med
+  // påhittad index.md5 + zip och få fabricerade röstsiffror upsertade på den skarpa kartan.
+  if (!base.startsWith('https://resultat.val.se/resultatfiler/')) {
+    return json({ ok: false, error: 'base måste ligga under https://resultat.val.se/resultatfiler/' }, 400)
+  }
   const max = Number(body.max ?? MAX_FILES_DEFAULT)
   // Diagnostik: probe=true streamar + parsar + räknar men UPSERTAR inte och markerar inte done.
   // Låter oss mäta om parse/ström ALLENA ryms i edge (då är upserts flaskhalsen) utan sidoeffekt.
@@ -311,10 +323,10 @@ Deno.serve(async (req) => {
       uppUpserted += r.uppUp ?? 0
       turnoutUpserted += r.turnoutUp ?? 0
     } else {
-      skipped++ // 'toobig' (delegeras till lokala skriptet) eller 'corrupt' — markeras ändå done
+      skipped++ // 'toobig' (delegeras till lokala skriptet), 'corrupt' eller 'nodata' — markeras ändå done
     }
     if (probe) continue // diagnostik → rör inte ingest_state
-    const lastStatus = r.status === 'ok' ? 200 : r.status === 'toobig' ? 413 : 422
+    const lastStatus = r.status === 'ok' ? 200 : r.status === 'toobig' ? 413 : r.status === 'nodata' ? 204 : 422
     await supabase.from('ingest_state').upsert(
       { file_path: f.url, etag: f.md5, last_ok: new Date().toISOString(), last_status: lastStatus },
       { onConflict: 'file_path' },

@@ -2,7 +2,9 @@
 // skrivburst (peak-rapportering) vid 1000 subs. Skrivaren re-upsertar en roterande batch
 // RD-rader med SAMMA värden (bumpar bara updated_at → WAL → Realtime fan-out). Wall-clock-
 // stämplar så CPU-grafen kan korreleras. Kör: node --env-file=.env.local scripts/loadtest-heavy.mjs
+import ws from 'ws'
 import { createClient } from '@supabase/supabase-js'
+globalThis.WebSocket ??= ws // supabase-js kräver WebSocket-konstruktor även utan Realtime; Node 20 saknar nativ
 
 const URL = process.env.VITE_SUPABASE_URL
 const ANON = process.env.VITE_SUPABASE_ANON_KEY

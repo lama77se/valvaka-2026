@@ -25,6 +25,12 @@ triggrarna (`result_no_status_downgrade`, `turnout_no_status_downgrade`) **block
 val2026-**preliminära** upserterna (samma PK) → **kartan/valdeltagandet skulle frysa på genrep-
 testdata hela natten**. Därför MÅSTE DB:n rensas innan skarpt flödar (steg N1 nedan).
 
+**Och: cronen måste vara PAUSAD när du rensar (N0).** `genrep2026` svarar fortfarande (5 sep: 313
+`/p/`-filer + 311 `/s/`). Rensar du med cronen igång och edge fortfarande på genrep, ser edge inom
+30 s alla genrep-filer som nya och fyller DB:n med testdata igen — inkl. `slutlig`-rader — *innan*
+val2026-deployen hunnit landa via CI. Ordningen är därför **N0 pausa → N1 rensa → N2 byt + verifiera
+→ N3 aktivera**.
+
 ---
 
 ## Inför valnatten (dagarna innan)
@@ -55,42 +61,92 @@ testdata hela natten**. Därför MÅSTE DB:n rensas innan skarpt flödar (steg N
   - Verifieras skarpt på en genrep-sim (då ska kartan fyllas helt från edge allena — klienten
     pollar deltan och målar om per distrikt under burst — den egentliga acceptansen). Ser du `/s/`
     under en valnatts-sim, kör `npm run ingest:slutlig` som backup.
-- [ ] **`.env.local` klar** med service-role (`SUPABASE_SERVICE_ROLE_KEY`) för det lokala skriptet.
-- [ ] **Infra:** Supabase-compute uppskalad — **Large för kvällen** (Pro), `Max rows = 10000`
-  (Settings → API). Vercel-env (`VITE_SUPABASE_URL/ANON_KEY/GEOMETRY_URL`) korrekta (appen är live).
+- [x] **`.env.local` klar** med service-role (`SUPABASE_SERVICE_ROLE_KEY`) för det lokala skriptet
+  (verifierat 5 sep på nya maskinen; Node 20.19 = `.nvmrc`).
+- [x] **`Max rows = 10000`** — verifierat live 5 sep (anon-probe bad om 15 000, fick 10 000).
+- [x] **Anon-RLS** läser alla klienttabeller (`result`, `turnout`, `uppsamling_result`, `dataset_meta`,
+  `district`, `party`, `district_result_2022`); inga anon-skrivrättigheter. Verifierat 5 sep.
+- [x] **Geometrin CDN-cachas**: Supabase Storage bakom Cloudflare, `max-age=31536000`, brotli ≈ 1,0 MB,
+  `CF-Cache-Status: HIT` → 20:00-herden träffar CDN, inte origin. Verifierat 5 sep.
+- [x] **ErrorBoundary** runt appen (`src/main.tsx`) — ett render-undantag ger "Ladda om"-läge, inte vit sida.
+- [ ] **Infra:** Supabase-compute uppskalad — **Large för kvällen** (Pro). Vercel-env
+  (`VITE_SUPABASE_URL/ANON_KEY/GEOMETRY_URL`) korrekta (appen är live).
   Lastkapacitet, mätvärden och CDN-cache-contingencyn: [valnatt-lastkapacitet.md](./valnatt-lastkapacitet.md).
+- [ ] **Stäng av Realtime-*tjänsten*** i Supabase-dashboarden (publikationen är redan tom, men
+  tjänsten/replikationsslotten går bara att stänga där) → noll WAL-avkodning under natten.
+- [ ] **Manuell deploy-fallback klar.** `deploy-functions.yml` har `workflow_dispatch` (Actions →
+  *Deploy edge functions* → *Run workflow*). Om GitHub Actions självt ligger nere: `npx supabase@latest
+  login` (engångs, interaktivt) och sedan
+  `npx supabase@latest functions deploy ingest-result --project-ref emtjnmyberugrkdplnsh`.
+  Gör `login` i förväg — inte kl 20:00.
+- [ ] **🔁 Kallstart-repetition mot genrep (går fortfarande — gör den!).** Exakt nattens sekvens:
+  N0 pausa cron → N1 `results:reset --ingest-state` → N3 aktivera cron (edge kvar på genrep) → kör
+  `scripts/monitor-flow.mjs` och mät hur många cron-varv/minuter en full ingest av ~313 `/p/`-filer
+  tar (`MAX_FILES_DEFAULT=25` ⇒ ≥7 varv ≈ 3,5–6,5 min per svep). Det är *det* acceptanstestet för
+  natten: kartan ska fyllas från edge allena, klienter som öppnats *under* tom DB ska börja måla
+  (tom-cursor-buggen fixad i PR A), och `dataset_meta` ska skrivas om.
 - [ ] **🔺 Skala till Large I GOD TID + lasttesta på Large (inte i sista minuten).** Compute-resize
   ger en kort omstart/nedtid → byt **dagen innan eller tidig eftermiddag 13 sep**, aldrig ~19:55.
   Kör sedan lasttestet på Large och **läs CPU i Supabase-dashboarden** (klient-väggtid mäter INTE
   server-CPU). Sedan **Realtime togs bort (1 sep)** är den kvarvarande lasten **mount-snapshot-herden**
-  — många samtidiga fulla snapshot-läsningar vid poll-close (~20:00) + lätt pollning — INTE Realtime-
-  fan-out. Lasttesta den herden (snapshot-herd-fasen i `scripts/loadtest-heavy.mjs`; Realtime-anslut-
-  ningsdelen är numera irrelevant). Räcker inte Large → CDN-cachen (valnatt-lastkapacitet.md). Godkänt
-  = CPU håller marginal och återhämtar sig (jfr 64 % på Small → väntat ~30 % på Large).
+  — många samtidiga fulla snapshot-läsningar vid poll-close (~20:00) + delta-pollning var 45–90 s —
+  INTE Realtime-fan-out. ⚠️ **Befintliga lasttest matchar inte längre arkitekturen:** `loadtest-heavy.mjs`
+  har *ingen* snapshot-herd-fas (den ligger som STEG 4 i `loadtest-clients.mjs`), båda spenderar
+  minuter på Realtime-subscribers som inte finns längre, och `loadtest-valnatt.mjs` (Realtime-era)
+  **raderar RD** ("ren tavla") — kör den inte mot prod. Skriv `scripts/loadtest-poll.mjs` som
+  simulerar dagens klient (keyset-snapshot per valtyp + delta-poll var 45–90 s, N=300–500 samtidiga)
+  och kör den på Large. Räcker inte Large → CDN-cachen (valnatt-lastkapacitet.md). Godkänt = CPU
+  håller marginal och återhämtar sig (jfr 64 % på Small → väntat ~30 % på Large).
+  Obs: den sena herden (anslutare 20:30–22:00 som drar 15–25 MB JSON var) är dyrare än 20:00-herden
+  (tabellen nästan tom då).
 - [ ] **Låt genrep-demon stå** tills nära natten — den visar att allt fungerar.
 
 ---
 
 ## På valnatten (sön 13 sep, strax innan resultaten öppnar ~20:00)
 
+**N0. Pausa cronen (FÖRE resetten — annars fyller edge DB:n med genrep igen inom 30 s):**
+```sql
+select cron.alter_job((select jobid from cron.job where jobname='ingest-result-genrep'), active => false);
+select jobname, active, schedule from cron.job;   -- ingest-result-genrep ska visa active = f
+```
+
 **N1. Rensa genrep-datan (KRITISKT — se fallgropen ovan):**
 ```bash
 npm run results:reset -- --ingest-state
+node --env-file=.env.local scripts/db-status.mjs   # result/uppsamling/turnout ska visa 0 rader, 0 slutlig
 ```
 Rensar `result` + `uppsamling_result` + `turnout` (+ `ingest_state` för en helt ren omingest). Appen
 visar nu "inga 2026-röster än" (bara 2022-kolumner) tills skarpt flödar — korrekt startläge.
+Kör sedan i SQL-editorn: `vacuum (analyze) result, turnout;` så planeraren har färsk statistik för
+tom→full-övergången.
 
 **N2. Byt datakälla → `val2026` (un-draft:a + merga den förberedda switch-PR:en,
-`chore/valnatt-switch-val2026`):** deployar edge-funktionen (`deploy-functions.yml`). På första
+`chore/valnatt-switch-val2026`):** deployar edge-funktionen (`deploy-functions.yml`).
+**Verifiera deployen innan du går vidare:** `gh run watch` (eller Actions-fliken) tills *Deploy edge
+functions* är grön; misslyckas den → *Run workflow*-knappen, eller CLI-fallbacken ovan. Gör sedan
+den manuella smoke-POST:en (*Verifiering* nedan) — svaret ska säga `"source":"val2026"`. På första
 skarpa filen försvinner `test`-attributet → `dataset_meta` skrivs om till `source='val2026',
 test=false` → **testdata-bannern släcks automatiskt**.
 
-**N3. Cron-kadensen är redan 30 s** (gjord i förväg, `20260827120000_tighten_cron.sql`) — inget att göra.
+**N3. Aktivera cronen igen** (kadensen är redan 30 s, `20260827120000_tighten_cron.sql`):
+```sql
+select cron.alter_job((select jobid from cron.job where jobname='ingest-result-genrep'), active => true);
+```
 
 **N4. Övervaka** (inget manuellt behövs sen — edge sköter preliminärt automatiskt):
+- **Kör vakthunden i en terminal hela natten** — den stämmer av val.se ↔ edge ↔ DB var 30 s:
+  `node --env-file=.env.local scripts/monitor-flow.mjs --base https://resultat.val.se/resultatfiler/val2026`
+  (⚠️ dess *default* är genrep — glöm inte `--base`; det är ett tredje ställe utöver lockstep-switchen).
 - Testdata-bannern släcks.
 - Kartan börjar fyllas, rapporteringsgrad-HUD:en tickar, statustaggen = **Preliminärt**.
 - Avgångstavlorna visar inrapporterade distrikt med val.se:s klockslag.
+- **Cron-hälsa i SQL** (cron-kommandot `net.http_post` "lyckas" alltid → `cron.job_run_details` är
+  grönt även om varje edge-anrop 5xx:ar; titta här i stället):
+  ```sql
+  select status_code, error_msg, left(content::text, 200) as body, created
+  from net._http_response order by id desc limit 10;
+  ```
 
 > På SJÄLVA söndagsnatten finns bara **preliminära** filer (`/p/`). Riks-RD är ~2 MB preliminär →
 > ryms i edge. **Slutliga filer (`/s/`) finns INTE än på natten** — men Länsstyrelsen börjar
@@ -151,8 +207,16 @@ curl -s -XPOST "$VITE_SUPABASE_URL/functions/v1/ingest-result" \
 - **Kartan fryst på gammal data / uppdateras inte** → genrep-datan rensades inte (N1). Kör
   `npm run results:reset -- --ingest-state`, låt cron:en ominge­sta.
 - **`WORKER_RESOURCE_LIMIT` i loggen** → oväntat; edge tar bara preliminära (`/p/`) filer och de är
-  små. Kontrollera att manifest-filtret i `ingest-result` fortfarande utesluter `/s/`. Filen
-  markeras ändå done (ingen krasch-loop).
+  små. Kontrollera att manifest-filtret i `ingest-result` fortfarande utesluter `/s/`. ⚠️ Filen
+  markeras **INTE** done (isolatet dör inne i `streamFile`, före `ingest_state`-skrivningen) och
+  sorteras först nästa varv (`last_ok` null) → **riktig krasch-loop** som blockerar filplats 1 varje
+  körning. Åtgärd: identifiera filen (`monitor-flow.mjs` visar vilka manifest-md5 som saknas i
+  `ingest_state`), skriv manuellt en rad i `ingest_state` med dess md5 och `last_status=413`, och ta
+  filen med det lokala skriptet.
+- **`changed>0` men `upserted=0` varv efter varv** → före PR A var det riks-summeringarna
+  (`…_preliminar_OS_KF.zip`/`_OS_RF.zip`, saknar `rostfordelning`) som retry:ades för evigt; nu
+  markeras de `nodata` (204). Kvarstår mönstret: kolla `net._http_response` och att `district`/
+  `party`-lookupen inte fallerar tyst (tom `districtSet` ⇒ alla rader "okända" ⇒ fil klar med 0 rader).
 - **Slutliga siffror kommer inte in** → glömt köra `npm run ingest:slutlig`, eller skriptet pekar
   fortfarande på `genrep` (lockstep-switchen bytte bara edge-filen).
 - **Bannern släcks inte** → ingen skarp fil har flödat än (val2026 fortfarande 404/tom) eller

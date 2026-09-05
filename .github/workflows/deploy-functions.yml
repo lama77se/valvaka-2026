@@ -12,6 +12,9 @@ on:
     branches: [main]
     paths:
       - 'supabase/functions/**'
+  # Manuell knapp (Actions → Deploy edge functions → Run workflow): valnattens fallback om
+  # push-triggern inte lös ut eller en deploy behöver göras om utan ny commit.
+  workflow_dispatch:
 
 concurrency:
   group: deploy-functions
