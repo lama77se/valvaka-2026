@@ -29,7 +29,8 @@
     "verify:realtime": "node --env-file=.env.local scripts/verify-realtime.mjs",
     "verify:fas3": "node scripts/verify-fas3.mjs",
     "replay:2022": "node --env-file=.env.local --import tsx scripts/replay-2022.ts",
-    "loadtest:valnatt": "node --env-file=.env.local scripts/loadtest-valnatt.mjs"
+    "loadtest:valnatt": "node --env-file=.env.local scripts/loadtest-valnatt.mjs",
+    "loadtest:poll": "node --env-file=.env.local scripts/loadtest-poll.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.109.0",
