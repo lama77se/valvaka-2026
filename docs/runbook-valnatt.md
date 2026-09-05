@@ -73,12 +73,13 @@ val2026-deployen hunnit landa via CI. Ordningen är därför **N0 pausa → N1 r
   (`VITE_SUPABASE_URL/ANON_KEY/GEOMETRY_URL`) korrekta (appen är live).
   Lastkapacitet, mätvärden och CDN-cache-contingencyn: [valnatt-lastkapacitet.md](./valnatt-lastkapacitet.md).
 - [x] **Vercel Firewall — läge kontrollerat 5 sep: Attack Mode AV, System Mitigations PÅ. Behåll så.**
-  Bakgrund: 5 sep ~09:47–09:55 svarade valvaka.tech `403 Vercel Security Checkpoint`
-  (`X-Vercel-Mitigated: challenge`) till allt som inte klarade JS-utmaningen. Attack Mode var av →
-  det var Vercels **automatiska system mitigations** (DDoS-skydd) som reagerade på en ENDA IP som
-  körde headless-herdar mot sajten; läget släppte av sig självt inom ~15 min. En legitim publik från
-  tusentals IP:n ser inte ut så. Riktiga webbläsare passerar ändå efter en spinner; headless/inbäddade
-  klienter stoppas.
+  Bakgrund: 5 sep ~09:47–09:55 fick **en enda IP (testdatorn, Telenor)** `403 Vercel Security
+  Checkpoint` (`X-Vercel-Mitigated: challenge`) efter ~70 curl/HeadlessChrome-anrop på kort tid.
+  Firewall-fliken visade: Challenged 12 (= den IP:n), Denied 109 (= en WordPress-scanner,
+  `/wp-admin/install.php` via Cloudflare/Tencent-AS — korrekt blockerad), Bot Protection inaktiv,
+  0 custom rules. Mitigeringen är alltså **per källa/mönster, inte sajtomfattande** — riktiga besökare
+  påverkades inte, och läget släppte av sig självt inom ~15 min. En legitim publik från tusentals IP:n
+  ser inte ut som en attack.
   Regler för natten: **Attack Mode av. Pausa INTE system mitigations** ("Pause System Mitigations" i
   Danger Zone) annat än om skyddet bevisligen utmanar riktiga besökare under kvällen — då är det ett
   medvetet byte av DDoS-skydd mot friktion. **Ingen headless-trafik mot valvaka.tech från 12 sep**
