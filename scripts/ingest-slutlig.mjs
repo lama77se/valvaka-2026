@@ -61,7 +61,8 @@ async function processFile(f, sets) {
   const name = Object.keys(unz).find((n) => /rostfordelning.*\.json$/i.test(n))
   if (!name) { console.error(`  ingen rostfordelning i ${f.rel} — hoppar (markerar EJ done).`); return false }
   const j = JSON.parse(new TextDecoder().decode(unz[name]))
-  const rakstatus = String(j.rakningstillfalle ?? '').startsWith('prelimin') ? 'preliminar' : 'slutlig'
+  // Skiftlägesokänslig (val.se kan skriva "Preliminär"); detta skript tar bara /s/ → default slutlig är rätt här.
+  const rakstatus = /^prelimin/i.test(String(j.rakningstillfalle ?? '')) ? 'preliminar' : 'slutlig'
   log(`  ${j.valtyp} · räkning "${j.rakningstillfalle}" → status ${rakstatus} · uppackad ${(unz[name].byteLength / 1048576).toFixed(0)} MB · ${j.valdistrikt?.length} distrikt`)
 
   const rows = []

@@ -2,11 +2,16 @@
 //
 //   node --env-file=.env.local scripts/reset-results.mjs [--ingest-state]
 //
-// ⚠️ KÖR INFÖR VALNATTEN. Genrep lämnar rader med status='slutlig'; no-downgrade-triggrarna
-// (result_/turnout_no_status_downgrade) BLOCKAR då de skarpa val2026-PRELIMINÄRA upserterna (samma
-// PK) → kartan/valdeltagandet skulle frysa på genrep-testdata. Rensa därför ALLA tre tabellerna så
-// val2026 skriver rent. --ingest-state wipar även ingest_state (behövs ej för base-bytet —
-// val2026-nycklar är färska ändå — men ger en helt ren start).
+// ⚠️ KÖR INFÖR VALNATTEN (runbookens N1 — med cronen PAUSAD, N0). Genrep lämnar rader med
+// status='slutlig'; no-downgrade-triggrarna (result_/turnout_/uppsamling_result_no_status_downgrade)
+// BLOCKAR då de skarpa val2026-PRELIMINÄRA upserterna (samma PK) → kartan/valdeltagandet skulle
+// frysa på genrep-testdata. Rensa därför ALLA tre tabellerna så val2026 skriver rent.
+// --ingest-state wipar även ingest_state (behövs ej för base-bytet — val2026-nycklar är färska
+// ändå — men ger en helt ren start).
+//
+// STRIKT: varje fel är fatalt (exit 1) och sluttillståndet VERIFIERAS (0 rader i alla tre). Tidigare
+// loggades fel på uppsamling/turnout som "ignoreras" och skriptet exit:ade 0 — på natten hade det
+// betytt kvarvarande slutliga turnout-rader och fruset valdeltagande utan att någon såg det.
 import ws from 'ws'
 import { createClient } from '@supabase/supabase-js'
 
@@ -19,24 +24,26 @@ if (!url || !serviceKey) {
   process.exit(1)
 }
 const db = createClient(url, serviceKey, { auth: { persistSession: false } })
+const VALTYPER = ['RD', 'RF', 'KF']
+const fail = (msg) => { console.error(`[reset-results] ❌ ${msg}`); process.exit(1) }
 
-const r1 = await db.from('result').delete({ count: 'exact' }).in('valtyp', ['RD', 'RF', 'KF'])
-if (r1.error) throw new Error('result: ' + r1.error.message)
-console.log(`[reset-results] raderade ${r1.count ?? '?'} rader ur result.`)
-
-// uppsamling_result kan saknas i ett gammalt schema → fall tyst tillbaka.
-const r2 = await db.from('uppsamling_result').delete({ count: 'exact' }).in('valtyp', ['RD', 'RF', 'KF'])
-if (r2.error) console.warn(`[reset-results] uppsamling_result: ${r2.error.message} (ignoreras)`)
-else console.log(`[reset-results] raderade ${r2.count ?? '?'} rader ur uppsamling_result.`)
-
-// turnout (valdeltagande) — samma no-downgrade-fallgrop som result → måste rensas inför skarpt.
-const r4 = await db.from('turnout').delete({ count: 'exact' }).in('valtyp', ['RD', 'RF', 'KF'])
-if (r4.error) console.warn(`[reset-results] turnout: ${r4.error.message} (ignoreras)`)
-else console.log(`[reset-results] raderade ${r4.count ?? '?'} rader ur turnout.`)
+for (const table of ['result', 'uppsamling_result', 'turnout']) {
+  const r = await db.from(table).delete({ count: 'exact' }).in('valtyp', VALTYPER)
+  if (r.error) fail(`${table}: ${r.error.message}`)
+  console.log(`[reset-results] raderade ${r.count ?? '?'} rader ur ${table}.`)
+}
 
 if (process.argv.includes('--ingest-state')) {
-  const r3 = await db.from('ingest_state').delete({ count: 'exact' }).neq('file_path', '')
-  if (r3.error) console.warn(`[reset-results] ingest_state: ${r3.error.message} (ignoreras)`)
-  else console.log(`[reset-results] raderade ${r3.count ?? '?'} rader ur ingest_state (full omingest nästa cron-varv).`)
+  const r = await db.from('ingest_state').delete({ count: 'exact' }).neq('file_path', '')
+  if (r.error) fail(`ingest_state: ${r.error.message}`)
+  console.log(`[reset-results] raderade ${r.count ?? '?'} rader ur ingest_state (full omingest nästa cron-varv).`)
 }
+
+// Verifiera sluttillståndet — det är DETTA som gör N1 säkert att bocka av.
+for (const table of ['result', 'uppsamling_result', 'turnout']) {
+  const { count, error } = await db.from(table).select('*', { count: 'exact', head: true })
+  if (error) fail(`verifiering ${table}: ${error.message}`)
+  if ((count ?? -1) !== 0) fail(`${table} har fortfarande ${count} rader efter rensning`)
+}
+console.log('[reset-results] ✅ verifierat: result / uppsamling_result / turnout = 0 rader.')
 process.exit(0)

@@ -146,6 +146,9 @@ select cron.alter_job((select jobid from cron.job where jobname='ingest-result-g
   ```sql
   select status_code, error_msg, left(content::text, 200) as body, created
   from net._http_response order by id desc limit 10;
+  -- bara problem: status_code <> 200 eller "ok":false i kroppen
+  select status_code, left(content::text, 300), created from net._http_response
+  where status_code is distinct from 200 or content::text like '%"ok":false%' order by id desc limit 10;
   ```
 
 > På SJÄLVA söndagsnatten finns bara **preliminära** filer (`/p/`). Riks-RD är ~2 MB preliminär →
@@ -198,8 +201,15 @@ npm run ingest:slutlig -- --force # kör om alla slutliga filer
 ```bash
 curl -s -XPOST "$VITE_SUPABASE_URL/functions/v1/ingest-result" \
   -H "apikey: $ANON" -H "Authorization: Bearer $ANON" -d '{}'
-# → {"ok":true,"changed":N,...}  (546/WORKER_RESOURCE_LIMIT bör ej hända — edge tar bara små /p/)
+# → {"ok":true,"source":"val2026","changed":N,"upserted":…,"failed":0,"remaining":…}
+#   {"ok":true,"busy":true,"pending":N}  = en annan invokering håller leasen just nu (normalt, kör igen)
+#   {"ok":false,"failed":N,"errors":[…]} = transienta fel på N filer (försöks igen nästa varv) — läs errors
+#   503 {"error":"district-lookup…"}      = referensdata gick inte att läsa → INGET markerades klart, kolla DB
+#   (546/WORKER_RESOURCE_LIMIT bör ej hända — edge tar bara små /p/)
 ```
+Leasen (`ingest_lease`, RPC `ingest_claim`/`ingest_release`) gör att exakt en invokering skriver åt
+gången; edge-budgeten är 25 s (< 30 s-kadensen). Fastnar leasen (bör inte hända — TTL 90 s):
+`update ingest_lease set expires_at = now() where name = 'ingest-result';`
 
 **Provenance/banner:** `dataset_meta` (rad `id=1`) → `source='val2026', test=false` när skarpt flödar.
 

@@ -45,6 +45,17 @@ const RESYNC_MIN_MS = 45000
 const RESYNC_MAX_MS = 90000
 // Giltig timestamptz som "ingenting sett än" — se kommentaren vid cursorRef.
 const CURSOR_EPOCH = '1970-01-01T00:00:00Z'
+// ÖVERLAPPSFÖNSTER för deltan. `updated_at` sätts vid transaktionens START (now()), men raden blir
+// synlig först vid COMMIT. En upsert-txn som startade 20:40:00.0 och committade 20:40:01.5 syns
+// inte för en poll 20:40:01.0 — som ändå flyttar cursorn till 20:40:00.5 (från en annan, snabbare
+// txn) → raderna hamnar för evigt BAKOM cursorn. Därför frågar vi från cursor − 30 s (edge-
+// upsertar är 1000-raders-txn på < 2 s; 30 s är rejäl marginal), och store.set() säger om raden
+// faktiskt var ny → bara äkta ändringar målas om; överlappsraderna är idempotenta no-ops.
+const CURSOR_OVERLAP_MS = 30_000
+const overlapCursor = (iso: string): string => {
+  const t = Date.parse(iso)
+  return Number.isFinite(t) ? new Date(Math.max(0, t - CURSOR_OVERLAP_MS)).toISOString() : iso
+}
 
 function parseAreaParam(raw: string | null, valtyp: Valtyp): Area {
   if (!raw) return defaultAreaFor(valtyp)
@@ -301,10 +312,16 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
             .order('valdistriktskod', { ascending: true })
             .order('partikod', { ascending: true })
             .limit(PAGE)
-          if (lastVd !== '') q = q.or(`valdistriktskod.gt.${lastVd},and(valdistriktskod.eq.${lastVd},partikod.gt.${lastPk})`)
+          // Det redundanta `.gte(valdistriktskod, lastVd)` är det som gör keyset till en INDEX-RANGE:
+          // Postgres härleder inte `vd >= X` ur OR-uttrycket, så utan det blev varje sida en scan från
+          // valtypens början med OR:en som filter (O(sidor²) igen). Med det blir indexvillkoret
+          // `valtyp = ? AND valdistriktskod >= X` och OR:en filtrerar bara en handfull rader.
+          if (lastVd !== '') q = q.gte('valdistriktskod', lastVd).or(`valdistriktskod.gt.${lastVd},and(valdistriktskod.eq.${lastVd},partikod.gt.${lastPk})`)
           const { data, error } = await q
           if (error) {
-            if (cols.includes('rapporteringstid')) { cols = 'valtyp,valdistriktskod,partikod,roster,status,updated_at'; lastVd = ''; lastPk = ''; continue }
+            // BARA "kolumn saknas" (42703) ska trigga fallbacken utan rapporteringstid — ett 429/5xx
+            // på första sidan får inte kasta bort tavlornas tider för resten av sessionen.
+            if (error.code === '42703' && cols.includes('rapporteringstid')) { cols = 'valtyp,valdistriktskod,partikod,roster,status,updated_at'; lastVd = ''; lastPk = ''; continue }
             break // annat fel → lämna ok=false → retrybart nedan
           }
           if (!data || data.length === 0) { ok = true; break }
@@ -374,6 +391,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     try {
       const cols = 'valdistriktskod,partikod,roster,status,rapporteringstid,updated_at'
       const cursor = cursorRef.current[vt]
+      const since = overlapCursor(cursor) // se CURSOR_OVERLAP_MS
       const PAGE = 10000
       let from = 0
       let maxTs = cursor
@@ -382,16 +400,18 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
           .from('result')
           .select(cols)
           .eq('valtyp', vt)
-          .gte('updated_at', cursor)
+          .gte('updated_at', since)
           .order('updated_at', { ascending: true })
           .order('valdistriktskod', { ascending: true }) // stabila tiebreakers → deterministisk
           .order('partikod', { ascending: true })        // paginering även när deltan spänner flera sidor
           .range(from, from + PAGE - 1)
         if (error || !data || data.length === 0) break
         for (const r of data as unknown as Array<{ valdistriktskod: string; partikod: string; roster: number; status?: string | null; rapporteringstid?: string | null; updated_at?: string | null }>) {
-          storesRef.current[vt]?.set(r.valdistriktskod, r.partikod, r.roster, r.rapporteringstid, r.status) // idempotent (även gränsbatchen)
-          if (r.updated_at && r.updated_at > cursor) {
-            for (const fn of listenersRef.current) fn(r.valdistriktskod, vt) // bara genuint nya → kartan målar om
+          const wasNew = storesRef.current[vt]?.set(r.valdistriktskod, r.partikod, r.roster, r.rapporteringstid, r.status) ?? false // idempotent
+          // Måla om om raden är nyare än cursorn ELLER faktiskt ändrade store:n (= kom in bakom cursorn).
+          // Överlappsfönstrets redan sedda rader är varken → tysta no-ops.
+          if (wasNew || (r.updated_at && r.updated_at > cursor)) {
+            for (const fn of listenersRef.current) fn(r.valdistriktskod, vt)
             changed++
           }
           if (r.updated_at && r.updated_at > maxTs) maxTs = r.updated_at
@@ -418,6 +438,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     let changed = 0
     try {
       const cursor = turnoutCursorRef.current[vt]
+      const since = overlapCursor(cursor) // se CURSOR_OVERLAP_MS
       const PAGE = 10000
       let from = 0
       let maxTs = cursor
@@ -426,14 +447,14 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
           .from('turnout')
           .select('valdistriktskod,totalt_antal_roster,antal_rostberattigade,updated_at')
           .eq('valtyp', vt)
-          .gte('updated_at', cursor)
+          .gte('updated_at', since)
           .order('updated_at', { ascending: true })
           .order('valdistriktskod', { ascending: true }) // stabil tiebreaker → deterministisk paginering
           .range(from, from + PAGE - 1)
         if (error || !data || data.length === 0) break
         for (const r of data as unknown as Array<{ valdistriktskod: string; totalt_antal_roster: number; antal_rostberattigade: number; updated_at?: string | null }>) {
-          turnoutStoresRef.current[vt]?.set(r.valdistriktskod, r.totalt_antal_roster, r.antal_rostberattigade) // idempotent
-          if (r.updated_at && r.updated_at > cursor) changed++
+          const wasNew = turnoutStoresRef.current[vt]?.set(r.valdistriktskod, r.totalt_antal_roster, r.antal_rostberattigade) ?? false // idempotent
+          if (wasNew || (r.updated_at && r.updated_at > cursor)) changed++
           if (r.updated_at && r.updated_at > maxTs) maxTs = r.updated_at
         }
         from += data.length
