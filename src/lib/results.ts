@@ -47,15 +47,28 @@ export class ResultStore {
   // aldrig, se result_no_status_downgrade-triggern). Driver slutresultat-taggen PER valtyp.
   private slutligDistrikt = new Set<string>()
 
-  set(valdistriktskod: string, partikod: string, roster: number, rapporteringstid?: string | null, status?: string | null): void {
+  // Returnerar true om raden faktiskt ändrade något i store:n (nytt värde, ny rapporteringstid,
+  // eller distriktet blev slutligt). Resyncen använder det för att måla om även rader som kom in
+  // "bakom" cursorn (txn som startade före men committade efter förra pollen) — de har
+  // updated_at < cursor men är ändå nya för klienten.
+  set(valdistriktskod: string, partikod: string, roster: number, rapporteringstid?: string | null, status?: string | null): boolean {
     let parties = this.byDistrict.get(valdistriktskod)
     if (!parties) {
       parties = new Map()
       this.byDistrict.set(valdistriktskod, parties)
     }
+    const prev = parties.get(partikod)
     parties.set(partikod, roster)
-    if (rapporteringstid) this.reportTimes.set(valdistriktskod, rapporteringstid)
-    if (status === 'slutlig') this.slutligDistrikt.add(valdistriktskod)
+    let changed = prev !== roster
+    if (rapporteringstid && this.reportTimes.get(valdistriktskod) !== rapporteringstid) {
+      this.reportTimes.set(valdistriktskod, rapporteringstid)
+      changed = true
+    }
+    if (status === 'slutlig' && !this.slutligDistrikt.has(valdistriktskod)) {
+      this.slutligDistrikt.add(valdistriktskod)
+      changed = true
+    }
+    return changed
   }
 
   // Rapporteringstid (rå ISO-sträng "YYYY-MM-DDTHH:MM:SS") eller null om okänd.
@@ -128,8 +141,12 @@ export class ResultStore {
 export class TurnoutStore {
   private byDistrict = new Map<string, { total: number; rb: number }>()
 
-  set(valdistriktskod: string, totalAntalRoster: number, antalRostberattigade: number): void {
+  // true om värdet ändrades (se ResultStore.set).
+  set(valdistriktskod: string, totalAntalRoster: number, antalRostberattigade: number): boolean {
+    const prev = this.byDistrict.get(valdistriktskod)
+    if (prev && prev.total === totalAntalRoster && prev.rb === antalRostberattigade) return false
     this.byDistrict.set(valdistriktskod, { total: totalAntalRoster, rb: antalRostberattigade })
+    return true
   }
 
   has(valdistriktskod: string): boolean {

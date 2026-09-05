@@ -39,7 +39,14 @@ const RESULT_BASE_DEFAULT = 'https://resultat.val.se/resultatfiler/genrep2026'
 // Övre tak på organ-filer per körning (pg_cron plockar resten nästa varv). CPU-budgeten nedan
 // är den EGENTLIGA gränsen; detta hindrar bara att MÅNGA små filer (preliminärt) drar iväg.
 const MAX_FILES_DEFAULT = 25
-const BUDGET_MS = 300_000
+// Väggtidsbudget per invokering. Cronen fyrar var 30 s (net.http_post är async → pg_cron väntar
+// INTE på förra körningen), så budgeten måste ligga UNDER kadensen; resten tas nästa varv. Var
+// 300 s → körningar stackade under tung DB och strömmade samma filer parallellt (se leasen nedan).
+const BUDGET_MS = 25_000
+// Ingest-lease (RPC ingest_claim/ingest_release, migration 20260905120000): exakt EN invokering
+// åt gången. TTL > budgeten så en död isolat släpper leasen av sig själv.
+const LEASE_NAME = 'ingest-result'
+const LEASE_TTL_S = 90
 // CPU-BUDGET per invokering (SÄKERHETSNÄT sedan edge är preliminär-only): edge har ~2 s CPU/
 // REQUEST (inte kumulativt över varv). Att parsa flera MEDELSTORA filer (~15–40 MB uppackat) i EN
 // invokering kan summera >2 s CPU → WORKER_RESOURCE_LIMIT. Sluta lägga till filer när kumulativa
@@ -153,13 +160,22 @@ async function streamFile(url: string, districtSet: Set<string>, partySet: Set<s
     if (key === 'valtyp') { valtyp = value as string; meta.valtyp = valtyp; return }
     if (key === 'valtillfalle') { meta.valtillfalle = value as string; return }
     if (key === 'test') { meta.test = value as boolean; return }
-    if (key === 'rakningstillfalle') { rakning = value as string; meta.rakningstillfalle = rakning; return }
+    if (key === 'rakningstillfalle') {
+      rakning = String(value ?? '')
+      meta.rakningstillfalle = rakning
+      if (!/^(prelimin|slutlig)/i.test(rakning)) console.warn('[ingest-result] okänt rakningstillfalle', JSON.stringify({ url, rakning }))
+      return
+    }
     if (key === 'senasteUppdateringstid') { meta.senasteUppdateringstid = value as string; return }
     // deno-lint-ignore no-explicit-any
     const vd = value as any
     if (!vd || typeof vd !== 'object' || !('valdistriktskod' in vd)) return
     const kod = vd.valdistriktskod
-    const status = String(rakning).startsWith('prelimin') ? 'preliminar' : 'slutlig'
+    // Edge tar BARA /p/ (preliminära) → default 'preliminar'. Tidigare var default 'slutlig' och
+    // jämförelsen skiftlägeskänslig: hade val2026 skrivit "Preliminär" eller utelämnat fältet hade
+    // första ingesten skrivit ALLT som slutlig, varpå no-downgrade-triggrarna tyst kastat varje
+    // senare uppdatering hela natten. Nu krävs ett explicit "slutlig…" för att sätta slutlig.
+    const status = /^slutlig/i.test(rakning) ? 'slutlig' : 'preliminar'
     if (vd.valdistriktstyp === 'uppsamlingsdistrikt') {
       const kommunkod = typeof vd.kommunkod === 'string' ? vd.kommunkod : null
       const lankod = typeof vd.lankod === 'string' ? vd.lankod : null
@@ -287,16 +303,33 @@ Deno.serve(async (req) => {
   const changed = allChanged.slice(0, max)
   if (changed.length === 0) return json({ ok: true, changed: 0, total: files.length })
 
-  // 3. Giltiga koder (FK-krav result→district / result→party). Laddas en gång.
+  // 2b. LEASE: exakt en skrivande invokering åt gången (probe skriver inget → ingen lease). Saknas
+  //     RPC:n (migrationen släpar efter deployen några sekunder) → kör utan, men logga.
+  let leased = false
+  if (!probe) {
+    const { data: got, error: leaseErr } = await supabase.rpc('ingest_claim', { p_name: LEASE_NAME, p_ttl_seconds: LEASE_TTL_S })
+    if (leaseErr) console.warn('[ingest-result] ingest_claim misslyckades — kör utan lease:', leaseErr.message)
+    else if (!got) return json({ ok: true, busy: true, changed: 0, pending: allChanged.length, total: files.length })
+    else leased = true
+  }
+  try {
+  // 3. Giltiga koder (FK-krav result→district / result→party). Laddas en gång. Ett FEL här får
+  //    INTE passera tyst: tom districtSet ⇒ varje rad "okänd" ⇒ filen markeras klar med 0 rader
+  //    och ingestas inte igen förrän md5 ändras. Avbryt hela körningen (503) i stället.
   const districtSet = new Set<string>()
   for (let from = 0; ; from += 1000) {
-    const { data } = await supabase.from('district').select('valdistriktskod').range(from, from + 999)
+    const { data, error } = await supabase.from('district').select('valdistriktskod').order('valdistriktskod').range(from, from + 999)
+    if (error) return json({ ok: false, error: 'district-lookup: ' + error.message }, 503)
     if (!data || data.length === 0) break
     for (const d of data) districtSet.add(d.valdistriktskod)
     if (data.length < 1000) break
   }
-  const { data: parties } = await supabase.from('party').select('partikod')
+  const { data: parties, error: partyErr } = await supabase.from('party').select('partikod')
+  if (partyErr) return json({ ok: false, error: 'party-lookup: ' + partyErr.message }, 503)
   const partySet = new Set((parties ?? []).map((p) => p.partikod))
+  if (districtSet.size < 5000 || partySet.size === 0) {
+    return json({ ok: false, error: `referensdata ofullständig (district=${districtSet.size}, party=${partySet.size})` }, 503)
+  }
 
   // 4. Per ändrad organ-fil: streama → upserta. Väggtidsbudget (preliminär RD ~2 MB ryms lätt) →
   //    stanna innan edge-taket, resten nästa varv. Filen markeras done UTOM vid transient fel.
@@ -304,6 +337,8 @@ Deno.serve(async (req) => {
   let uppUpserted = 0
   let turnoutUpserted = 0
   let skipped = 0
+  let failed = 0 // transienta fel (fetchfail/dberror/incomplete) — filen försöks igen nästa varv
+  const errors: string[] = [] // de första felen i klartext → syns i net._http_response-kroppen
   let meta: FileMeta | null = null
   const deadline = Date.now() + BUDGET_MS
   let invokeBytes = 0 // kumulativa strömmade zip-bytes denna invokering (CPU-budget, se ovan)
@@ -315,6 +350,10 @@ Deno.serve(async (req) => {
     invokeBytes += r.bytes ?? 0 // toobig strömmar ~0 (kroppen avbruten) → äter inte budgeten
     if (r.status === 'fetchfail' || r.status === 'dberror' || r.status === 'incomplete') {
       // Transient (nätverk/DB/trunkerad) → markera INTE done, försök igen nästa varv (självläker).
+      failed++
+      const line = `${r.status} ${f.rel}${r.error ? ': ' + r.error : ''}`
+      if (errors.length < 5) errors.push(line)
+      console.error('[ingest-result] transient', line)
       continue
     }
     if (r.status === 'ok') {
@@ -324,13 +363,16 @@ Deno.serve(async (req) => {
       turnoutUpserted += r.turnoutUp ?? 0
     } else {
       skipped++ // 'toobig' (delegeras till lokala skriptet), 'corrupt' eller 'nodata' — markeras ändå done
+      // toobig/corrupt är ALDRIG tysta: en /p/-fil > 4 MB har ingen annan ingestväg (skriptet tar bara /s/).
+      if (r.status !== 'nodata') console.error('[ingest-result] hoppar', `${r.status} ${f.rel}${r.error ? ': ' + r.error : ''}`)
     }
     if (probe) continue // diagnostik → rör inte ingest_state
     const lastStatus = r.status === 'ok' ? 200 : r.status === 'toobig' ? 413 : r.status === 'nodata' ? 204 : 422
-    await supabase.from('ingest_state').upsert(
+    const { error: stateErr } = await supabase.from('ingest_state').upsert(
       { file_path: f.url, etag: f.md5, last_ok: new Date().toISOString(), last_status: lastStatus },
       { onConflict: 'file_path' },
     )
+    if (stateErr) console.error('[ingest-result] ingest_state-upsert misslyckades', f.rel, stateErr.message)
   }
 
   // 5. Provenance för UI-badgen (best-effort). En gång per körning, från senaste filens meta.
@@ -346,5 +388,20 @@ Deno.serve(async (req) => {
     }, { onConflict: 'id' })
   }
 
-  return json({ ok: true, source: base.includes('genrep') ? 'genrep2026' : 'val2026', changed: changed.length, upserted, uppUpserted, turnoutUpserted, skipped, remaining: allChanged.length - changed.length })
+  // ok = inga transienta fel denna körning. HTTP 200 ändå (delvis framgång är framgång — de
+  // misslyckade filerna försöks igen nästa varv), men `ok:false` + `errors` i kroppen gör att
+  // `net._http_response` (runbookens N4-SQL) visar problemet i stället för ett grönt "ok".
+  return json({
+    ok: failed === 0,
+    source: base.includes('genrep') ? 'genrep2026' : 'val2026',
+    changed: changed.length, upserted, uppUpserted, turnoutUpserted, skipped, failed,
+    remaining: allChanged.length - changed.length,
+    ...(errors.length ? { errors } : {}),
+  })
+  } finally {
+    if (leased) {
+      const { error } = await supabase.rpc('ingest_release', { p_name: LEASE_NAME })
+      if (error) console.warn('[ingest-result] ingest_release misslyckades (TTL släpper ändå):', error.message)
+    }
+  }
 })
