@@ -46,7 +46,9 @@ const WRITER_MS = Number(arg('--writer-interval', '10')) * 1000
 const NO_BLOB = process.argv.includes('--no-blob')
 const BLOB_MAX_AGE_MS = 15 * 60_000
 const PAGE = 10000
-const OVERLAP_MS = 30_000
+// Överlappsfönster som klienten (ResultsProvider OVERLAP_*_MS): keyset hwm−30 s, blob generated_at−5 s, delta hwm−10 s.
+const OVERLAP_KEYSET_MS = 30_000, OVERLAP_BLOB_MS = 5_000, OVERLAP_DELTA_MS = 10_000
+const minusMs = (iso, ms) => new Date(Math.max(0, Date.parse(iso) - ms)).toISOString()
 const EPOCH = '1970-01-01T00:00:00Z'
 
 const ts = () => new Date().toISOString().slice(11, 19)
@@ -89,7 +91,7 @@ class Tab {
       M.blobBytes += text.length
       M.rows += b.result.length + b.turnout.length
       this.cursor[vt] = b.hwm; this.tCursor[vt] = b.turnout_hwm
-      this.overlap[vt] = true; this.tOverlap[vt] = true
+      this.overlap[vt] = minusMs(b.generated_at, OVERLAP_BLOB_MS); this.tOverlap[vt] = this.overlap[vt]
       M.blob.push(Date.now() - t0)
       return true
     } catch (e) { err(e); M.blobMiss++; return false }
@@ -124,20 +126,28 @@ class Tab {
       tLast = data[data.length - 1].valdistriktskod
     }
     this.tCursor[vt] = tCursor
-    this.overlap[vt] = true; this.tOverlap[vt] = true // som klienten: första deltan efter snapshot överlappar
+    this.overlap[vt] = minusMs(cursor, OVERLAP_KEYSET_MS); this.tOverlap[vt] = minusMs(tCursor, OVERLAP_KEYSET_MS) // keyset: täck skanningen
     M.snapshot.push(Date.now() - t0)
     return true
   }
 
   async uppsamling() {
+    // HWM-probe som klienten: full omladdning bara första gången eller när något är nyare.
+    if (this.uCursor) {
+      const { data: probe, error: pe } = await this.db.from('uppsamling_result').select('updated_at').gt('updated_at', this.uCursor).limit(1); M.req++
+      if (!pe && probe && probe.length === 0) return
+    }
+    let maxTs = this.uCursor ?? EPOCH
     for (let from = 0; ; from += PAGE) {
-      const { data, error } = await this.db.from('uppsamling_result').select('valtyp,kommunkod,lankod,partikod,roster')
+      const { data, error } = await this.db.from('uppsamling_result').select('valtyp,kommunkod,lankod,partikod,roster,updated_at')
         .order('valtyp').order('kod').order('partikod').range(from, from + PAGE - 1); M.req++
       if (error) { err(error); return }
       if (!data?.length) break
       M.rows += data.length
+      for (const r of data) if (r.updated_at > maxTs) maxTs = r.updated_at
       if (data.length < PAGE) break
     }
+    this.uCursor = maxTs
   }
 
   async meta() { const { error } = await this.db.from('dataset_meta').select('*').eq('id', 1).maybeSingle(); M.req++; if (error) err(error) }
@@ -145,8 +155,9 @@ class Tab {
   async delta(vt) {
     const t0 = Date.now()
     const cursor = this.cursor[vt]
-    // Överlappsfönstret bara i pollen direkt efter att cursorn flyttats (speglar overlapPendingRef).
-    const since = this.overlap[vt] ? new Date(Date.parse(cursor) - OVERLAP_MS).toISOString() : cursor
+    // Explicit startpunkt bara i pollen direkt efter snapshot/cursorflytt (speglar overlapSinceRef).
+    const ov = this.overlap[vt]; this.overlap[vt] = null
+    const since = ov && ov < cursor ? ov : cursor
     let from = 0, maxTs = cursor
     for (;;) {
       const { data, error } = await this.db.from('result').select('valdistriktskod,partikod,roster,status,rapporteringstid,updated_at')
@@ -158,14 +169,15 @@ class Tab {
       from += data.length
       if (data.length < PAGE) break
     }
-    this.overlap[vt] = maxTs > cursor
+    if (maxTs > cursor) this.overlap[vt] = minusMs(maxTs, OVERLAP_DELTA_MS)
     this.cursor[vt] = maxTs
     const tCursor = this.tCursor[vt]
-    const tSince = this.tOverlap[vt] ? new Date(Date.parse(tCursor) - OVERLAP_MS).toISOString() : tCursor
+    const tov = this.tOverlap[vt]; this.tOverlap[vt] = null
+    const tSince = tov && tov < tCursor ? tov : tCursor
     const { data: td, error: te } = await this.db.from('turnout').select('valdistriktskod,totalt_antal_roster,antal_rostberattigade,updated_at')
       .eq('valtyp', vt).gte('updated_at', tSince).order('updated_at').order('valdistriktskod').range(0, PAGE - 1); M.req++
     if (te) err(te); else { M.rows += td?.length ?? 0; for (const r of td ?? []) if (r.updated_at > this.tCursor[vt]) this.tCursor[vt] = r.updated_at }
-    this.tOverlap[vt] = this.tCursor[vt] > tCursor
+    if (this.tCursor[vt] > tCursor) this.tOverlap[vt] = minusMs(this.tCursor[vt], OVERLAP_DELTA_MS)
     M.delta.push(Date.now() - t0)
   }
 

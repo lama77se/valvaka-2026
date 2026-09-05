@@ -59,10 +59,22 @@ const CURSOR_EPOCH = '1970-01-01T00:00:00Z'
 // inom 30 s före cursorn, så ett permanent fönster hade dragit hela bursten varje poll i varje
 // lugn period (lasttest 5 sep: 3 flikar → 880k rader på 20 s). Med gaten kostar en burst exakt en
 // extra hämtning, och tysta perioder pollar exakt `>= cursor` (= bara gränsbatchen).
-const CURSOR_OVERLAP_MS = 30_000
-const overlapCursor = (iso: string): string => {
+//
+// FÖNSTRETS STORLEK beror på hur vattenmärket sattes — alla tider är DB-tider (robust mot klient-
+// klockskev):
+//  - efter KEYSET-snapshot: hwm − 30 s. Skanningen tar sekunder–tiotals sekunder under herd, och
+//    rader som skrivs "bakom" läspositionen mid-scan har updated_at ≤ hwm. Måste täcka skanningen.
+//  - efter BLOB-seed: blobens generated_at − 5 s. Bloben är EN transaktionskonsistent läsning; det
+//    enda som kan saknas är txn som startade strax före (≤ txn-längd ≈ 2 s). Med hwm − 30 s hade
+//    varje ny flik re-hämtat hela senaste bursten vid sin första poll (hwm ligger på valnatten
+//    nästan alltid precis efter en burst) — i lugna perioder ger generated_at − 5 s NOLL rader.
+//  - efter DELTA som flyttade cursorn: hwm − 10 s (en delta är en enda snabb fråga; skevet är txn-längd).
+const OVERLAP_KEYSET_MS = 30_000
+const OVERLAP_BLOB_MS = 5_000
+const OVERLAP_DELTA_MS = 10_000
+const minusMs = (iso: string, ms: number): string => {
   const t = Date.parse(iso)
-  return Number.isFinite(t) ? new Date(Math.max(0, t - CURSOR_OVERLAP_MS)).toISOString() : iso
+  return Number.isFinite(t) ? new Date(Math.max(0, t - ms)).toISOString() : iso
 }
 
 function parseAreaParam(raw: string | null, valtyp: Valtyp): Area {
@@ -279,13 +291,15 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
   // flyttades aldrig → fliken förblev tom hela natten trots grön Live-prick. Epoch matchar allt.
   const cursorRef = useRef<Record<Valtyp, string>>({ RD: CURSOR_EPOCH, RF: CURSOR_EPOCH, KF: CURSOR_EPOCH })
   const resyncingRef = useRef<Record<Valtyp, boolean>>({ RD: false, RF: false, KF: false })
-  // true = cursorn flyttades i förra passet (snapshot/delta) → nästa delta använder överlappsfönstret.
-  const overlapPendingRef = useRef<Record<Valtyp, boolean>>({ RD: false, RF: false, KF: false })
+  // Explicit startpunkt för NÄSTA delta (ISO, DB-tid) eller null = exakt `>= cursor`. Sätts av
+  // snapshot (keyset: hwm − 30 s, blob: generated_at − 5 s) och av en delta som flyttade cursorn
+  // (hwm − 10 s). Förbrukas av nästa delta. Se OVERLAP_*_MS.
+  const overlapSinceRef = useRef<Record<Valtyp, string | null>>({ RD: null, RF: null, KF: null })
   // Egen resync-cursor för turnout (updated_at), skild från result-cursorn. Sätts av turnout-
   // snapshoten och flyttas fram av varje turnout-resync.
   const turnoutCursorRef = useRef<Record<Valtyp, string>>({ RD: CURSOR_EPOCH, RF: CURSOR_EPOCH, KF: CURSOR_EPOCH })
   const turnoutResyncingRef = useRef<Record<Valtyp, boolean>>({ RD: false, RF: false, KF: false })
-  const turnoutOverlapPendingRef = useRef<Record<Valtyp, boolean>>({ RD: false, RF: false, KF: false })
+  const turnoutOverlapSinceRef = useRef<Record<Valtyp, string | null>>({ RD: null, RF: null, KF: null })
 
   const ensureValtypLoaded = useCallback((vt: Valtyp) => {
     if (loadedValtyperRef.current.has(vt) || loadingValtyperRef.current.has(vt)) return
@@ -304,6 +318,9 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
           for (const [vd, total, rb] of blob.turnout) tstore?.set(vd, total, rb)
           if (blob.hwm > cursorRef.current[vt]) cursorRef.current[vt] = blob.hwm
           if (blob.turnout_hwm > turnoutCursorRef.current[vt]) turnoutCursorRef.current[vt] = blob.turnout_hwm
+          // Första deltan börjar vid blobens generering (− txn-marginal), inte vid hwm − 30 s.
+          overlapSinceRef.current[vt] = minusMs(blob.generated_at, OVERLAP_BLOB_MS)
+          turnoutOverlapSinceRef.current[vt] = minusMs(blob.generated_at, OVERLAP_BLOB_MS)
           ok = true
         }
         if (!ok) {
@@ -381,6 +398,9 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
             tLast = data[data.length - 1].valdistriktskod
           }
         } catch { /* turnout best-effort; resync fyller på nästa varv */ }
+        // Keyset-skanningen tog tid → första deltan täcker skanningsfönstret.
+        overlapSinceRef.current[vt] = minusMs(cursorRef.current[vt], OVERLAP_KEYSET_MS)
+        turnoutOverlapSinceRef.current[vt] = minusMs(turnoutCursorRef.current[vt], OVERLAP_KEYSET_MS)
         } // slut keyset-fallback
         if (!aliveRef.current) return // unmountad mitt i laddningen → varken markera klar eller retry
       } finally {
@@ -389,8 +409,6 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
       if (ok) {
         loadedValtyperRef.current.add(vt)
         retryRef.current[vt] = 0
-        overlapPendingRef.current[vt] = true        // snapshoten satte vattenmärket → första deltan överlappar
-        turnoutOverlapPendingRef.current[vt] = true
         // Bumpa signalkanalerna → tavlorna reseedar, kartan/tabellen räknar om för denna valtyp.
         setSnapshotVersion((v) => v + 1)
         setRevision((r) => r + 1)
@@ -420,7 +438,9 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     try {
       const cols = 'valdistriktskod,partikod,roster,status,rapporteringstid,updated_at'
       const cursor = cursorRef.current[vt]
-      const since = overlapPendingRef.current[vt] ? overlapCursor(cursor) : cursor // se CURSOR_OVERLAP_MS
+      const override = overlapSinceRef.current[vt]
+      overlapSinceRef.current[vt] = null // förbrukas
+      const since = override && override < cursor ? override : cursor // se OVERLAP_*_MS
       const PAGE = 10000
       let from = 0
       let maxTs = cursor
@@ -448,7 +468,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
         from += data.length
         if (data.length < PAGE) break
       }
-      overlapPendingRef.current[vt] = maxTs > cursor // flyttades cursorn → överlappa EN gång till
+      if (maxTs > cursor) overlapSinceRef.current[vt] = minusMs(maxTs, OVERLAP_DELTA_MS) // flyttades cursorn → överlappa EN gång till
       cursorRef.current[vt] = maxTs
       if (changed > 0) setRevision((r) => r + 1) // en bump per delta (inte per rad) — tabellen räknar om
     } finally {
@@ -468,7 +488,9 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     let changed = 0
     try {
       const cursor = turnoutCursorRef.current[vt]
-      const since = turnoutOverlapPendingRef.current[vt] ? overlapCursor(cursor) : cursor // se CURSOR_OVERLAP_MS
+      const override = turnoutOverlapSinceRef.current[vt]
+      turnoutOverlapSinceRef.current[vt] = null // förbrukas
+      const since = override && override < cursor ? override : cursor // se OVERLAP_*_MS
       const PAGE = 10000
       let from = 0
       let maxTs = cursor
@@ -490,7 +512,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
         from += data.length
         if (data.length < PAGE) break
       }
-      turnoutOverlapPendingRef.current[vt] = maxTs > cursor
+      if (maxTs > cursor) turnoutOverlapSinceRef.current[vt] = minusMs(maxTs, OVERLAP_DELTA_MS)
       turnoutCursorRef.current[vt] = maxTs
       if (changed > 0) setRevision((r) => r + 1) // en bump per delta → panelen räknar om valdeltagandet
     } finally {
