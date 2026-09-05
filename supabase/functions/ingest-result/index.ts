@@ -35,8 +35,8 @@
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { unzipSync } from 'https://esm.sh/fflate@0.8.2'
 
-// Generalrepet nu → byt till 'https://resultat.val.se/resultatfiler/val2026' på valnatten.
-const RESULT_BASE_DEFAULT = 'https://resultat.val.se/resultatfiler/genrep2026'
+// VALNATT-BYTE (2026-09-13): pekar nu på den SKARPA katalogen. Lockstep med scripts/ingest-slutlig.mjs.
+const RESULT_BASE_DEFAULT = 'https://resultat.val.se/resultatfiler/val2026'
 // Övre tak på organ-filer per körning (pg_cron plockar resten nästa varv). CPU-budgeten nedan
 // är den EGENTLIGA gränsen; detta hindrar bara att MÅNGA små filer (preliminärt) drar iväg.
 const MAX_FILES_DEFAULT = 25

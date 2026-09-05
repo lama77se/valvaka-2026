@@ -20,9 +20,9 @@ import { unzipSync } from 'fflate'
 // annars redan i createClient (samma polyfill som monitor-flow.mjs). Ingesten använder inte Realtime.
 globalThis.WebSocket ??= ws
 
-// ⚠️ VALNATTEN/DEFINITIVT: byt till '…/val2026' SAMTIDIGT som ingest-result RESULT_BASE_DEFAULT.
-// Om edge står på val2026 men detta skript på genrep laddas de slutliga filerna från TESTDATA.
-const RESULT_BASE_DEFAULT = 'https://resultat.val.se/resultatfiler/genrep2026'
+// VALNATT-BYTE (2026-09-13): pekar nu på den SKARPA katalogen. Lockstep med ingest-result RESULT_BASE_DEFAULT.
+// (Backa till '…/genrep2026' om du kör en genrep-sim efter bytet.)
+const RESULT_BASE_DEFAULT = 'https://resultat.val.se/resultatfiler/val2026'
 
 const STATE_PREFIX = 'slutlig-local:' // eget nyckelrum (ingen krock med edge:ns url-nycklar)
 
