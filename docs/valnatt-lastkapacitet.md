@@ -41,10 +41,34 @@ O(n²) i radantal (~162k rader); keyset → index-range-scan → O(n). Sänker s
 snapshot-läsningarna och är dessutom skip-/dubblettsäker under samtidiga upsertar. Verifierat
 headless: **exakt samma 50 496 nycklar** som gamla offset-vägen (0 saknas, 0 extra).
 
-## CDN-cache-contingency (spec — bygg bara om triggern slår)
+## Lasttest 5 sep (polling-format, `scripts/loadtest-poll.mjs`) — triggern slog
+
+Första lasttestet som speglar dagens klient exakt (keyset-snapshot per valtyp + turnout + uppsamling
++ dataset_meta vid mount, delta-poll var 45–90 s). **50 desktop-flikar som monterar inom 10 s på
+Small:**
+
+| | |
+|---|---|
+| Herd klar | 58 s väggtid |
+| Snapshot per valtyp | p50 **51 s**, p95 54 s (n = 150) |
+| Volym | **11,8 M rader / 1 700 requests = 236 000 rader / 34 requests per flik** |
+| Fel | inga (10 s `statement_timeout` höll; ~6 s per 10k-sida) |
+| Supabase CPU | **få % → 100 %** |
+
+Per flik: 3 valtyper × (~69k `result` + ~6k `turnout`) + 9k `uppsamling` ≈ 20 MB JSON. 31 aug-testet
+(64 % vid 50) mätte *en* snapshot per flik; desktop laddar tre (tavlorna). Slutsats: **Large (2×) räcker
+inte för 300–500 flikar via PostgREST** — mount-herden måste bort från Postgres. Delta-pollningen efter
+mount är däremot billig (p50 140 ms efter att överlappsfönstret gatats, PR #80).
+
+→ CDN-contingencyn nedan **byggdes samma dag** (PR "snapshot-blobbar"): RPC `snapshot_json` + Storage-
+bucket `snapshots` + klient-seed från blob med keyset-fallback. Kör om `loadtest-poll` efter merge;
+förväntat: blob p50 < 1 s från Cloudflare-cache, Postgres-CPU platt under herden.
+
+## CDN-cache-contingency (BYGGD 5 sep — specen nedan är den ursprungliga)
 
 **Trigger att bygga:** (a) nästa genrep-sim visar att **snapshot-läslasten** (inte Realtime-fan-out)
 är CPU-flaskhals under mount-herd, ELLER (b) förväntad topp-samtidighet revideras upp till tusental.
+**→ (a) slog 5 sep, se ovan.**
 
 **Vad den löser (och inte):** kollapsar mount-herden — många *nya* besökare som var och en snapshotar
 ~6 Postgres-sidor vid poll-close → **en** CDN-hämtning. Offloadar snapshot-läsningen från Postgres

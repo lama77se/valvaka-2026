@@ -13,6 +13,7 @@
 // gör en full ompaint, tabellen räknar om.
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { supabase } from '@/lib/supabase'
+import { fetchSnapshotBlob } from '@/lib/snapshotBlob'
 import { ResultStore, TurnoutStore, VALTYPER, VALTYP_VK_COLUMN, type Valtyp } from '@/lib/results'
 import { buildGroups, type AreaComparison, type AreaGroups, type Comparison2022, type DistrictMeta, type Level, type PartyMeta } from '@/lib/aggregate'
 import type { PartyVotes } from '@/lib/mandate'
@@ -292,6 +293,21 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     ;(async () => {
       let ok = false
       try {
+        // 1) SNAPSHOT-BLOB FRÅN CDN (primär väg, se src/lib/snapshotBlob.ts): en hämtning från
+        //    Cloudflare-cachen i stället för ~30 PostgREST-sidor. Seeda stores, sätt cursorerna till
+        //    blobens vattenmärken; delta-pollen tar gapet. Misslyckas → 2) keyset-vägen nedan.
+        const blob = await fetchSnapshotBlob(vt)
+        if (blob && aliveRef.current) {
+          const store = storesRef.current[vt]
+          const tstore = turnoutStoresRef.current[vt]
+          for (const [vd, pk, roster, status, rt] of blob.result) store?.set(vd, pk, roster, rt, status)
+          for (const [vd, total, rb] of blob.turnout) tstore?.set(vd, total, rb)
+          if (blob.hwm > cursorRef.current[vt]) cursorRef.current[vt] = blob.hwm
+          if (blob.turnout_hwm > turnoutCursorRef.current[vt]) turnoutCursorRef.current[vt] = blob.turnout_hwm
+          ok = true
+        }
+        if (!ok) {
+        // 2) KEYSET-SNAPSHOT DIREKT FRÅN POSTGRES (fallback).
         // Filtrerad på EN valtyp (eq). rapporteringstid kan saknas i ett kort deploy-fönster
         // → fall tillbaka utan kolumnen EN gång (börja om med de smalare kolumnerna).
         //
@@ -365,6 +381,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
             tLast = data[data.length - 1].valdistriktskod
           }
         } catch { /* turnout best-effort; resync fyller på nästa varv */ }
+        } // slut keyset-fallback
         if (!aliveRef.current) return // unmountad mitt i laddningen → varken markera klar eller retry
       } finally {
         loadingValtyperRef.current.delete(vt)
@@ -492,40 +509,55 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
   // Busy/again-vakt koalescerar burst; på fel BEHÅLLS förra aggregatet (ingen tyst nollning live).
   const uppsamlingBusyRef = useRef(false)
   const uppsamlingAgainRef = useRef(false)
+  // HWM för uppsamling: full omladdning bara när något är nyare än senast sedda updated_at.
+  // Förut laddades hela tabellen (~9k rader från onsdagen) om VARJE poll i VARJE flik.
+  const uppsamlingCursorRef = useRef<string>(CURSOR_EPOCH)
   const loadUppsamling = useCallback(async () => {
     if (uppsamlingBusyRef.current) { uppsamlingAgainRef.current = true; return }
     uppsamlingBusyRef.current = true
     try {
       do {
         uppsamlingAgainRef.current = false
+        // Billig probe (indexerad, 1 rad): finns något nyare än cursorn? Annars hoppa över omladdningen.
+        // Probe-fel → ladda om ändå (konservativt). Första gången (epoch) laddas alltid.
+        if (uppsamlingCursorRef.current !== CURSOR_EPOCH) {
+          const { data: probe, error: probeErr } = await supabase
+            .from('uppsamling_result')
+            .select('updated_at')
+            .gt('updated_at', uppsamlingCursorRef.current)
+            .limit(1)
+          if (!probeErr && probe && probe.length === 0) continue
+        }
         const next: Record<Valtyp, Map<string, PartyVotes>> = { RD: new Map(), RF: new Map(), KF: new Map() }
         const PAGE = 10000
         let from = 0
         let failed = false
+        let maxTs = uppsamlingCursorRef.current
         while (aliveRef.current) {
           const { data, error } = await supabase
             .from('uppsamling_result')
-            .select('valtyp,kommunkod,lankod,partikod,roster')
+            .select('valtyp,kommunkod,lankod,partikod,roster,updated_at')
             .order('valtyp', { ascending: true }) // PK-ordning (valtyp,kod,partikod) → stabil, ingen överhoppad rad
             .order('kod', { ascending: true })
             .order('partikod', { ascending: true })
             .range(from, from + PAGE - 1)
           if (error) { failed = true; break }
           if (!data || data.length === 0) break
-          for (const r of data as unknown as Array<{ valtyp: string; kommunkod: string; lankod: string; partikod: string; roster: number }>) {
+          for (const r of data as unknown as Array<{ valtyp: string; kommunkod: string; lankod: string; partikod: string; roster: number; updated_at?: string | null }>) {
             const m = next[r.valtyp as Valtyp]
             if (!m) continue
             // Organ-nyckel: RD → riket (EN hink), RF → länet, KF → kommunen.
             const key = r.valtyp === 'RD' ? '' : r.valtyp === 'RF' ? r.lankod : r.kommunkod
             const bucket = m.get(key) ?? m.set(key, {}).get(key)!
             bucket[r.partikod] = (bucket[r.partikod] ?? 0) + r.roster
+            if (r.updated_at && r.updated_at > maxTs) maxTs = r.updated_at
           }
           from += data.length
           if (data.length < PAGE) break
         }
         if (!aliveRef.current) return
         // Fel (t.ex. tabell saknas i ett kort deploy-fönster) → behåll förra aggregatet, ingen krasch/nollning.
-        if (!failed) { uppsamlingRef.current = next; setRevision((r) => r + 1) }
+        if (!failed) { uppsamlingRef.current = next; uppsamlingCursorRef.current = maxTs; setRevision((r) => r + 1) }
       } while (uppsamlingAgainRef.current && aliveRef.current)
     } finally {
       uppsamlingBusyRef.current = false

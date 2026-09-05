@@ -116,8 +116,10 @@ select jobname, active, schedule from cron.job;   -- ingest-result-genrep ska vi
 npm run results:reset -- --ingest-state
 node --env-file=.env.local scripts/db-status.mjs   # result/uppsamling/turnout ska visa 0 rader, 0 slutlig
 ```
-Rensar `result` + `uppsamling_result` + `turnout` (+ `ingest_state` för en helt ren omingest). Appen
-visar nu "inga 2026-röster än" (bara 2022-kolumner) tills skarpt flödar — korrekt startläge.
+Rensar `result` + `uppsamling_result` + `turnout` (+ `ingest_state` för en helt ren omingest) **och
+tar bort snapshot-blobbarna** (`snapshots/RD|RF|KF.json` — annars seedar nya flikar genrep-data från
+CDN:en). Skriptet verifierar 0 rader och exit:ar 1 vid minsta fel. Appen visar nu "inga 2026-röster
+än" (bara 2022-kolumner) tills skarpt flödar — korrekt startläge.
 Kör sedan i SQL-editorn: `vacuum (analyze) result, turnout;` så planeraren har färsk statistik för
 tom→full-övergången.
 
@@ -141,6 +143,12 @@ select cron.alter_job((select jobid from cron.job where jobname='ingest-result-g
 - Testdata-bannern släcks.
 - Kartan börjar fyllas, rapporteringsgrad-HUD:en tickar, statustaggen = **Preliminärt**.
 - Avgångstavlorna visar inrapporterade distrikt med val.se:s klockslag.
+- **Snapshot-blobbarna är färska** (nya flikar seedar från dem — mount-herden går mot CDN, inte
+  Postgres): smoke-POST-svaret har `"snapshots":{"RD":"… kB på … ms",…}` efter körningar som
+  ändrade något, och
+  `curl -s https://emtjnmyberugrkdplnsh.supabase.co/storage/v1/object/public/snapshots/RD.json | head -c 200`
+  visar `generated_at` inom de senaste minuterna. Äldre än 15 min ⇒ klienten ignorerar bloben och
+  går keyset (fungerar, men dyrt under herd) — kolla då `snapshot-refresh`-cronen och edge-loggen.
 - **Cron-hälsa i SQL** (cron-kommandot `net.http_post` "lyckas" alltid → `cron.job_run_details` är
   grönt även om varje edge-anrop 5xx:ar; titta här i stället):
   ```sql

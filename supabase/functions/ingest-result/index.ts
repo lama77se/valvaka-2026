@@ -261,7 +261,8 @@ async function streamFile(url: string, districtSet: Set<string>, partySet: Set<s
 }
 
 Deno.serve(async (req) => {
-  const body = await req.json().catch(() => ({})) as { base?: string; max?: number; probe?: boolean }
+  // refreshSnapshots: regenerera alla snapshot-blobbar oavsett om något ingestades (5-min-cronen).
+  const body = await req.json().catch(() => ({})) as { base?: string; max?: number; probe?: boolean; refreshSnapshots?: boolean }
   const base = (body.base ?? RESULT_BASE_DEFAULT).replace(/\/+$/, '')
   // ALLOWLIST: funktionen anropas med anon-JWT (ligger i klient-bundlen) och skriver med
   // service_role. Utan denna spärr kan vem som helst peka `base` mot en egen server med
@@ -301,7 +302,7 @@ Deno.serve(async (req) => {
     .filter((f) => seen.get(f.url) !== f.md5)
     .sort((a, b) => (Date.parse(lastOk.get(a.url) ?? '') || 0) - (Date.parse(lastOk.get(b.url) ?? '') || 0))
   const changed = allChanged.slice(0, max)
-  if (changed.length === 0) return json({ ok: true, changed: 0, total: files.length })
+  if (changed.length === 0 && !body.refreshSnapshots) return json({ ok: true, changed: 0, total: files.length })
 
   // 2b. LEASE: exakt en skrivande invokering åt gången (probe skriver inget → ingen lease). Saknas
   //     RPC:n (migrationen släpar efter deployen några sekunder) → kör utan, men logga.
@@ -339,6 +340,7 @@ Deno.serve(async (req) => {
   let skipped = 0
   let failed = 0 // transienta fel (fetchfail/dberror/incomplete) — filen försöks igen nästa varv
   const errors: string[] = [] // de första felen i klartext → syns i net._http_response-kroppen
+  const touched = new Set<string>() // valtyper vars data ändrades denna körning → regenerera deras blobbar
   let meta: FileMeta | null = null
   const deadline = Date.now() + BUDGET_MS
   let invokeBytes = 0 // kumulativa strömmade zip-bytes denna invokering (CPU-budget, se ovan)
@@ -361,6 +363,8 @@ Deno.serve(async (req) => {
       upserted += r.resultUp ?? 0
       uppUpserted += r.uppUp ?? 0
       turnoutUpserted += r.turnoutUp ?? 0
+      const vt = f.rel.match(/_(RD|RF|KF)\.zip$/i)?.[1].toUpperCase()
+      if (vt && !probe) touched.add(vt)
     } else {
       skipped++ // 'toobig' (delegeras till lokala skriptet), 'corrupt' eller 'nodata' — markeras ändå done
       // toobig/corrupt är ALDRIG tysta: en /p/-fil > 4 MB har ingen annan ingestväg (skriptet tar bara /s/).
@@ -388,6 +392,29 @@ Deno.serve(async (req) => {
     }, { onConflict: 'id' })
   }
 
+  // 6. SNAPSHOT-BLOBBAR (CDN-contingencyn, migration 20260905150000): Postgres bygger en kompakt
+  //    JSON per valtyp (RPC snapshot_json → text), vi laddar upp till Storage-bucketen `snapshots`
+  //    (publik, Cloudflare-cachad, cacheControl 30 s). Klienten seedar från bloben vid mount i
+  //    stället för ~30 PostgREST-sidor → mount-herden blir CDN-trafik. Regenereras för de valtyper
+  //    som ändrades denna körning, eller alla vid refreshSnapshots (5-min-cronen). Best-effort:
+  //    ett fel här påverkar inte ingesten (klienten faller tillbaka på keyset-vägen).
+  const snapshots: Record<string, string> = {}
+  const toRefresh = body.refreshSnapshots ? ['RD', 'RF', 'KF'] : [...touched]
+  for (const vt of toRefresh) {
+    const t0 = Date.now()
+    const { data: text, error: rpcErr } = await supabase.rpc('snapshot_json', { p_valtyp: vt })
+    if (rpcErr || typeof text !== 'string') {
+      snapshots[vt] = `rpc-fel: ${rpcErr?.message ?? 'tomt svar'}`
+      console.error('[ingest-result] snapshot_json', vt, snapshots[vt])
+      continue
+    }
+    const { error: upErr } = await supabase.storage
+      .from('snapshots')
+      .upload(`${vt}.json`, new Blob([text], { type: 'application/json' }), { upsert: true, contentType: 'application/json', cacheControl: '30' })
+    snapshots[vt] = upErr ? `upload-fel: ${upErr.message}` : `${(text.length / 1024).toFixed(0)} kB på ${Date.now() - t0} ms`
+    if (upErr) console.error('[ingest-result] snapshot-upload', vt, upErr.message)
+  }
+
   // ok = inga transienta fel denna körning. HTTP 200 ändå (delvis framgång är framgång — de
   // misslyckade filerna försöks igen nästa varv), men `ok:false` + `errors` i kroppen gör att
   // `net._http_response` (runbookens N4-SQL) visar problemet i stället för ett grönt "ok".
@@ -397,6 +424,7 @@ Deno.serve(async (req) => {
     changed: changed.length, upserted, uppUpserted, turnoutUpserted, skipped, failed,
     remaining: allChanged.length - changed.length,
     ...(errors.length ? { errors } : {}),
+    ...(toRefresh.length ? { snapshots } : {}),
   })
   } finally {
     if (leased) {
