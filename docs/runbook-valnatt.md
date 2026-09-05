@@ -71,6 +71,9 @@ val2026-deployen hunnit landa via CI. Ordningen är därför **N0 pausa → N1 r
 - [x] **ErrorBoundary** runt appen (`src/main.tsx`) — ett render-undantag ger "Ladda om"-läge, inte vit sida.
 - [ ] **Infra:** Supabase-compute uppskalad — **Large för kvällen** (Pro). Vercel-env
   (`VITE_SUPABASE_URL/ANON_KEY/GEOMETRY_URL`) korrekta (appen är live).
+  **Vercel kontrollerat 5 sep:** plan **Pro** ✓ · Deployment Protection skyddar bara previews,
+  produktion öppen (valvaka.tech svarar 200 utan inloggning) ✓ · **Vercel Analytics på** ✓ — det är
+  besökarräknaren under natten ("hur många tittar just nu" → räcker Large?).
   Lastkapacitet, mätvärden och CDN-cache-contingencyn: [valnatt-lastkapacitet.md](./valnatt-lastkapacitet.md).
 - [x] **Vercel Firewall — läge kontrollerat 5 sep: Attack Mode AV, System Mitigations PÅ. Behåll så.**
   Bakgrund: 5 sep ~09:47–09:55 fick **en enda IP (testdatorn, Telenor)** `403 Vercel Security
