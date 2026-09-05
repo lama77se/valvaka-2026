@@ -90,6 +90,11 @@ aldrig skriven, minne bara 18 MB). Rotorsak: strömmande SAX-parse (`@streampars
 Bytt i PR F; RD får dessutom en egen körning (`BIG_FILE_BYTES`) och en försöksmarkör gör att en
 fil som ändå dödar isolatet hamnar sist i kön i stället för att blockera den.
 
+**Efter PR F (repetition nr 2, 10:19–10:27):** högsta `cpu_time_used` för något isolat = **694 ms**
+(RD-körningen inkluderad; Shutdown-poster är per isolat och ackumulerar över dess requests) — ~3×
+marginal mot taket. RD in på < 1 min, 313/313 på 7,2 min, inga kill-poster. Refresh-cronen bygger
+tre blobbar på ~1 s vardera i Postgres.
+
 **Beslut står: Large för natten** (marginal för delta-poll, edge-upsertar och sluträkning), men mount-
 herden är inte längre dimensionerande. Acceptanstest på Large: `npm run loadtest:poll -- --steps 100,300
 --hold 120` från en maskin med ordentlig länk; godkänt = CPU-topp under herd < 40 % och delta p95 < 300 ms.

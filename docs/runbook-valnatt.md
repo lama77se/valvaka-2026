@@ -87,7 +87,11 @@ val2026-deployen hunnit landa via CI. Ordningen är därför **N0 pausa → N1 r
   (1) riks-RD dödades av edge-CPU-taket ("CPU Time exceeded", 2 035 ms) i sista flushen och togs om
   varje varv (~4 min) — strömmande SAX-parse av 38 MB JSON; nu full `JSON.parse` (~0,4 s CPU);
   (2) ordningen styrdes av manifestet (`p/kf` < `p/rd` < `p/rf`) → Riksdag kom efter 291 KF-filer;
-  nu prioritet RD → KF → RF. Kör gärna om efter PR F: förväntat RD i varv 1, allt inne på ~6 min.
+  nu prioritet RD → KF → RF.
+  **Repetition nr 2 (10:18–10:27, efter PR F):** N3 10:19 → **Riksdag 6 312/6 312 kl 10:20:25 (< 1 min,
+  första varvet)** → Kommun fullt ~10:26 → **313/313 kl 10:26:54 = 7,2 min**; blobbar 15 s gamla och
+  = DB; ingen CPU-död (max 694 ms/isolat). **Det här är nattens förväntade tidslinje efter N3:
+  riks-RD inom en minut, allt inom ~7 min** (~33 KF-filer per 30 s-varv).
 - [ ] **🔺 Skala till Large I GOD TID + lasttesta på Large (inte i sista minuten).** Compute-resize
   ger en kort omstart/nedtid → byt **dagen innan eller tidig eftermiddag 13 sep**, aldrig ~19:55.
   Kör sedan lasttestet på Large och **läs CPU i Supabase-dashboarden** (klient-väggtid mäter INTE
@@ -128,8 +132,16 @@ tom→full-övergången.
 `chore/valnatt-switch-val2026`):** deployar edge-funktionen (`deploy-functions.yml`).
 **Verifiera deployen innan du går vidare:** `gh run watch` (eller Actions-fliken) tills *Deploy edge
 functions* är grön; misslyckas den → *Run workflow*-knappen, eller CLI-fallbacken ovan. Gör sedan
-den manuella smoke-POST:en (*Verifiering* nedan) — svaret ska säga `"source":"val2026"`. På första
-skarpa filen försvinner `test`-attributet → `dataset_meta` skrivs om till `source='val2026',
+den manuella smoke-POST:en (*Verifiering* nedan) — svaret ska säga `"source":"val2026"`.
+⚠️ **Smoke-POST:en från din dator går till ett annat edge-isolat (region) än cronens anrop från
+databasen.** Bevisa att *cronens* väg kör nya koden innan N3: refresh-cronen (varje minut) går samma
+väg — kör i SQL-editorn tills den senaste `"refreshed":true`-raden är NYARE än deployen
+(5 sep tog det ~1 min; gamla isolat syns som `version N-1`-Shutdown i edge-loggen ett par minuter
+till, det är normalt):
+```sql
+select created, left(content::text, 120) from net._http_response order by id desc limit 6;
+```
+På första skarpa filen försvinner `test`-attributet → `dataset_meta` skrivs om till `source='val2026',
 test=false` → **testdata-bannern släcks automatiskt**.
 
 **N3. Aktivera cronen igen** (kadensen är redan 30 s, `20260827120000_tighten_cron.sql`):
