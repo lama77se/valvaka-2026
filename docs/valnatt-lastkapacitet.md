@@ -60,9 +60,28 @@ Per flik: 3 valtyper × (~69k `result` + ~6k `turnout`) + 9k `uppsamling` ≈ 20
 inte för 300–500 flikar via PostgREST** — mount-herden måste bort från Postgres. Delta-pollningen efter
 mount är däremot billig (p50 140 ms efter att överlappsfönstret gatats, PR #80).
 
-→ CDN-contingencyn nedan **byggdes samma dag** (PR "snapshot-blobbar"): RPC `snapshot_json` + Storage-
-bucket `snapshots` + klient-seed från blob med keyset-fallback. Kör om `loadtest-poll` efter merge;
-förväntat: blob p50 < 1 s från Cloudflare-cache, Postgres-CPU platt under herden.
+→ CDN-contingencyn nedan **byggdes samma dag** (PR #81 + #82): RPC `snapshot_json` + Storage-
+bucket `snapshots` + klient-seed från blob med keyset-fallback.
+
+### Efter blobbarna — samma test, samma Small (5 sep 07:27–07:32)
+
+| Steg | Herd (mount) | Postgres-CPU | Poll-fas (90 s) |
+|---|---|---|---|
+| **50** flikar | klar på **10 s** (var 58 s) · blob p50 322 ms · 0 keyset-miss · 250 requests (var 1 700) | topp **~20 %** (var 100 %) | 150 deltan p50 **123 ms** · 65k rader |
+| **150** flikar | +100 på 12 s · blob p50 976 ms · 0 miss · 1,25 GB från Cloudflare | **~5 %** | 504 deltan p50 125 ms · p95 151 ms · 0 fel |
+| **300** flikar | +150 på 40 s · blob p50 6,8 s · **12 miss → keyset-fallback tog över** (p50 2,4 s) | inget över 20 % | **1 089 deltan p50 127 ms · p95 158 ms · 0 fel** (≈ 12 frågor/s) |
+
+- Blob-tiderna vid 150/300 och de 12 missarna (7 lokala 30 s-timeouts, 5 `fetch failed`) är **testriggens
+  länk** (1,8 GB på 40 s från en maskin), inte servern — riktiga besökare har varsin länk. Att
+  fallbacken slog in tyst och korrekt är verifierat på köpet.
+- Kvarvarande Postgres-last är **delta-poll + uppsamlingens första laddning per flik**: ~12 småfrågor/s
+  vid 300 flikar, p95 < 160 ms. Extrapolerat 500 flikar ≈ 20/s — Large har bred marginal.
+- **Prod verifierad i riktig Chromium** (bundle `index-D197b_rc.js`): mount = `RD.json`+`RF.json`+`KF.json`
+  från CDN, **0 keyset-sidor** mot `result`.
+
+**Beslut står: Large för natten** (marginal för delta-poll, edge-upsertar och sluträkning), men mount-
+herden är inte längre dimensionerande. Acceptanstest på Large: `npm run loadtest:poll -- --steps 100,300
+--hold 120` från en maskin med ordentlig länk; godkänt = CPU-topp under herd < 40 % och delta p95 < 300 ms.
 
 ## CDN-cache-contingency (BYGGD 5 sep — specen nedan är den ursprungliga)
 
