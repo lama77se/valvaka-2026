@@ -322,6 +322,7 @@ Deno.serve(async (req) => {
   let meta: FileMeta | null = null
   const deadline = Date.now() + BUDGET_MS
   let invokeBytes = 0 // kumulativa zip-bytes denna invokering (CPU-budget, se ovan)
+  let processed = 0 // filer vi faktiskt rörde (budget/stor-fil-break lämnar resten till nästa varv)
   for (const f of changed) {
     // Stanna innan CPU-taket: väggtid ELLER kumulativa bytes. Kontrollen är FÖRE filen →
     // föregående fil fick gå klart; resten nästa varv.
@@ -336,6 +337,7 @@ Deno.serve(async (req) => {
       )
     }
     const r = await processFile(f.url, districtSet, partySet, supabase, probe)
+    processed++
     invokeBytes += r.bytes ?? 0 // toobig hämtar ~0 (kroppen avbruten) → äter inte budgeten
     if (r.status === 'fetchfail' || r.status === 'dberror' || r.status === 'incomplete') {
       // Transient (nätverk/DB/trunkerad) → markera INTE done, försök igen nästa varv (självläker).
@@ -392,8 +394,8 @@ Deno.serve(async (req) => {
   return json({
     ok: failed === 0,
     source: base.includes('genrep') ? 'genrep2026' : 'val2026',
-    changed: changed.length, upserted, uppUpserted, turnoutUpserted, skipped, failed,
-    remaining: allChanged.length - changed.length,
+    changed: processed, upserted, uppUpserted, turnoutUpserted, skipped, failed,
+    remaining: allChanged.length - processed, // inkl. det som budget/stor-fil-break lämnade kvar
     ...(errors.length ? { errors } : {}),
     ...(toRefresh.length ? { snapshots } : {}),
   })
