@@ -49,6 +49,19 @@ if (process.argv.includes('--ingest-state')) {
   console.log('[reset-results] tog bort snapshot-blobbarna (snapshots/RD|RF|KF.json).')
 }
 
+// Signalera ÖPPNA flikar: dataset_meta är klientens generationsvakt (ResultsProvider pollar den
+// varje varv och laddar om sidan när source/valtillfalle byts). `source='reset'` här → flikar
+// som öppnats under genrep-demon laddar om inom ~1,5 min och visar tom karta i stället för att
+// behålla genrep-färgade distrikt tills första skarpa filen skrivit om raden till 'val2026'.
+{
+  const { error } = await db.from('dataset_meta').update({
+    source: 'reset', valtillfalle: null, test: true, rakningstillfalle: null, kalla_uppdaterad: null,
+    updated_at: new Date().toISOString(),
+  }).eq('id', 1)
+  if (error) fail(`dataset_meta: ${error.message}`)
+  console.log("[reset-results] dataset_meta → source='reset' (öppna flikar laddar om till tomt läge).")
+}
+
 // Verifiera sluttillståndet — det är DETTA som gör N1 säkert att bocka av.
 for (const table of ['result', 'uppsamling_result', 'turnout']) {
   const { count, error } = await db.from(table).select('*', { count: 'exact', head: true })

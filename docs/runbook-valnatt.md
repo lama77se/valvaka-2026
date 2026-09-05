@@ -121,10 +121,13 @@ select jobname, active, schedule from cron.job;   -- ingest-result-genrep ska vi
 npm run results:reset -- --ingest-state
 node --env-file=.env.local scripts/db-status.mjs   # result/uppsamling/turnout ska visa 0 rader, 0 slutlig
 ```
-Rensar `result` + `uppsamling_result` + `turnout` (+ `ingest_state` för en helt ren omingest) **och
-tar bort snapshot-blobbarna** (`snapshots/RD|RF|KF.json` — annars seedar nya flikar genrep-data från
-CDN:en). Skriptet verifierar 0 rader och exit:ar 1 vid minsta fel. Appen visar nu "inga 2026-röster
-än" (bara 2022-kolumner) tills skarpt flödar — korrekt startläge.
+Rensar `result` + `uppsamling_result` + `turnout` (+ `ingest_state` för en helt ren omingest), **tar
+bort snapshot-blobbarna** (`snapshots/RD|RF|KF.json` — annars seedar nya flikar genrep-data från
+CDN:en) och sätter **`dataset_meta.source='reset'`** → flikar som redan är öppna (genrep-demon)
+laddar om sig själva inom ~1,5 min (klientens generationsvakt) i stället för att behålla genrep-
+färger. Skriptet verifierar 0 rader och exit:ar 1 vid minsta fel. Appen visar nu "inga 2026-röster
+än" (bara 2022-kolumner) tills skarpt flödar — korrekt startläge. När första val2026-filen skriver
+`source='val2026'` laddar flikarna om en gång till (och bannern släcks).
 Kör sedan i SQL-editorn: `vacuum (analyze) result, turnout;` så planeraren har färsk statistik för
 tom→full-övergången.
 

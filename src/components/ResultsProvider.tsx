@@ -586,6 +586,31 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  // Dataset-provenance + GENERATIONSVAKT (se effekten längre ned). Byter datasetet identitet
+  // (source/valtillfalle) medan fliken är öppen — valnattens N1-reset (`source='reset'`) och sedan
+  // första skarpa filen (`source='val2026'`) — laddas sidan om (jittrat 0–10 s). Store:n är
+  // upsert-only och kan inte "glömma" rader; en flik öppnad under genrep-demon hade annars behållit
+  // genrep-färgade distrikt + testbannern hela natten med skarpa distrikt ovanpå.
+  const datasetGenRef = useRef<string | null>(null)
+  const reloadingRef = useRef(false)
+  const refreshDatasetMeta = useCallback(async () => {
+    const { data } = await supabase
+      .from('dataset_meta')
+      .select('source,valtillfalle,test,rakningstillfalle,kalla_uppdaterad')
+      .eq('id', 1)
+      .maybeSingle()
+    if (!aliveRef.current || !data) return
+    const meta = data as DatasetMeta
+    setDataset(meta)
+    const gen = `${meta.source}|${meta.valtillfalle ?? ''}`
+    if (datasetGenRef.current === null) { datasetGenRef.current = gen; return } // baslinje vid mount
+    if (gen !== datasetGenRef.current && !reloadingRef.current) {
+      reloadingRef.current = true
+      console.warn('[valvaka] datasetet bytte identitet', datasetGenRef.current, '→', gen, '— laddar om')
+      setTimeout(() => location.reload(), Math.random() * 10_000)
+    }
+  }, [])
+
   // Poll-loop — PRIMÄR uppdateringsväg sedan Realtime togs bort. Var 45–90 s (jittrat) hämtar varje
   // LADDAD valtyp sin delta + laddar om uppsamling, men BARA när fliken är synlig (bakgrundsflik
   // ligger tyst → sparar last). Refresh körs DIREKT när fliken blir synlig igen (tab-fokus). "Live"-
@@ -595,6 +620,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     const pump = () => {
       for (const vt of VALTYPER) if (loadedValtyperRef.current.has(vt)) { void resyncValtyp(vt); void resyncTurnout(vt) }
       void loadUppsamling()
+      void refreshDatasetMeta() // banner-färskhet + generationsvakt (reload om datasetet bytts)
       setRealtimeConnected(true) // aktiv, synlig pollning → "Live" pulserar
     }
     const schedule = () => {
@@ -614,7 +640,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
       if (timer) clearTimeout(timer)
       document.removeEventListener('visibilitychange', onVisible)
     }
-  }, [resyncValtyp, resyncTurnout, loadUppsamling])
+  }, [resyncValtyp, resyncTurnout, loadUppsamling, refreshDatasetMeta])
 
   // Nämnare (mount-en gång). Realtime är BORTTAGET → uppdateringar kommer via poll-loopen ovan;
   // snapshoten laddas efterfrågestyrt per valtyp (ensureValtypLoaded), triggad av aktiv valtyp +
@@ -826,22 +852,14 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     }
   }, [valtyp, selectedArea])
 
-  // Dataset-provenance (genrep/skarpt) för UI-bannern. Hämtas vid mount + när en ny
-  // bulkladdning skett (snapshotVersion) så "källa uppdaterad"-tiden hålls färsk.
-  useEffect(() => {
-    let alive = true
-    supabase
-      .from('dataset_meta')
-      .select('source,valtillfalle,test,rakningstillfalle,kalla_uppdaterad')
-      .eq('id', 1)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (alive && data) setDataset(data as DatasetMeta)
-      })
-    return () => {
-      alive = false
-    }
-  }, [snapshotVersion])
+  // Dataset-provenance (genrep/skarpt) för UI-bannern — OCH generationsvakt. Hämtas vid mount, vid
+  // ny bulkladdning (snapshotVersion) och i VARJE poll-varv (pump). Byter datasetet identitet
+  // (source/valtillfalle) medan fliken är öppen — valnattens N1-reset (`source='reset'`) och sedan
+  // första skarpa filen (`source='val2026'`) — laddas sidan om (jittrat 0–10 s). Store:n är
+  // upsert-only och kan inte "glömma" rader; en flik öppnad under genrep-demon hade annars behållit
+  // genrep-färgade distrikt + testbannern hela natten med skarpa distrikt ovanpå.
+  // (refreshDatasetMeta definieras ovanför poll-loopen — den används i pump.)
+  useEffect(() => { void refreshDatasetMeta() }, [snapshotVersion, refreshDatasetMeta])
 
   const value: ResultsContextValue = {
     turnoutStoresRef,
