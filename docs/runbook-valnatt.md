@@ -90,15 +90,13 @@ val2026-deployen hunnit landa via CI. Ordningen är därför **N0 pausa → N1 r
   Kör sedan lasttestet på Large och **läs CPU i Supabase-dashboarden** (klient-väggtid mäter INTE
   server-CPU). Sedan **Realtime togs bort (1 sep)** är den kvarvarande lasten **mount-snapshot-herden**
   — många samtidiga fulla snapshot-läsningar vid poll-close (~20:00) + delta-pollning var 45–90 s —
-  INTE Realtime-fan-out. ⚠️ **Befintliga lasttest matchar inte längre arkitekturen:** `loadtest-heavy.mjs`
-  har *ingen* snapshot-herd-fas (den ligger som STEG 4 i `loadtest-clients.mjs`), båda spenderar
-  minuter på Realtime-subscribers som inte finns längre, och `loadtest-valnatt.mjs` (Realtime-era)
-  **raderar RD** ("ren tavla") — kör den inte mot prod. Skriv `scripts/loadtest-poll.mjs` som
-  simulerar dagens klient (keyset-snapshot per valtyp + delta-poll var 45–90 s, N=300–500 samtidiga)
-  och kör den på Large. Räcker inte Large → CDN-cachen (valnatt-lastkapacitet.md). Godkänt = CPU
-  håller marginal och återhämtar sig (jfr 64 % på Small → väntat ~30 % på Large).
-  Obs: den sena herden (anslutare 20:30–22:00 som drar 15–25 MB JSON var) är dyrare än 20:00-herden
-  (tabellen nästan tom då).
+  INTE Realtime-fan-out. **Verktyget är `npm run loadtest:poll`** (speglar dagens klient: blob-mount
+  + delta-poll). ⚠️ `loadtest-clients/-heavy/-valnatt` är Realtime-era — `loadtest-valnatt.mjs`
+  **raderar RD** ("ren tavla"), kör den inte mot prod.
+  **Läge 5 sep:** mount-herden är flyttad till CDN (snapshot-blobbar, PR #81/#82) — 50 flikar gick
+  från 100 % CPU till ~20 %, 300 flikar pollar med p95 < 160 ms på Small. Large behålls som marginal.
+  Acceptans på Large: `npm run loadtest:poll -- --steps 100,300 --hold 120` från en maskin med bra länk;
+  godkänt = CPU-topp under herd < 40 % och delta p95 < 300 ms. Se valnatt-lastkapacitet.md.
 - [ ] **Låt genrep-demon stå** tills nära natten — den visar att allt fungerar.
 
 ---
