@@ -82,9 +82,10 @@ export interface MandatBarsProps {
   sparr: number // riksspärr (0..1) för valtypen — partier under lämnas ur röstandelsstapeln
   reportPct?: number | null
   showBlocks?: boolean // blockmajoritet (V+S+MP+C vs L+KD+M+SD) under staplarna — bara Riket/RD
+  compact?: boolean // mobil: kortare siffror/etiketter i blockrutorna, se nedan
 }
 
-export function MandatBars({ shown, ovriga, totalMandat, giltiga, sparr, reportPct, showBlocks }: MandatBarsProps) {
+export function MandatBars({ shown, ovriga, totalMandat, giltiga, sparr, reportPct, showBlocks, compact }: MandatBarsProps) {
   const live = giltiga > 0
   const parties = [...shown].sort((a, b) => spectrumRank(a.forkortning) - spectrumRank(b.forkortning))
 
@@ -194,7 +195,14 @@ export function MandatBars({ shown, ovriga, totalMandat, giltiga, sparr, reportP
       )}
 
       {/* Blockmajoritet (endast Riket/RD): V+S+MP+C mot L+KD+M+SD — andel + mandat, markör
-          vid majoritet (✓ >50 % röster, grön ram + "egen majoritet" vid ≥ majoritet-mandat). */}
+          vid majoritet (✓ >50 % röster, grön ram + "egen majoritet" vid ≥ majoritet-mandat).
+          Två rutor i halva panelbredden är det trängsta i hela vyn: på mobil är varje ruta
+          ~155 px och raden "50,369 % ✓ 175 mand. ✓" sprack mitt i talen. `compact` kortar
+          därför ner allt som kostar bredd — två decimaler i stället för tre, "mdt" i stället
+          för "mand.", en snäppet mindre grad och smalare luft. `whitespace-nowrap` gör
+          dessutom att ett tal ALDRIG kan brytas internt: blir det ändå för trångt (extremt
+          smal skärm, stor systemtextstorlek) wrappar flex hela mandat-chippet till egen rad,
+          vilket är läsbart — "50,369" / "% ✓" är det inte. */}
       {showBlocks && (
         <div className="pt-0.5">
           <div className="grid grid-cols-2 gap-1.5 text-slate-100">
@@ -202,15 +210,22 @@ export function MandatBars({ shown, ovriga, totalMandat, giltiga, sparr, reportP
               const voteMaj = b.andel > 0.5
               const seatMaj = liveM && b.mandat >= majoritet
               return (
-                <div key={label} className={['rounded px-2 py-1', seatMaj ? 'bg-emerald-500/15 ring-1 ring-emerald-500/50' : 'bg-slate-800/40', right ? 'text-right' : 'text-left'].join(' ')}>
+                <div key={label} className={['rounded py-1', compact ? 'px-1.5' : 'px-2', seatMaj ? 'bg-emerald-500/15 ring-1 ring-emerald-500/50' : 'bg-slate-800/40', right ? 'text-right' : 'text-left'].join(' ')}>
                   <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-300">{label}</div>
-                  <div className={`mt-0.5 flex items-baseline gap-1.5 leading-none ${right ? 'justify-end' : ''}`}>
-                    <span className={`text-sm font-bold tabular-nums ${voteMaj ? 'text-emerald-300' : 'text-slate-100'}`}>
-                      {(b.andel * 100).toFixed(3).replace('.', ',')} %{voteMaj ? ' ✓' : ''}
+                  <div className={`mt-0.5 flex flex-wrap items-baseline leading-none ${compact ? 'gap-x-1 gap-y-0.5' : 'gap-1.5'} ${right ? 'justify-end' : ''}`}>
+                    <span className={`whitespace-nowrap font-bold tabular-nums ${compact ? 'text-[13px]' : 'text-sm'} ${voteMaj ? 'text-emerald-300' : 'text-slate-100'}`}>
+                      {(b.andel * 100).toFixed(compact ? 2 : 3).replace('.', ',')} %{voteMaj ? ' ✓' : ''}
                     </span>
-                    {liveM && <span className={`text-[12px] tabular-nums ${seatMaj ? 'font-bold text-emerald-300' : 'text-slate-400'}`}>{b.mandat} mand.{seatMaj ? ' ✓' : ''}</span>}
+                    {liveM && (
+                      <span className={`whitespace-nowrap tabular-nums ${compact ? 'text-[11px]' : 'text-[12px]'} ${seatMaj ? 'font-bold text-emerald-300' : 'text-slate-400'}`}>
+                        {/* Bocken på mandaten är samma signal som "egen majoritet"-raden
+                            nedanför (båda = seatMaj). På mobil, där varje px räknas, räcker
+                            raden — utan bocken ryms allt på en rad ner till 320 px. */}
+                        {b.mandat} {compact ? 'mdt' : 'mand.'}{seatMaj && !compact ? ' ✓' : ''}
+                      </span>
+                    )}
                   </div>
-                  {seatMaj && <div className="text-[10px] font-semibold uppercase tracking-wider text-emerald-300">egen majoritet</div>}
+                  {seatMaj && <div className={`whitespace-nowrap text-[10px] font-semibold uppercase text-emerald-300 ${compact ? 'tracking-wide' : 'tracking-wider'}`}>egen majoritet</div>}
                 </div>
               )
             })}

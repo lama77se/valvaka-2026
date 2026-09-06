@@ -43,7 +43,9 @@ const LEVELS: Record<Valtyp, ('riket' | 'valkrets' | 'region' | 'kommun')[]> = {
 }
 const PROMPT: Record<Valtyp, string> = { RD: '', RF: 'Välj region…', KF: 'Välj kommun…' }
 
-export function ResultPanel() {
+// `compact` sätts av mobil-layouten: samma panel, men de mest breddkänsliga delarna
+// (blockrutorna i MandatBars) kortas ner så de ryms på en rad i halva mobilbredden.
+export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
   const {
     valtyp,
     selectedArea,
@@ -354,6 +356,7 @@ export function ResultPanel() {
                   sparr={SPARR[valtyp]}
                   reportPct={pct}
                   showBlocks={valtyp === 'RD' && selectedArea.level === 'riket'}
+                  compact={compact}
                 />
               </div>
             )}
