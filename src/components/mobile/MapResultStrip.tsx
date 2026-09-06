@@ -14,7 +14,7 @@ import { useMemo } from 'react'
 import { SPARR, applyComparison, buildRows, districtsInArea, mergeVotes, uppsamlingForArea } from '@/lib/aggregate'
 import { ancestorsOf } from '@/lib/hierarchy'
 import { onDark } from '@/lib/colors'
-import { deltaColor, formatDelta } from '@/lib/delta'
+import { deltaColor, formatDeltaCompact } from '@/lib/delta'
 import { useResults, type Area } from '@/components/ResultsProvider'
 
 // Alla åtta riksdagspartier renderas; hur många som SYNS avgörs av skärmbredden via
@@ -117,7 +117,7 @@ export function MapResultStrip() {
         // comparison-fil → alla delta null → en rad med bara "–" är sämre än ingen rad).
         const visarDelta = r.partier.some((p) => p.delta != null || p.ny)
         return (
-          <div key={r.key} className={`flex items-baseline gap-2 py-0.5 ${visarDelta ? 'strip-delta' : ''}`}>
+          <div key={r.key} className="flex items-baseline gap-2 py-0.5">
             <span className="w-[52px] shrink-0 text-[10px] font-semibold uppercase tracking-wide text-slate-400" title={r.namn}>
               <span className="block truncate">{r.namn}</span>
               {visarDelta && <span className="mt-0.5 block font-normal normal-case tracking-normal text-slate-500">±2022</span>}
@@ -142,7 +142,7 @@ export function MapResultStrip() {
                       grönt uppåt, rött nedåt, dämpat vid stiltje, "ny" i amber. */}
                   {visarDelta && (
                     <span className={`mt-0.5 block ${p.ny ? 'text-amber-400' : deltaColor(p.delta)}`}>
-                      {p.ny ? 'ny' : formatDelta(p.delta)}
+                      {p.ny ? 'ny' : formatDeltaCompact(p.delta)}
                     </span>
                   )}
                 </span>

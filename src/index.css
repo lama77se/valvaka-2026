@@ -156,29 +156,3 @@ html.app-locked body {
     display: inline;
   }
 }
-
-/* Med jämförelseraden (±2022) blir varje kolumn bredare än sitt värde — ett tvåsiffrigt
-   "−12,4" är bredare än "V 6,8" ovanför — så där gäller högre trösklar. Uppmätt behov med
-   tvåsiffriga delta på varje parti: 5 partier 303 px · 6 partier 348 px · 7 partier 394 px
-   · 8 partier 433 px. Scopad på .strip-delta så enradsläget med jämförelse tappar ett
-   parti i stället för att klippa, medan drilldown-läget (utan jämförelse) behåller sina. */
-.strip-delta .strip-party-6,
-.strip-delta .strip-party-7,
-.strip-delta .strip-party-8 {
-  display: none;
-}
-@media (min-width: 360px) {
-  .strip-delta .strip-party-6 {
-    display: inline;
-  }
-}
-@media (min-width: 406px) {
-  .strip-delta .strip-party-7 {
-    display: inline;
-  }
-}
-@media (min-width: 445px) {
-  .strip-delta .strip-party-8 {
-    display: inline;
-  }
-}

@@ -13,3 +13,16 @@ export const formatDeltaInt = (d: number | null) => (d == null ? '–' : d === 0
 // saknar jämförelse. Noll är medvetet neutralt, inte grönt.
 export const deltaColor = (d: number | null) =>
   d == null || d === 0 ? 'text-slate-500' : d > 0 ? 'text-emerald-400' : 'text-rose-400'
+
+// Kompakt variant för mobilens resultatremsa, där differensen står i en smal kolumn UNDER
+// sitt värde. Tvåsiffriga svängningar är sällsynta och tappar sin decimal ("−12" i stället
+// för "−12,4") — det håller differensen smalare än värdet ovanför i alla lägen, så
+// jämförelseraden aldrig kan bli det som avgör hur många partier som får plats.
+// Tröskeln testas på det AVRUNDADE värdet, annars skulle 9,96 bli "+10,0" (fem tecken).
+export const formatDeltaCompact = (d: number | null) => {
+  if (d == null) return '–'
+  if (d === 0) return '±0'
+  const abs = Math.round(Math.abs(d) * 10) / 10
+  const tecken = d > 0 ? '+' : '−'
+  return abs >= 10 ? `${tecken}${Math.round(abs)}` : `${tecken}${abs.toFixed(1).replace('.', ',')}`
+}
