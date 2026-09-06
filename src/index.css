@@ -107,3 +107,24 @@
 .board-row {
   animation: boardIn 0.5s ease-out;
 }
+
+/* Mobil-skalet: exakt en viewport högt, aldrig mer. `--app-height` sätts av
+   useAppHeight() (src/lib/appHeight.ts) från den faktiskt synliga höjden — `100dvh`
+   räcker inte, eftersom iOS/Android ibland layoutar mot den stora viewporten när fliken
+   återöppnas och då trycker bottom-nav:en under browser-chromen. Fallback-kedjan gäller
+   innan JS kört (och i browsers utan dvh). */
+.mobile-shell {
+  height: 100vh;
+  height: 100dvh;
+  height: var(--app-height, 100dvh);
+}
+
+/* Skalet äger hela viewporten → dokumentet ska aldrig scrolla självt. Utan låset kan
+   gummibandsdrag/pull-to-refresh flytta header och nav ur bild (och ladda om appen).
+   Klassen sätts bara medan mobil-skalet är monterat — desktop rörs inte. */
+html.app-locked,
+html.app-locked body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
