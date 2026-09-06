@@ -132,26 +132,26 @@ html.app-locked body {
 /* Hur många partier som syns i mobilens resultatremsa (MapResultStrip). Komponenten
    renderar alla åtta; trösklarna här bestämmer hur många som får plats på EN rad, i
    stället för en JS-mätning — remsan har ingen egen layouteffekt att reagera på.
-   Uppmätt minsta bredd mot den här byggda CSS:en (etikett 52 px + px-3 inräknat):
-   5 partier 287 px · 6 partier 332 px · 7 partier 378 px · 8 partier 412 px.
-   Trösklarna ligger ~12 px över så ett udda värde (ett distrikt där ett parti står på
-   100,0) inte spräcker raden. 320 → 5, 360/375 → 6, 390/393/414 → 7, 430 → alla 8. */
+   Uppmätt minsta bredd mot den här byggda CSS:en (10 px siffror, etikett 44 px, px-3 och
+   jämförelseraden inräknade): 5 partier 269 px · 6 partier 310 px · 7 partier 353 px ·
+   8 partier 384 px — mätt i värsta fallet (bredaste möjliga värde plus tvåsiffriga
+   differenser på varje parti). 320 → 5, 325+ → 6, 365+ → 7, 390+ → alla åtta. */
 .strip-party-6,
 .strip-party-7,
 .strip-party-8 {
   display: none;
 }
-@media (min-width: 345px) {
+@media (min-width: 325px) {
   .strip-party-6 {
     display: inline;
   }
 }
-@media (min-width: 390px) {
+@media (min-width: 365px) {
   .strip-party-7 {
     display: inline;
   }
 }
-@media (min-width: 425px) {
+@media (min-width: 390px) {
   .strip-party-8 {
     display: inline;
   }

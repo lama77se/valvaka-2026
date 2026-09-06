@@ -18,12 +18,12 @@ import { deltaColor, formatDeltaCompact } from '@/lib/delta'
 import { useResults, type Area } from '@/components/ResultsProvider'
 
 // Alla åtta riksdagspartier renderas; hur många som SYNS avgörs av skärmbredden via
-// .strip-party-6/7/8 (ren CSS-tröskel, ingen JS-mätning). Uppmätt minsta bredd mot byggd
-// CSS, med de fasta delarna (etikett 52 px + px-3) inräknade:
-//   5 partier 287 px · 6 partier 332 px · 7 partier 378 px · 8 partier 412 px
-// Trösklarna nedan ligger ~12 px över dessa så en udda bredd (ett distrikt där ett parti
-// står på 100,0) inte spräcker raden. I praktiken: 320 → 5, 360/375 → 6, 390/393/414 → 7,
-// 430 → alla 8. Resten läses alltid i Resultat-fliken.
+// .strip-party-6/7/8 (ren CSS-tröskel, ingen JS-mätning). Siffrorna är 10 px och etiketten
+// 44 px — det är vad som krävs för att få in ALLA ÅTTA på en vanlig telefon (390 px). Vid
+// 11 px behövde åtta partier 412 px, och etikettbredden ensam räckte inte dit.
+// Uppmätt minsta bredd mot byggd CSS, jämförelseraden inräknad:
+//   5 partier 269 px · 6 partier 310 px · 7 partier 353 px · 8 partier 384 px
+// I praktiken: 320 → 5, 360/375 → 7, 390 och uppåt → alla åtta.
 const MAX_PARTIER = 8
 
 // Lokala partier (KF) kan ha längre förkortningar än riksdagens 1–2 tecken. Kapa så en
@@ -118,7 +118,7 @@ export function MapResultStrip() {
         const visarDelta = r.partier.some((p) => p.delta != null || p.ny)
         return (
           <div key={r.key} className="flex items-baseline gap-2 py-0.5">
-            <span className="w-[52px] shrink-0 text-[10px] font-semibold uppercase tracking-wide text-slate-400" title={r.namn}>
+            <span className="w-[44px] shrink-0 text-[10px] font-semibold uppercase tracking-wide text-slate-400" title={r.namn}>
               <span className="block truncate">{r.namn}</span>
               {visarDelta && <span className="mt-0.5 block font-normal normal-case tracking-normal text-slate-500">±2022</span>}
             </span>
@@ -130,7 +130,7 @@ export function MapResultStrip() {
                 <span
                   key={p.fork}
                   title={`${p.fork} ${(p.andel * 100).toFixed(1).replace('.', ',')} %`}
-                  className={`shrink-0 whitespace-nowrap text-[11px] leading-none tabular-nums ${i >= 5 ? `strip-party-${i + 1}` : ''}`}
+                  className={`shrink-0 whitespace-nowrap text-[10px] leading-none tabular-nums ${i >= 5 ? `strip-party-${i + 1}` : ''}`}
                 >
                   {/* onDark lyfter mörka partifärger (V, KD) till läsbar ljushet mot den
                       mörka bakgrunden men behåller kulören → färgen kopplar till kartan. */}
