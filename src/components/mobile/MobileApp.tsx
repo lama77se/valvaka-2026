@@ -53,7 +53,7 @@ export function MobileApp() {
         )}
         {tab === 'resultat' && (
           <div className="absolute inset-0 overflow-y-auto bg-slate-950/95 p-3">
-            <ResultPanel />
+            <ResultPanel compact />
           </div>
         )}
         {tab === 'senaste' && (
