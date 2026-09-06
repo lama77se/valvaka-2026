@@ -74,6 +74,23 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
   const prog = storesRef.current[valtyp].slutligProgress()
   const slutligText = prog.state === 'preliminar' ? 'preliminärt' : prog.state === 'slutlig' ? 'slutgiltigt' : `sluträknas ${prog.pct} %`
 
+  // Undertexten är samtidigt progress-baren, så varje tecken kostar höjd: spricker den
+  // till två rader blir baren dubbelt så hög. Full text ("6 312 av 6 312 valdistrikt
+  // räknade (100 %) · preliminärt · Valdeltagande 84,5 %") behöver ~480 px och wrappade
+  // därför på ALLA telefonbredder. Mobilvarianten kortar ner den:
+  //   • "av" → "/", "valdistrikt räknade" → "distrikt", "Valdeltagande X %" → "X % röstade"
+  //   • slutligt-läget utgår HELT — `slutligProgress()` är per valtyp (inte per område),
+  //     alltså exakt samma värde som statusbadgen i MobileChrome som alltid syns ovanför.
+  //     Antalen och andelen stannar kvar: de gäller det VALDA området och finns därför
+  //     inte i chromen (som alltid visar valtypens rikssiffra).
+  const subtitle = (reported: number, total: number, pct: number, turnout: number | null) => {
+    const r = reported.toLocaleString('sv-SE')
+    const t = total.toLocaleString('sv-SE')
+    const vd = turnout != null ? turnout.toLocaleString('sv-SE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : null
+    if (compact) return `${r}/${t} distrikt (${pct} %)${vd != null ? ` · ${vd} % röstade` : ''}`
+    return `${r} av ${t} valdistrikt räknade (${pct} %) · ${slutligText}${vd != null ? ` · Valdeltagande ${vd} %` : ''}`
+  }
+
   const areaIndex = areaIndexRef.current[valtyp]
 
   const areaName =
@@ -362,7 +379,7 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
             )}
             <ResultTable
               title={`${ELECTION[valtyp]} — ${areaName}`}
-              subtitle={`${view.reported.toLocaleString('sv-SE')} av ${view.total.toLocaleString('sv-SE')} valdistrikt räknade (${pct} %) · ${slutligText}${view.turnout != null ? ` · Valdeltagande ${view.turnout.toLocaleString('sv-SE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %` : ''}`}
+              subtitle={subtitle(view.reported, view.total, pct, view.turnout)}
               reportPct={view.total > 0 ? (view.reported / view.total) * 100 : 0}
               display={view.display}
               giltiga={view.giltiga}
