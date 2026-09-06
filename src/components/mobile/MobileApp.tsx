@@ -11,6 +11,7 @@ import { ResultPanel } from '@/components/ResultPanel'
 import { DepartureBoard } from '@/components/DepartureBoard'
 import { VALTYPER } from '@/lib/results'
 import { useAppHeight } from '@/lib/appHeight'
+import { MapResultStrip } from './MapResultStrip'
 import { MobileChrome } from './MobileChrome'
 import { BottomNav, type Tab } from './BottomNav'
 
@@ -47,8 +48,14 @@ export function MobileApp() {
       <MobileChrome onOpenArea={() => setTab('resultat')} />
       <main className="relative min-h-0 flex-1">
         {mapMounted && (
-          <div className={`mobile-map absolute inset-0 ${tab === 'karta' ? '' : 'hidden'}`}>
-            <DistrictMap variant="mobile" active={tab === 'karta'} onOpenResult={() => setTab('resultat')} />
+          // Kolumn: resultatremsa överst, kartan fyller resten. Remsan renderas BARA när
+          // fliken är aktiv — kartan hålls monterad i bakgrunden (6 MB geometri), men
+          // remsans aggregat ska inte räknas om vid varje Realtime-bump när den inte syns.
+          <div className={`absolute inset-0 flex flex-col ${tab === 'karta' ? '' : 'hidden'}`}>
+            {tab === 'karta' && <MapResultStrip />}
+            <div className="mobile-map relative min-h-0 flex-1">
+              <DistrictMap variant="mobile" active={tab === 'karta'} onOpenResult={() => setTab('resultat')} />
+            </div>
           </div>
         )}
         {tab === 'resultat' && (
