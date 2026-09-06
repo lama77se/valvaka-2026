@@ -10,6 +10,7 @@ import { DistrictMap } from '@/components/DistrictMap'
 import { ResultPanel } from '@/components/ResultPanel'
 import { DepartureBoard } from '@/components/DepartureBoard'
 import { VALTYPER } from '@/lib/results'
+import { useAppHeight } from '@/lib/appHeight'
 import { MobileChrome } from './MobileChrome'
 import { BottomNav, type Tab } from './BottomNav'
 
@@ -23,6 +24,9 @@ function readTabFromHash(): Tab {
 }
 
 export function MobileApp() {
+  // Mäter viewporten och låser dokumentscrollen så skalet alltid är exakt en skärm högt
+  // (annars hamnar bottom-nav:en under browser-chromen när fliken återöppnas).
+  useAppHeight()
   const [tab, setTab] = useState<Tab>(readTabFromHash)
 
   // Kartan monteras först när Karta-fliken öppnats (en besökare som bara tittar på
@@ -39,7 +43,7 @@ export function MobileApp() {
   }, [tab])
 
   return (
-    <div className="flex h-[100dvh] flex-col bg-[#0b1020] text-slate-100">
+    <div className="mobile-shell flex flex-col overflow-hidden bg-[#0b1020] text-slate-100">
       <MobileChrome onOpenArea={() => setTab('resultat')} />
       <main className="relative min-h-0 flex-1">
         {mapMounted && (
