@@ -89,13 +89,14 @@ val2026-deployen hunnit landa via CI. Ordningen är därför **N0 pausa → N1 r
   (bevakning går mot Supabase; `loadtest:poll` rör inte sajten). Uppe-koll: `curl -sI
   https://valvaka.tech/ | head -1` → `200`. Slå på **Vercel Analytics** i förväg — enda sättet att se
   samtidiga besökare live under natten.
-- [ ] **Stäng av Realtime-*tjänsten*** i Supabase-dashboarden (publikationen är redan tom, men
-  tjänsten/replikationsslotten går bara att stänga där) → noll WAL-avkodning under natten.
-- [ ] **Manuell deploy-fallback klar.** `deploy-functions.yml` har `workflow_dispatch` (Actions →
-  *Deploy edge functions* → *Run workflow*). Om GitHub Actions självt ligger nere: `npx supabase@latest
-  login` (engångs, interaktivt) och sedan
-  `npx supabase@latest functions deploy ingest-result --project-ref emtjnmyberugrkdplnsh`.
-  Gör `login` i förväg — inte kl 20:00.
+- [x] **Realtime-tjänsten AV** (Project Settings → Realtime → *Enable Realtime service* av, 6 sep).
+  Verifierat: anon-WebSocket mot `/realtime/v1/websocket` avvisas med HTTP 403. Publikationen var
+  redan tom sedan 1 sep; nu kan ingen heller öppna tusentals anon-anslutningar mot projektet på natten.
+- [x] **Manuell deploy-fallback klar** (6 sep). `deploy-functions.yml` har `workflow_dispatch` (Actions →
+  *Deploy edge functions* → *Run workflow*). `npx supabase@latest login` är gjord på valnattsdatorn
+  (verifierat: `projects list` visar `emtjnmyberugrkdplnsh`); om GitHub Actions ligger nere:
+  `npx supabase@latest functions deploy ingest-result --project-ref emtjnmyberugrkdplnsh`
+  (repot behöver inte vara `link`:at).
 - [x] **🔁 Kallstart-repetition mot genrep — GJORD 5 sep 09:47–10:02.** N0 (SQL-editor) → N1
   `results:reset --ingest-state` (207 907 + 9 103 + 18 896 rader + blobbar bort, verifierat 0) →
   N3 (SQL-editor) → `monitor-flow`. Resultat: **313/313 på 12,8 min**; en riktig Chromium-flik som
