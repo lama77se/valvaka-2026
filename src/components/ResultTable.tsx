@@ -4,15 +4,11 @@
 // innan 2026 kommit in — med ±-differens bredvid. Ej wirade fält (null) → "–".
 import { Fragment } from 'react'
 import type { DisplayRows } from '@/lib/aggregate'
+import { deltaColor, formatDelta as delta, formatDeltaInt as dInt } from '@/lib/delta'
 
 const NEUTRAL = '#64748b'
 const nf = new Intl.NumberFormat('sv-SE')
 const pct = (a: number | null) => (a == null ? '–' : `${(a * 100).toFixed(1).replace('.', ',')} %`)
-const delta = (d: number | null) =>
-  d == null ? '–' : `${d > 0 ? '+' : d < 0 ? '−' : '±'}${Math.abs(d).toFixed(1).replace('.', ',')}`
-const dInt = (d: number | null) => (d == null ? '–' : d === 0 ? '±0' : `${d > 0 ? '+' : '−'}${Math.abs(d)}`)
-const deltaColor = (d: number | null) =>
-  d == null || d === 0 ? 'text-slate-500' : d > 0 ? 'text-emerald-400' : 'text-rose-400'
 
 const COLS = 8
 

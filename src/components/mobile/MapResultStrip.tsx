@@ -11,9 +11,10 @@
 // Står man redan på toppnivån är raderna identiska → då visas bara en rad, så remsan
 // aldrig kostar höjd den inte använder.
 import { useMemo } from 'react'
-import { SPARR, buildRows, districtsInArea, mergeVotes, uppsamlingForArea } from '@/lib/aggregate'
+import { SPARR, applyComparison, buildRows, districtsInArea, mergeVotes, uppsamlingForArea } from '@/lib/aggregate'
 import { ancestorsOf } from '@/lib/hierarchy'
 import { onDark } from '@/lib/colors'
+import { deltaColor, formatDelta } from '@/lib/delta'
 import { useResults, type Area } from '@/components/ResultsProvider'
 
 // Alla åtta riksdagspartier renderas; hur många som SYNS avgörs av skärmbredden via
@@ -32,7 +33,10 @@ const kortaNer = (f: string) => (f.length > 5 ? f.slice(0, 4) + '…' : f)
 type Row = {
   key: string
   namn: string
-  partier: { fork: string; farg: string; andel: number }[]
+  // delta = ±procentenheter mot 2022. Bara satt på toppnivåraden när remsan visar EN rad
+  // (ingen drilldown) — då finns höjden över för en jämförelserad, och 2022 hämtas ur den
+  // statiska comparison-filen (aggregatnivå) utan någon extra fråga.
+  partier: { fork: string; farg: string; andel: number; delta: number | null; ny: boolean }[]
 }
 
 export function MapResultStrip() {
@@ -49,6 +53,7 @@ export function MapResultStrip() {
     regioner,
     valkretsar,
     distriktNamnRef,
+    comparisonRef,
     revision,
   } = useResults()
 
@@ -70,12 +75,16 @@ export function MapResultStrip() {
     // Lean variant av ResultPanels aggregat: bara röstandelar + räknat-andel. Ingen
     // mandatberäkning och ingen 2022-jämförelse — remsan visar bara 2026, så det dyraste
     // i panelen (computeMandate/applyComparison) hoppas över helt.
-    const summera = (a: Area): Row | null => {
+    const summera = (a: Area, medDelta: boolean): Row | null => {
       const codes = districtsInArea(allCodesRef.current, a.level, a.code, valtyp, metaRef.current)
       if (codes.length === 0) return null
       const votes = mergeVotes(store.aggregate(codes), uppsamlingForArea(valtyp, a.level, a.code, uppsamlingRef.current[valtyp]))
-      const res = buildRows(votes, partyRef.current, SPARR[valtyp])
+      let res = buildRows(votes, partyRef.current, SPARR[valtyp])
       if (res.giltiga === 0) return null // inget räknat än → ingen rad (hellre tomt än nollor)
+      // applyComparison bara när jämförelseraden faktiskt ritas. Toppnivåerna slår upp
+      // 2022 i den statiska comparison-filen (rena map-uppslag) — distriktsnivå, som hade
+      // krävt en DB-hämtning, når vi aldrig här eftersom delta bara gäller enradsläget.
+      if (medDelta) res = applyComparison(res, valtyp, a.level, a.code, comparisonRef.current, partyRef.current, null)
       return {
         key: `${a.level}:${a.code ?? ''}`,
         namn: namnAv(a),
@@ -83,7 +92,7 @@ export function MapResultStrip() {
         partier: res.rows
           .filter((r) => r.forkortning && r.andel > 0)
           .slice(0, MAX_PARTIER)
-          .map((r) => ({ fork: r.forkortning!, farg: r.farg ?? '#64748b', andel: r.andel })),
+          .map((r) => ({ fork: r.forkortning!, farg: r.farg ?? '#64748b', andel: r.andel, delta: medDelta ? r.deltaAndel : null, ny: medDelta && r.ny })),
       }
     }
 
@@ -91,8 +100,11 @@ export function MapResultStrip() {
     // med rätt kod härledd ur det valda området — så RF/KF, som saknar riksnivå, får sitt
     // län respektive sin kommun som topprad. Längd 1 = man STÅR på toppnivån → en rad.
     const chain = ancestorsOf(valtyp, selectedArea, areaIndex)
-    const areas = chain.length <= 1 ? [chain[0] ?? selectedArea] : [chain[0], selectedArea]
-    return areas.map(summera).filter((r): r is Row => r !== null)
+    // Enradsläge (ingen drilldown) → toppnivån får en jämförelserad mot 2022 under sig.
+    // Vid drilldown är höjden redan uppbokad av rad två, så då utgår jämförelsen.
+    const enRad = chain.length <= 1
+    const areas: [Area, boolean][] = enRad ? [[chain[0] ?? selectedArea, true]] : [[chain[0], false], [selectedArea, false]]
+    return areas.map(([a, d]) => summera(a, d)).filter((r): r is Row => r !== null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [valtyp, selectedArea, revision, areaIndex, kommuner, regioner, valkretsar])
 
@@ -100,27 +112,45 @@ export function MapResultStrip() {
 
   return (
     <div className="shrink-0 border-b border-slate-800 bg-slate-950/95 px-3 py-1.5">
-      {rows.map((r) => (
-        <div key={r.key} className="flex items-baseline gap-2 py-0.5">
-          <span className="w-[52px] shrink-0 truncate text-[10px] font-semibold uppercase tracking-wide text-slate-400" title={r.namn}>
-            {r.namn}
-          </span>
-          <div className="flex min-w-0 flex-1 items-baseline gap-1.5 overflow-hidden">
-            {r.partier.map((p, i) => (
-              <span
-                key={p.fork}
-                title={`${p.fork} ${(p.andel * 100).toFixed(1).replace('.', ',')} %`}
-                className={`shrink-0 whitespace-nowrap text-[11px] leading-none tabular-nums ${i >= 5 ? `strip-party-${i + 1}` : ''}`}
-              >
-                {/* onDark lyfter mörka partifärger (V, KD) till läsbar ljushet mot den
-                    mörka bakgrunden men behåller kulören → färgen kopplar till kartan. */}
-                <span className="font-bold" style={{ color: onDark(p.farg) }}>{kortaNer(p.fork)}</span>{' '}
-                <span className="text-slate-200">{(p.andel * 100).toFixed(1).replace('.', ',')}</span>
-              </span>
-            ))}
+      {rows.map((r) => {
+        // Jämförelseraden ritas bara när det finns något att jämföra med (saknad
+        // comparison-fil → alla delta null → en rad med bara "–" är sämre än ingen rad).
+        const visarDelta = r.partier.some((p) => p.delta != null || p.ny)
+        return (
+          <div key={r.key} className={`flex items-baseline gap-2 py-0.5 ${visarDelta ? 'strip-delta' : ''}`}>
+            <span className="w-[52px] shrink-0 text-[10px] font-semibold uppercase tracking-wide text-slate-400" title={r.namn}>
+              <span className="block truncate">{r.namn}</span>
+              {visarDelta && <span className="mt-0.5 block font-normal normal-case tracking-normal text-slate-500">±2022</span>}
+            </span>
+            <div className="flex min-w-0 flex-1 items-baseline gap-1.5 overflow-hidden">
+              {r.partier.map((p, i) => (
+                // Varje parti är en KOLUMN: andelen överst, ±2022 rakt under. Kolumnen blir
+                // så bred som sin bredaste rad, så jämförelsen hamnar alltid under sitt eget
+                // parti utan grid — och .strip-party-N kan fortsätta dölja hela kolumner.
+                <span
+                  key={p.fork}
+                  title={`${p.fork} ${(p.andel * 100).toFixed(1).replace('.', ',')} %`}
+                  className={`shrink-0 whitespace-nowrap text-[11px] leading-none tabular-nums ${i >= 5 ? `strip-party-${i + 1}` : ''}`}
+                >
+                  {/* onDark lyfter mörka partifärger (V, KD) till läsbar ljushet mot den
+                      mörka bakgrunden men behåller kulören → färgen kopplar till kartan. */}
+                  <span className="block">
+                    <span className="font-bold" style={{ color: onDark(p.farg) }}>{kortaNer(p.fork)}</span>{' '}
+                    <span className="text-slate-200">{(p.andel * 100).toFixed(1).replace('.', ',')}</span>
+                  </span>
+                  {/* Samma format och färger som resultattabellens ±-kolumn (lib/delta.ts):
+                      grönt uppåt, rött nedåt, dämpat vid stiltje, "ny" i amber. */}
+                  {visarDelta && (
+                    <span className={`mt-0.5 block ${p.ny ? 'text-amber-400' : deltaColor(p.delta)}`}>
+                      {p.ny ? 'ny' : formatDelta(p.delta)}
+                    </span>
+                  )}
+                </span>
+              ))}
+            </div>
           </div>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
