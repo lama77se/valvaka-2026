@@ -128,3 +128,15 @@ html.app-locked body {
   overflow: hidden;
   overscroll-behavior: none;
 }
+
+/* Femte partiet i mobilens resultatremsa (MapResultStrip). Mätt mot den här byggda
+   CSS:en: fem partier ryms på en rad från 360 px, men klipps mitt i talet på 320 px.
+   Ren CSS-tröskel i stället för JS-mätning — remsan har ingen egen layouteffekt. */
+.strip-party-5 {
+  display: none;
+}
+@media (min-width: 360px) {
+  .strip-party-5 {
+    display: inline;
+  }
+}
