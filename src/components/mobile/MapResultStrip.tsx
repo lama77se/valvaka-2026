@@ -16,16 +16,23 @@ import { ancestorsOf } from '@/lib/hierarchy'
 import { onDark } from '@/lib/colors'
 import { useResults, type Area } from '@/components/ResultsProvider'
 
-// Fem partier ryms på en rad från 360 px och uppåt; på 320 px klipps det femte mitt i
-// talet, så där döljs det av .strip-party-5 (ren CSS, ingen JS-mätning). Mätt mot byggd
-// CSS på 320/360/375/390/414. Resten läses i Resultat-fliken — de största avgör kvällen.
-const MAX_PARTIER = 5
+// Alla åtta riksdagspartier renderas; hur många som SYNS avgörs av skärmbredden via
+// .strip-party-6/7/8 (ren CSS-tröskel, ingen JS-mätning). Uppmätt minsta bredd mot byggd
+// CSS, med de fasta delarna (etikett 52 px + px-3) inräknade:
+//   5 partier 287 px · 6 partier 332 px · 7 partier 378 px · 8 partier 412 px
+// Trösklarna nedan ligger ~12 px över dessa så en udda bredd (ett distrikt där ett parti
+// står på 100,0) inte spräcker raden. I praktiken: 320 → 5, 360/375 → 6, 390/393/414 → 7,
+// 430 → alla 8. Resten läses alltid i Resultat-fliken.
+const MAX_PARTIER = 8
+
+// Lokala partier (KF) kan ha längre förkortningar än riksdagens 1–2 tecken. Kapa så en
+// udda förkortning inte kan trycka ut resten av raden; fullständigt namn ligger i title.
+const kortaNer = (f: string) => (f.length > 5 ? f.slice(0, 4) + '…' : f)
 
 type Row = {
   key: string
   namn: string
   partier: { fork: string; farg: string; andel: number }[]
-  reportPct: number
 }
 
 export function MapResultStrip() {
@@ -69,7 +76,6 @@ export function MapResultStrip() {
       const votes = mergeVotes(store.aggregate(codes), uppsamlingForArea(valtyp, a.level, a.code, uppsamlingRef.current[valtyp]))
       const res = buildRows(votes, partyRef.current, SPARR[valtyp])
       if (res.giltiga === 0) return null // inget räknat än → ingen rad (hellre tomt än nollor)
-      const reported = codes.reduce((n, c) => n + (store.has(c) ? 1 : 0), 0)
       return {
         key: `${a.level}:${a.code ?? ''}`,
         namn: namnAv(a),
@@ -78,7 +84,6 @@ export function MapResultStrip() {
           .filter((r) => r.forkortning && r.andel > 0)
           .slice(0, MAX_PARTIER)
           .map((r) => ({ fork: r.forkortning!, farg: r.farg ?? '#64748b', andel: r.andel })),
-        reportPct: Math.round((reported / codes.length) * 100),
       }
     }
 
@@ -97,28 +102,23 @@ export function MapResultStrip() {
     <div className="shrink-0 border-b border-slate-800 bg-slate-950/95 px-3 py-1.5">
       {rows.map((r) => (
         <div key={r.key} className="flex items-baseline gap-2 py-0.5">
-          <span className="w-[62px] shrink-0 truncate text-[10px] font-semibold uppercase tracking-wide text-slate-400" title={r.namn}>
+          <span className="w-[52px] shrink-0 truncate text-[10px] font-semibold uppercase tracking-wide text-slate-400" title={r.namn}>
             {r.namn}
           </span>
-          <div className="flex min-w-0 flex-1 items-baseline gap-2 overflow-hidden">
+          <div className="flex min-w-0 flex-1 items-baseline gap-1.5 overflow-hidden">
             {r.partier.map((p, i) => (
               <span
                 key={p.fork}
-                className={`shrink-0 whitespace-nowrap text-[11px] leading-none tabular-nums ${i === 4 ? 'strip-party-5' : ''}`}
+                title={`${p.fork} ${(p.andel * 100).toFixed(1).replace('.', ',')} %`}
+                className={`shrink-0 whitespace-nowrap text-[11px] leading-none tabular-nums ${i >= 5 ? `strip-party-${i + 1}` : ''}`}
               >
                 {/* onDark lyfter mörka partifärger (V, KD) till läsbar ljushet mot den
                     mörka bakgrunden men behåller kulören → färgen kopplar till kartan. */}
-                <span className="font-bold" style={{ color: onDark(p.farg) }}>{p.fork}</span>{' '}
+                <span className="font-bold" style={{ color: onDark(p.farg) }}>{kortaNer(p.fork)}</span>{' '}
                 <span className="text-slate-200">{(p.andel * 100).toFixed(1).replace('.', ',')}</span>
               </span>
             ))}
           </div>
-          <span
-            className="shrink-0 text-[10px] leading-none tabular-nums text-slate-500"
-            title={`${r.reportPct} % av distrikten räknade`}
-          >
-            {r.reportPct} %
-          </span>
         </div>
       ))}
     </div>
