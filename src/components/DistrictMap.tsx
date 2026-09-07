@@ -658,10 +658,11 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
                 {realtimeConnected ? 'Live' : pollError ?? 'Pausad'}
               </span>
               {/* Klockslaget lyftes fram: större (text-sm) + ljusare (slate-300) + tabular så
-                  siffrorna inte hoppar. "· uppdaterad" hålls kvar dämpat runt om. */}
+                  siffrorna inte hoppar. "Live"-prickens tooltip förklarar redan att det är
+                  en uppdateringstid, så ordet självt är överflödigt i den synliga texten. */}
               {lastUpdated && (
                 <span className="text-slate-500">
-                  · uppdaterad <span className="text-sm font-medium tabular-nums text-slate-300">{lastUpdated}</span>
+                  · <span className="text-sm font-medium tabular-nums text-slate-300">{lastUpdated}</span>
                 </span>
               )}
             </div>
