@@ -7,7 +7,7 @@
 // alls (en full 2022-stapel skilde sig bara på årtalet i etiketten → lästes som aktuellt).
 import type { ReactNode } from 'react'
 import type { OvrigaRow, PartyRow } from '@/lib/aggregate'
-import { spectrumRank } from '@/lib/soffa'
+import { spectrumRank, type BlockConfig } from '@/lib/soffa'
 
 const NEUTRAL = '#64748b'
 
@@ -81,20 +81,32 @@ export interface MandatBarsProps {
   giltiga: number // 2026 giltiga röster; 0 → inga staplar (2022 visas aldrig som egen huvudstapel)
   sparr: number // riksspärr (0..1) för valtypen — partier under lämnas ur röstandelsstapeln
   reportPct?: number | null
-  showBlocks?: boolean // blockmajoritet (V+S+MP+C vs L+KD+M+SD) under staplarna — bara Riket/RD
+  blocks?: BlockConfig // tvåblocksvyn under staplarna (riksblock ELLER regionstyre-vs-opposition — se soffa.ts/regionBlocks.ts)
   compact?: boolean // mobil: kortare siffror/etiketter i blockrutorna, se nedan
 }
 
-export function MandatBars({ shown, ovriga, totalMandat, giltiga, sparr, reportPct, showBlocks, compact }: MandatBarsProps) {
+export function MandatBars({ shown, ovriga, totalMandat, giltiga, sparr, reportPct, blocks, compact }: MandatBarsProps) {
   const live = giltiga > 0
   const parties = [...shown].sort((a, b) => spectrumRank(a.forkortning) - spectrumRank(b.forkortning))
 
-  // Blocksummor för Riket/RD-vyn: V+S+MP+C (vänster) mot L+KD+M+SD (höger). Andel = summa
-  // partiandelar (0..1 av giltiga), mandat = summa mandat. Markör vid majoritet (>50 % / ≥175).
+  // Blocksummor: andel = summa partiandelar (0..1 av giltiga), mandat = summa mandat.
+  // Markör vid majoritet (>50 % / ≥ majoritet-mandat) — `blocks` avgör VILKA partier som
+  // hör till vardera sidan (riksblock: två uttryckliga listor; region: styret är
+  // uttryckligt, oppositionen är `'rest'` = totalen minus styret, se soffa.ts). `'rest'`
+  // räknas ur ALLA partier + Övriga (inte bara `shown`) så t.ex. L/MP inte "försvinner"
+  // bara för att de inte står i regionens styre-lista.
   const blockSum = (labels: string[]) =>
     parties.reduce((a, p) => (p.forkortning && labels.includes(p.forkortning) ? { andel: a.andel + p.andel, mandat: a.mandat + (p.mandat ?? 0), roster: a.roster + p.roster } : a), { andel: 0, mandat: 0, roster: 0 })
-  const blockL = blockSum(['V', 'S', 'MP', 'C'])
-  const blockR = blockSum(['L', 'KD', 'M', 'SD'])
+  const totalSum = () =>
+    parties.reduce((a, p) => ({ andel: a.andel + p.andel, mandat: a.mandat + (p.mandat ?? 0), roster: a.roster + p.roster }), { andel: ovriga?.andel ?? 0, mandat: ovriga?.mandat ?? 0, roster: ovriga?.roster ?? 0 })
+  const rest = (other: { andel: number; mandat: number; roster: number }) => {
+    const t = totalSum()
+    return { andel: t.andel - other.andel, mandat: t.mandat - other.mandat, roster: t.roster - other.roster }
+  }
+  let blockA = blocks && blocks.a.parties !== 'rest' ? blockSum(blocks.a.parties) : null
+  let blockB = blocks && blocks.b.parties !== 'rest' ? blockSum(blocks.b.parties) : null
+  if (blocks?.a.parties === 'rest' && blockB) blockA = rest(blockB)
+  if (blocks?.b.parties === 'rest' && blockA) blockB = rest(blockA)
 
   // Röstandelsstapeln: BARA partier över spärren för det år som visas; värdet är andelen
   // (0..1 av giltiga). Under-spärr-partier + Övriga utelämnas → segmenten summerar till
@@ -194,20 +206,53 @@ export function MandatBars({ shown, ovriga, totalMandat, giltiga, sparr, reportP
         </div>
       )}
 
-      {/* Blockmajoritet (endast Riket/RD): V+S+MP+C mot L+KD+M+SD — andel + mandat, markör
-          vid majoritet (✓ >50 % röster, ✓ + grön ram vid ≥ majoritet-mandat — ingen egen
-          textrad längre, bocken + ramen räcker som signal). Två rutor i halva panelbredden
-          är det trängsta i hela vyn: på mobil är varje ruta ~155 px och raden
-          "50,369 % ✓ 175 mand. ✓" sprack mitt i talen. `compact` kortar därför ner allt som
-          kostar bredd — två decimaler i stället för tre, "mdt" i stället för "mand.", en
-          snäppet mindre grad och smalare luft. `whitespace-nowrap` gör dessutom att ett tal
-          ALDRIG kan brytas internt: blir det ändå för trångt (extremt smal skärm, stor
-          systemtextstorlek) wrappar flex hela mandat-chippet till egen rad, vilket är
-          läsbart — "50,369" / "% ✓" är det inte. */}
-      {showBlocks && (
+      {/* Tvåblocksvyn (riksblock ELLER regionstyre-vs-opposition, se `blocks`-configen som
+          skickas in): andel + mandat, markör vid majoritet (✓ >50 % röster, ✓ + grön ram
+          vid ≥ majoritet-mandat — ingen egen textrad, bocken + ramen räcker som signal).
+          Två rutor i halva panelbredden är det trängsta i hela vyn: på mobil är varje ruta
+          ~155 px och raden "50,369 % ✓ 175 mand. ✓" sprack mitt i talen. `compact` kortar
+          därför ner allt som kostar bredd — två decimaler i stället för tre, "mdt" i
+          stället för "mand.", en snäppet mindre grad och smalare luft. `whitespace-nowrap`
+          gör dessutom att ett tal ALDRIG kan brytas internt: blir det ändå för trångt
+          (extremt smal skärm, stor systemtextstorlek) wrappar flex hela mandat-chippet till
+          egen rad, vilket är läsbart — "50,369" / "% ✓" är det inte. */}
+      {blocks && blockA && blockB && (
         <div className="pt-0.5">
           <div className="grid grid-cols-2 gap-1.5 text-slate-100">
-            {([['V+S+MP+C', blockL, false], ['L+KD+M+SD', blockR, true]] as const).map(([label, b, right]) => {
+            {/* SD till höger, V till vänster — samma spalter som riksblocken (V+S+MP+C /
+                L+KD+M+SD) — oavsett vilken ordning configen (soffa.ts/regionBlocks.ts) råkar
+                lista a/b i. SD har företräde om reglerna skulle peka åt olika håll (osannolikt
+                att V och SD delar block). Ingen regel slår in (t.ex. "S+M" mot en lokallista)
+                → behåll configens egen a/b-ordning. */}
+            {(() => {
+              // Explicit typvakt (inte bara .includes på unionen) — 'rest' är en sentinel,
+              // inte en partilista, och ska aldrig av misstag matcha 'SD'/'V' som substräng.
+              const has = (block: typeof blocks.a, code: string) => Array.isArray(block.parties) && block.parties.includes(code)
+
+              // Etiketten för en 'rest'-sida listar VILKA partier som faktiskt räknas dit just
+              // nu (mandat > 0, inte med i det andra blocket) — beräknat live, ALDRIG en
+              // hårdkodad gissning i configen. En statisk "(S+C+V)" blir fel så fort ett parti
+              // som historiskt haft 0 mandat oväntat får ett (t.ex. L/MP i en genrep-körning).
+              const labelFor = (block: typeof blocks.a, other: typeof blocks.a) => {
+                const otherParties = other.parties
+                if (block.parties !== 'rest' || !Array.isArray(otherParties)) return block.label
+                const names = parties
+                  .filter((p) => p.forkortning && !otherParties.includes(p.forkortning) && (p.mandat ?? 0) > 0)
+                  .sort((x, y) => (y.mandat ?? 0) - (x.mandat ?? 0))
+                  .map((p) => p.forkortning as string)
+                if (ovriga && (ovriga.mandat ?? 0) > 0) names.push('Övr')
+                return names.length ? `${block.label} (${names.join('+')})` : block.label
+              }
+              const labelA = labelFor(blocks.a, blocks.b)
+              const labelB = labelFor(blocks.b, blocks.a)
+
+              const aRight = has(blocks.a, 'SD') && !has(blocks.b, 'SD')
+              const bLeft = !aRight && has(blocks.b, 'V') && !has(blocks.a, 'V')
+              const swap = aRight || bLeft
+              return swap
+                ? ([[labelB, blockB, false], [labelA, blockA, true]] as const)
+                : ([[labelA, blockA, false], [labelB, blockB, true]] as const)
+            })().map(([label, b, right]) => {
               const voteMaj = b.andel > 0.5
               const seatMaj = liveM && b.mandat >= majoritet
               return (
@@ -228,7 +273,8 @@ export function MandatBars({ shown, ovriga, totalMandat, giltiga, sparr, reportP
             })}
           </div>
           <div className="pt-1.5 text-center text-[13px] text-slate-400">
-            <span className="font-bold tabular-nums text-slate-100">{Math.abs(blockR.roster - blockL.roster).toLocaleString('sv-SE')}</span> röster skiljer
+            <span className="font-bold tabular-nums text-slate-100">{Math.abs(blockB.roster - blockA.roster).toLocaleString('sv-SE')}</span> röster skiljer{' '}
+            <span className="cursor-help text-slate-500" title={blocks.note}>(*)</span>
           </div>
         </div>
       )}
