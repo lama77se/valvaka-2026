@@ -41,6 +41,17 @@ valnatten byts källan till de skarpa resultatfilerna via en enda konstant, utan
   staplar (röstandel + mandat) med 50 %-linjer, spärr-filtrering och 2022-baslinje.
   Breadcrumb + "Bryt ner"-matris drillar valtyp-medvetet genom valkretsar, kommuner och
   distrikt; klick i kartan öppnar ett enskilt distrikt.
+- **Blockvy — majoritet på ett ögonkast.** På riksnivå (RD) V+S+MP+C mot L+KD+M+SD
+  (den vedertagna ideologiska indelningen); på region- (RF) och kommunnivå (KF) i stället
+  det **sittande styret mot oppositionen** — nationella block betyder inget i lokal
+  politik, där koalitioner som S+M eller M+SD+KD+lokalt parti är minst lika vanliga.
+  Oppositionens sammansättning räknas **live** ur faktiska mandat (aldrig hårdkodad), så
+  ett parti som oväntat tar sig in syns ändå. Ett block som innehåller SD visas alltid till
+  höger och ett block med V alltid till vänster, oavsett konfigurationsordning. Styret är
+  manuellt curerat och kors-verifierat mot Wikipedia + oberoende källor (SVT/lokalpress/
+  kommunens egen sajt) för samtliga **20/20 regioner och 290/290 kommuner**
+  ([regionBlocks.ts](./src/lib/regionBlocks.ts), [kommunBlocks.ts](./src/lib/kommunBlocks.ts))
+  — beskriver mandatperioden 2022–2026, inte en prognos för 2026 års val.
 - **Valdeltagande i procent** för valt område (alla nivåer där röstberättigade finns), i
   resultatpanelens rubrik. Tas direkt ur val.se:s resultatfiler (totala avgivna röster /
   röstberättigade i räknade distrikt — verifierat mot summeringsfacit), ingen extra datakälla.
