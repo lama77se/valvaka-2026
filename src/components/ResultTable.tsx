@@ -16,7 +16,7 @@ export interface ResultTableProps {
   title: string
   subtitle?: string
   reportPct?: number // 0..100 → fyller progress-baren bakom undertexten (inrapporterat)
-  status?: string
+  statusTag?: { tone: string; label: string; title: string } // slutresultat-fas (`slutligTag`), egen badge — SKILT från reportPct
   display: DisplayRows
   giltiga: number
   sparr: number
@@ -26,7 +26,7 @@ export interface ResultTableProps {
   showSparr?: boolean // spärr-linjen är en församlingsvid bestämning → dölj på distriktsnivå
 }
 
-export function ResultTable({ title, subtitle, reportPct, status, display, giltiga, sparr, blanka, totalMandat, totalMandat2022, showSparr = true }: ResultTableProps) {
+export function ResultTable({ title, subtitle, reportPct, statusTag, display, giltiga, sparr, blanka, totalMandat, totalMandat2022, showSparr = true }: ResultTableProps) {
   const { shown, ovriga, sparrIndex } = display
   const sparrLabel = `${(sparr * 100).toFixed(0)} %-spärr`
 
@@ -46,7 +46,14 @@ export function ResultTable({ title, subtitle, reportPct, status, display, gilti
     <div className="text-slate-100">
       <div className="mb-2 flex items-baseline justify-between gap-2">
         <h2 className="text-base font-bold tracking-tight">{title}</h2>
-        {status && <span className="whitespace-nowrap text-xs text-sky-300">{status}</span>}
+        {statusTag && (
+          <span
+            className={`shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${statusTag.tone}`}
+            title={statusTag.title}
+          >
+            {statusTag.label}
+          </span>
+        )}
       </div>
       {subtitle &&
         (reportPct == null ? (

@@ -21,6 +21,30 @@ export const VALTYP_LABEL: Record<Valtyp, string> = {
 // pågår, distrikt för distrikt) → slutgiltigt (alla distrikt slutligt räknade).
 export type SlutligState = 'preliminar' | 'slutraknas' | 'slutlig'
 
+// Badge för `SlutligState` — DELAD mellan kartvyns statustagg och resultatpanelen så
+// båda alltid visar samma färg/etikett/förklaring för samma fas (annars kan de driva isär).
+export function slutligTag(prog: { state: SlutligState; pct: number }): { tone: string; label: string; title: string } {
+  if (prog.state === 'preliminar') {
+    return {
+      tone: 'bg-amber-500/15 text-amber-300',
+      label: 'Preliminärt',
+      title: 'Preliminärt röstresultat. Slutligt resultat vid Länsstyrelsernas slutliga sammanräkning (från onsdagen efter valdagen) — personröster och sena förtids-/brev-/utlandsröster tillkommer då.',
+    }
+  }
+  if (prog.state === 'slutlig') {
+    return {
+      tone: 'bg-emerald-500/15 text-emerald-300',
+      label: 'Slutgiltigt',
+      title: 'Slutgiltigt resultat — alla valdistrikt är slutligt sammanräknade.',
+    }
+  }
+  return {
+    tone: 'bg-sky-500/15 text-sky-300',
+    label: `Sluträknas · ${prog.pct} %`,
+    title: `Sluträkningen pågår: ${prog.pct} % av valdistrikten är slutligt räknade, resten visar fortfarande preliminära siffror.`,
+  }
+}
+
 // district-kolumnen som avgör om ett distrikt deltar i valtypen (→ HUD-nämnare).
 export const VALTYP_VK_COLUMN: Record<Valtyp, 'vk_rd' | 'vk_rf' | 'vk_kf'> = {
   RD: 'vk_rd',
@@ -74,6 +98,12 @@ export class ResultStore {
   // Rapporteringstid (rå ISO-sträng "YYYY-MM-DDTHH:MM:SS") eller null om okänd.
   reportTime(valdistriktskod: string): string | null {
     return this.reportTimes.get(valdistriktskod) ?? null
+  }
+
+  // Är DETTA distrikt slutligt räknat (till skillnad från `slutligProgress()`, som är
+  // aggregatet för hela valtypen)? Driver per-rad-indikatorn i avgångstavlan.
+  isSlutlig(valdistriktskod: string): boolean {
+    return this.slutligDistrikt.has(valdistriktskod)
   }
 
   // Slutresultat-progress för valtypen: 'preliminar' (inga slutliga distrikt än),

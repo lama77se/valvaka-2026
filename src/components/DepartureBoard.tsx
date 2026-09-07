@@ -170,6 +170,7 @@ export function DepartureBoard({ valtyp, onRowSelect, fill, fullWidth }: { valty
             }
             const w = rank(0)
             const path = pathOf(r.vd)
+            const isSlutlig = store.isSlutlig(r.vd)
             return (
               <li
                 key={r.vd}
@@ -181,6 +182,10 @@ export function DepartureBoard({ valtyp, onRowSelect, fill, fullWidth }: { valty
                 <div className="flex items-baseline gap-2">
                   <span className="w-11 shrink-0 text-xs tabular-nums text-slate-400">{fmtTime(store.reportTime(r.vd))}</span>
                   <span className="flex-1 truncate text-xs text-slate-200">{path}</span>
+                  <span
+                    className={`h-1.5 w-1.5 shrink-0 self-center rounded-full ${isSlutlig ? 'bg-emerald-400' : 'bg-amber-400'}`}
+                    title={isSlutlig ? 'Slutgiltigt resultat' : 'Preliminärt resultat'}
+                  />
                 </div>
                 <div className="mt-0.5 flex items-center gap-3 pl-[52px] text-[11px] tabular-nums">
                   {w ? (

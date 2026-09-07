@@ -8,7 +8,7 @@ import {
   GEOMETRY_URL,
   SWEDEN_BOUNDS,
 } from '@/lib/geometry'
-import { VALTYPER, VALTYP_LABEL, type Valtyp } from '@/lib/results'
+import { VALTYPER, VALTYP_LABEL, slutligTag, type Valtyp } from '@/lib/results'
 import { SPARR, applyComparison, buildRows, collapseForDisplay, districtsInArea } from '@/lib/aggregate'
 import { ancestorsOf } from '@/lib/hierarchy'
 import { defaultAreaFor, useResults } from '@/components/ResultsProvider'
@@ -509,20 +509,7 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
   // valdistrikt" mäter distriktens preliminärräkning — sena röster + personröster
   // tillkommer vid sluträkningen.
   const prog = storesRef.current[valtyp].slutligProgress()
-  const tagTone =
-    prog.state === 'preliminar' ? 'bg-amber-500/15 text-amber-300'
-    : prog.state === 'slutlig' ? 'bg-emerald-500/15 text-emerald-300'
-    : 'bg-sky-500/15 text-sky-300'
-  const tagLabel =
-    prog.state === 'preliminar' ? 'Preliminärt'
-    : prog.state === 'slutlig' ? 'Slutgiltigt'
-    : `Sluträknas · ${prog.pct} %`
-  const tagTitle =
-    prog.state === 'preliminar'
-      ? 'Preliminärt röstresultat. Slutligt resultat vid Länsstyrelsernas slutliga sammanräkning (från onsdagen efter valdagen) — personröster och sena förtids-/brev-/utlandsröster tillkommer då.'
-      : prog.state === 'slutlig'
-        ? 'Slutgiltigt resultat — alla valdistrikt är slutligt sammanräknade.'
-        : `Sluträkningen pågår: ${prog.pct} % av valdistrikten är slutligt räknade, resten visar fortfarande preliminära siffror.`
+  const { tone: tagTone, label: tagLabel, title: tagTitle } = slutligTag(prog)
 
   // Distriktets mini-resultat (namn + hierarki + andel/±2022) — delas av desktop-hover-rutan
   // och mobilens tapp-sheet så det bara finns EN presentation av samma hoverRows.
