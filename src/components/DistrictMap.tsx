@@ -69,6 +69,30 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
   const tooltipRef = useRef<HTMLDivElement>(null) // hover-rutan (positioneras vid pekaren via DOM)
   const [hover, setHover] = useState<HoverInfo | null>(null)
 
+  // Mobilens tapp-sheet: svep-neråt-i-handtaget för att stänga (best practice för bottom
+  // sheets, jfr iOS/Android) — inte bara stäng-knappen. Draget följer fingret 1:1 (ingen
+  // transition) tills release; över tröskeln stängs sheeten, annars fjädrar den tillbaka.
+  // Bara handtaget är draggbart (inte hela sheeten) så det inte krockar med scroll i
+  // innehållet eller klick på "Visa i Resultat".
+  const [sheetDragY, setSheetDragY] = useState(0)
+  const [sheetDragging, setSheetDragging] = useState(false)
+  const sheetDragStartY = useRef(0)
+  const SHEET_CLOSE_THRESHOLD = 80
+  const onSheetHandleDown = (e: React.PointerEvent) => {
+    sheetDragStartY.current = e.clientY
+    setSheetDragging(true)
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }
+  const onSheetHandleMove = (e: React.PointerEvent) => {
+    if (!sheetDragging) return
+    setSheetDragY(Math.max(0, e.clientY - sheetDragStartY.current))
+  }
+  const onSheetHandleUp = () => {
+    if (sheetDragY > SHEET_CLOSE_THRESHOLD) setHover(null)
+    setSheetDragging(false)
+    setSheetDragY(0)
+  }
+
   const pendingRef = useRef<Set<string>>(new Set())
   const rafRef = useRef<number | null>(null)
   const sourceReadyRef = useRef(false)
@@ -658,13 +682,25 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
       )}
 
       {/* Mobil: tapp på ett distrikt öppnar en bottom-sheet med samma mini-resultat.
-          Grab-handle + stäng-knapp + genväg till Resultat-fliken. */}
+          Grab-handle (svepbar, se ovan) + stäng-knapp + genväg till Resultat-fliken. */}
       {variant === 'mobile' && hover && (
         <div
           className="pointer-events-auto absolute inset-x-0 bottom-0 z-20 max-h-[55%] overflow-y-auto rounded-t-2xl border-t border-slate-700 bg-slate-900/95 px-4 pb-4 pt-3 text-sm text-slate-100 shadow-2xl backdrop-blur"
-          style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 16px)' }}
+          style={{
+            paddingBottom: 'calc(env(safe-area-inset-bottom) + 16px)',
+            transform: sheetDragY ? `translateY(${sheetDragY}px)` : undefined,
+            transition: sheetDragging ? 'none' : 'transform 0.2s ease-out',
+          }}
         >
-          <div className="mx-auto mb-2 h-1 w-10 rounded-full bg-slate-600" />
+          <div
+            className="-mx-4 -mt-3 mb-1 flex touch-none cursor-grab justify-center px-4 pb-3 pt-3 active:cursor-grabbing"
+            onPointerDown={onSheetHandleDown}
+            onPointerMove={onSheetHandleMove}
+            onPointerUp={onSheetHandleUp}
+            onPointerCancel={onSheetHandleUp}
+          >
+            <div className="h-1 w-10 rounded-full bg-slate-600" />
+          </div>
           <button
             type="button"
             onClick={() => setHover(null)}
