@@ -19,7 +19,9 @@ import {
 import { RIKET, defaultAreaFor, useResults, type Area } from '@/components/ResultsProvider'
 import { ResultTable } from '@/components/ResultTable'
 import { MandatBars } from '@/components/MandatBars'
-import { SPECTRUM } from '@/lib/soffa'
+import { RIKET_BLOCKS, SPECTRUM } from '@/lib/soffa'
+import { REGION_STYRE_BLOCKS } from '@/lib/regionBlocks'
+import { SEAT_CONFIG_2026 } from '@/lib/seatConfig2026'
 import { onDark } from '@/lib/colors'
 import { ancestorsOf, childGroupsOf, childLevelOf } from '@/lib/hierarchy'
 import { REPORTED_NEUTRAL, UNREPORTED_FILL } from '@/components/DistrictMap'
@@ -95,6 +97,17 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
     return compact ? `${vd} % röstade` : `Valdeltagande ${vd} %`
   }
 
+  // Tvåblocksvyn (MandatBars) — bara på valtypens högsta nivå: riksblocken för RD/riket,
+  // regionens sittande styre-vs-opposition för RF/region (bara de regioner som finns i
+  // REGION_STYRE_BLOCKS — övriga saknar en tillräckligt entydig config och visar ingen
+  // blockvy alls, se regionBlocks.ts).
+  const blocks =
+    valtyp === 'RD' && selectedArea.level === 'riket'
+      ? RIKET_BLOCKS
+      : valtyp === 'RF' && selectedArea.level === 'region'
+        ? REGION_STYRE_BLOCKS[selectedArea.code ?? '']
+        : undefined
+
   const areaIndex = areaIndexRef.current[valtyp]
 
   const areaName =
@@ -145,6 +158,13 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
   }, [valtyp, selectedArea, revision])
 
   const pct = view.total > 0 ? Math.round((view.reported / view.total) * 100) : 0
+
+  // Regionväljaren (RF) ska bara lista regioner som FAKTISKT har ett regionval — Gotland
+  // saknar eget regionfullmäktige (kommunfullmäktige dubblar som region) och står därför
+  // inte i SEAT_CONFIG_2026.RF, men finns kvar i `regioner` (byggd ur `district.lan`,
+  // som är gemensam för alla valtyper) → utan detta filter ledde valet av Gotland till en
+  // permanent tom vy för RF.
+  const regionerRF = useMemo(() => regioner.filter((r) => r.code in SEAT_CONFIG_2026.RF), [regioner])
 
   // Områdesnamn-uppslag för breadcrumb + barnlista.
   const regionName = useMemo(() => new Map(regioner.map((r) => [r.code, r.name])), [regioner])
@@ -305,7 +325,7 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
             kommun (ingen region). */}
         {levels.includes('region') && (
           <optgroup label="Region / län">
-            {regioner.map((r) => (
+            {regionerRF.map((r) => (
               <option key={r.code} value={`r:${r.code}`}>{r.name}</option>
             ))}
           </optgroup>
@@ -376,7 +396,7 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
                   giltiga={view.giltiga}
                   sparr={SPARR[valtyp]}
                   reportPct={pct}
-                  showBlocks={valtyp === 'RD' && selectedArea.level === 'riket'}
+                  blocks={blocks}
                   compact={compact}
                 />
               </div>
