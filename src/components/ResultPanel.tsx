@@ -433,7 +433,7 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
               <div className="mt-3 border-t border-slate-800 pt-3">
                 <p className="mb-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[11px] font-semibold uppercase tracking-widest text-slate-400">
                   Bryt ner — {CHILD_LABEL[drill.childLevel] ?? drill.childLevel}
-                  <span className="font-normal normal-case tracking-normal text-slate-500">
+                  <span className="text-[12px] font-normal normal-case tracking-normal text-slate-500">
                     2026 andel % · <span className="text-emerald-400/80">▲</span>/<span className="text-rose-400/80">▼</span> mot ’22
                   </span>
                 </p>
@@ -481,7 +481,7 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
                                 {has ? (main * 100).toFixed(1) : '·'}
                               </div>
                               {d != null && Math.abs(d) >= 0.05 && (
-                                <div className={`text-[11px] leading-none ${d > 0 ? 'text-emerald-400/80' : 'text-rose-400/80'}`}>
+                                <div className={`text-[12px] leading-none ${d > 0 ? 'text-emerald-400/80' : 'text-rose-400/80'}`}>
                                   {d > 0 ? '+' : '−'}
                                   {Math.abs(d).toFixed(1)}
                                 </div>
