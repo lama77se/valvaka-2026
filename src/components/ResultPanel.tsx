@@ -78,14 +78,21 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
   const statusTag = slutligTag(prog)
 
   // Undertexten är samtidigt progress-baren, så varje tecken kostar höjd: spricker den
-  // till två rader blir baren dubbelt så hög. Mobilvarianten kortar ner den:
-  //   "av" → "/", "valdistrikt räknade" → "distrikt", "Valdeltagande X %" → "X % röstade"
-  const subtitle = (reported: number, total: number, pct: number, turnout: number | null) => {
+  // till två rader blir baren dubbelt så hög. Mobilvarianten kortar ner den ("av" → "/",
+  // "valdistrikt räknade" → "distrikt"). Valdeltagandet bor INTE här längre — det flyttade
+  // till den annars tomma ytan ovanför Parti/Röster i tabellhuvudet (se `turnoutLabel`).
+  const subtitle = (reported: number, total: number, pct: number) => {
     const r = reported.toLocaleString('sv-SE')
     const t = total.toLocaleString('sv-SE')
-    const vd = turnout != null ? turnout.toLocaleString('sv-SE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : null
-    if (compact) return `${r}/${t} distrikt (${pct} %)${vd != null ? ` · ${vd} % röstade` : ''}`
-    return `${r} av ${t} valdistrikt räknade (${pct} %)${vd != null ? ` · Valdeltagande ${vd} %` : ''}`
+    if (compact) return `${r}/${t} distrikt (${pct} %)`
+    return `${r} av ${t} valdistrikt räknade (${pct} %)`
+  }
+
+  // Samma yta i tabellhuvudet oavsett layout — mobilen kortar bara ordvalet.
+  const turnoutLabel = (turnout: number | null) => {
+    if (turnout == null) return undefined
+    const vd = turnout.toLocaleString('sv-SE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+    return compact ? `${vd} % röstade` : `Valdeltagande ${vd} %`
   }
 
   const areaIndex = areaIndexRef.current[valtyp]
@@ -377,7 +384,8 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
             <ResultTable
               title={`${ELECTION[valtyp]} — ${areaName}`}
               statusTag={statusTag}
-              subtitle={subtitle(view.reported, view.total, pct, view.turnout)}
+              subtitle={subtitle(view.reported, view.total, pct)}
+              turnoutLabel={turnoutLabel(view.turnout)}
               reportPct={view.total > 0 ? (view.reported / view.total) * 100 : 0}
               display={view.display}
               giltiga={view.giltiga}
