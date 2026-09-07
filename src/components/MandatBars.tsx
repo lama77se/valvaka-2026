@@ -195,14 +195,15 @@ export function MandatBars({ shown, ovriga, totalMandat, giltiga, sparr, reportP
       )}
 
       {/* Blockmajoritet (endast Riket/RD): V+S+MP+C mot L+KD+M+SD — andel + mandat, markör
-          vid majoritet (✓ >50 % röster, grön ram + "egen majoritet" vid ≥ majoritet-mandat).
-          Två rutor i halva panelbredden är det trängsta i hela vyn: på mobil är varje ruta
-          ~155 px och raden "50,369 % ✓ 175 mand. ✓" sprack mitt i talen. `compact` kortar
-          därför ner allt som kostar bredd — två decimaler i stället för tre, "mdt" i stället
-          för "mand.", en snäppet mindre grad och smalare luft. `whitespace-nowrap` gör
-          dessutom att ett tal ALDRIG kan brytas internt: blir det ändå för trångt (extremt
-          smal skärm, stor systemtextstorlek) wrappar flex hela mandat-chippet till egen rad,
-          vilket är läsbart — "50,369" / "% ✓" är det inte. */}
+          vid majoritet (✓ >50 % röster, ✓ + grön ram vid ≥ majoritet-mandat — ingen egen
+          textrad längre, bocken + ramen räcker som signal). Två rutor i halva panelbredden
+          är det trängsta i hela vyn: på mobil är varje ruta ~155 px och raden
+          "50,369 % ✓ 175 mand. ✓" sprack mitt i talen. `compact` kortar därför ner allt som
+          kostar bredd — två decimaler i stället för tre, "mdt" i stället för "mand.", en
+          snäppet mindre grad och smalare luft. `whitespace-nowrap` gör dessutom att ett tal
+          ALDRIG kan brytas internt: blir det ändå för trångt (extremt smal skärm, stor
+          systemtextstorlek) wrappar flex hela mandat-chippet till egen rad, vilket är
+          läsbart — "50,369" / "% ✓" är det inte. */}
       {showBlocks && (
         <div className="pt-0.5">
           <div className="grid grid-cols-2 gap-1.5 text-slate-100">
@@ -218,14 +219,10 @@ export function MandatBars({ shown, ovriga, totalMandat, giltiga, sparr, reportP
                     </span>
                     {liveM && (
                       <span className={`whitespace-nowrap tabular-nums ${compact ? 'text-[11px]' : 'text-[12px]'} ${seatMaj ? 'font-bold text-emerald-300' : 'text-slate-400'}`}>
-                        {/* Bocken på mandaten är samma signal som "egen majoritet"-raden
-                            nedanför (båda = seatMaj). På mobil, där varje px räknas, räcker
-                            raden — utan bocken ryms allt på en rad ner till 320 px. */}
-                        {b.mandat} {compact ? 'mdt' : 'mand.'}{seatMaj && !compact ? ' ✓' : ''}
+                        {b.mandat} {compact ? 'mdt' : 'mand.'}{seatMaj ? ' ✓' : ''}
                       </span>
                     )}
                   </div>
-                  {seatMaj && <div className={`whitespace-nowrap text-[10px] font-semibold uppercase text-emerald-300 ${compact ? 'tracking-wide' : 'tracking-wider'}`}>egen majoritet</div>}
                 </div>
               )
             })}

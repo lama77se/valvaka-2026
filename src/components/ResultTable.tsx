@@ -17,6 +17,7 @@ export interface ResultTableProps {
   subtitle?: string
   reportPct?: number // 0..100 → fyller progress-baren bakom undertexten (inrapporterat)
   statusTag?: { tone: string; label: string; title: string } // slutresultat-fas (`slutligTag`), egen badge — SKILT från reportPct
+  turnoutLabel?: string // t.ex. "Valdeltagande 84,5 %" — sitter i tabellhuvudets annars tomma yta ovanför Parti/Röster
   display: DisplayRows
   giltiga: number
   sparr: number
@@ -26,7 +27,7 @@ export interface ResultTableProps {
   showSparr?: boolean // spärr-linjen är en församlingsvid bestämning → dölj på distriktsnivå
 }
 
-export function ResultTable({ title, subtitle, reportPct, statusTag, display, giltiga, sparr, blanka, totalMandat, totalMandat2022, showSparr = true }: ResultTableProps) {
+export function ResultTable({ title, subtitle, reportPct, statusTag, turnoutLabel, display, giltiga, sparr, blanka, totalMandat, totalMandat2022, showSparr = true }: ResultTableProps) {
   const { shown, ovriga, sparrIndex } = display
   const sparrLabel = `${(sparr * 100).toFixed(0)} %-spärr`
 
@@ -78,12 +79,15 @@ export function ResultTable({ title, subtitle, reportPct, statusTag, display, gi
       <table className="w-full min-w-[360px] border-collapse text-sm tabular-nums">
         <thead>
           <tr className="text-[11px] uppercase tracking-wider text-slate-500">
-            <th rowSpan={2} className="pr-2 text-left align-bottom font-medium">Parti</th>
-            <th rowSpan={2} className="px-1 text-right align-bottom font-medium">Röster</th>
+            {/* Parti/Röster har ingen egen rad-1-etikett (de är inte grupperade som Andel/
+                Mandat) — den ytan används i stället till valdeltagandet i valt område. */}
+            <th colSpan={2} className="pb-0.5 text-left font-medium">{turnoutLabel}</th>
             <th colSpan={3} className="border-l border-slate-800 pb-0.5 text-center font-semibold text-slate-300">Andel</th>
             <th colSpan={3} className="border-l border-slate-800 pb-0.5 text-center font-semibold text-slate-300">Mandat</th>
           </tr>
           <tr className="border-b border-slate-700 text-[11px] uppercase tracking-wide text-slate-400">
+            <th className="py-1 pr-2 text-left font-medium">Parti</th>
+            <th className="py-1 px-1 text-right font-medium">Röster</th>
             <th className="py-1 px-1 text-right font-medium border-l border-slate-800">2026</th>
             <th className="py-1 px-1 text-right font-medium">2022</th>
             <th className="py-1 px-1 text-right font-medium">±</th>
