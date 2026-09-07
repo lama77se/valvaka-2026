@@ -25,8 +25,9 @@ function readTabFromHash(): Tab {
 }
 
 export function MobileApp() {
-  // Mäter viewporten och låser dokumentscrollen så skalet alltid är exakt en skärm högt
-  // (annars hamnar bottom-nav:en under browser-chromen när fliken återöppnas).
+  // Mäter det synliga fältet (position + höjd) och låser dokumentscrollen så skalet alltid
+  // ligger exakt över skärmen — annars hamnar bottom-nav:en under browser-chromen, eller
+  // headern ovanför bild, när fliken återöppnas.
   useAppHeight()
   const [tab, setTab] = useState<Tab>(readTabFromHash)
 

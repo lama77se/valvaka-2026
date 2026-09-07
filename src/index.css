@@ -108,12 +108,19 @@
   animation: boardIn 0.5s ease-out;
 }
 
-/* Mobil-skalet: exakt en viewport högt, aldrig mer. `--app-height` sätts av
-   useAppHeight() (src/lib/appHeight.ts) från den faktiskt synliga höjden — `100dvh`
-   räcker inte, eftersom iOS/Android ibland layoutar mot den stora viewporten när fliken
-   återöppnas och då trycker bottom-nav:en under browser-chromen. Fallback-kedjan gäller
-   innan JS kört (och i browsers utan dvh). */
+/* Mobil-skalet: pinnat på den faktiskt synliga rektangeln, inte på dokumentflödet.
+   `--app-top`/`--app-height` sätts av useAppHeight() (src/lib/appHeight.ts) från visual
+   viewport. `100dvh` i flödet räcker inte: iOS/Android layoutar mot den stora viewporten,
+   och en flik som återöppnas efter en stund kan dessutom ligga nedskrollad i slacken —
+   headern hamnar då ovanför bild och nav:en ser ut att sitta för högt. `position: fixed`
+   utgår från layout-viewporten, så `top: var(--app-top)` flyttar tillbaka skalet till det
+   synligas överkant. Fallback-kedjan (top 0 + dvh) gäller innan JS kört och i browsers
+   utan dvh. */
 .mobile-shell {
+  position: fixed;
+  top: var(--app-top, 0px);
+  left: 0;
+  right: 0;
   height: 100vh;
   height: 100dvh;
   height: var(--app-height, 100dvh);
