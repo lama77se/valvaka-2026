@@ -11,13 +11,15 @@
 // VISADE SIG OPÅLITLIG — minst 4 av de först nedtecknade styrena var rena felaktigheter
 // (fabricerade partikombinationer, t.ex. "S+M" för regioner där S/M inte ens satt i
 // styret), upptäckt bara genom att användaren själv kontrollerade enskilda rader mot
-// källan. Status 2026-09-07:
-//   Kors-verifierade mot en OBEROENDE källa (SVT/lokalpress/partisajt) eller mot
-//   användarens egen direktläsning av wikipedia-tabellen (inte en sammanfattning):
-//   03, 04, 05, 06, 07, 08, 10, 12, 13, 14, 17, 18, 19, 23 — se kommentar per rad.
-//   FORTFARANDE OVERIFIERADE (kvar från den opålitliga första extraktionen, kan vara
-//   fel på samma sätt som Östergötland/VGR/Örebro/Västmanland var): 01, 20, 21, 22, 24, 25.
-//   Verifiera dessa innan de litas på inför 13 sep.
+// källan. Status 2026-09-07: SAMTLIGA 20 regioner nu kors-verifierade — antingen mot en
+// OBEROENDE källa (SVT/lokalpress/partisajt) eller mot användarens egen direktläsning av
+// wikipedia-tabellen (inte en sammanfattning; se kommentar per rad). De sista sex
+// (Stockholm, Dalarna, Gävleborg, Västernorrland, Västerbotten, Norrbotten) stod kvar
+// från den opålitliga första bulk-extraktionen ända till nu — och två av dem (Västernorrland,
+// Västerbotten) visade sig FAKTISKT vara fel (samma extraktionsfel som Östergötland/VGR/
+// Örebro/Västmanland tidigare), korrigerade 2026-09-07. Detta bekräftar att den ursprungliga
+// varningen var befogad hela vägen — anta ALDRIG att en outnyttjad post från det första
+// passet är korrekt bara för att den "ser rimlig ut".
 // Alla lokala partiers `forkortning` är dessutom verifierade mot den skarpa `party`-
 // tabellen (Wikipedias förkortning matchar inte alltid stavning/gemener/versaler där).
 // Styret kan dessutom bytas UNDER mandatperioden (Blekinge, Kronoberg, Uppsala och Örebro
@@ -31,16 +33,13 @@
 // mandat > 0 som inte är med i styret) — INTE hårdkodad här. En statisk gissning
 // (t.ex. "(S+C+V)") skulle bli fel så fort ett parti som historiskt haft 0 mandat i
 // regionen oväntat får ett.
-import type { BlockConfig, PartyBlock } from './soffa'
+import { STYRE_NOTE, rest, styre, type BlockConfig } from './soffa'
 
-const NOTE =
-  'Uppdelningen visar regionens sittande styre (från perioden 2022–2026) mot oppositionen — en historisk uppfattning om vem som haft makten, inte en officiell regel eller en prognos för 2026 års val.'
-
-const styre = (label: string, parties: string[]): PartyBlock => ({ label: `NUV.STYRE (${label})`, parties })
-const rest = (): BlockConfig['b'] => ({ label: 'NUV.OPPOSITION', parties: 'rest' })
+const NOTE = STYRE_NOTE
 
 export const REGION_STYRE_BLOCKS: Record<string, BlockConfig> = {
-  '01': { // Stockholm: S+C+MP, minoritet
+  '01': { // Stockholm: S+C+MP, minoritet (65/149) — VERIFIERAD mot direkt läsning av
+    // wikipedia-tabellen (bekräftat av användaren 2026-09-07).
     a: styre('S+C+MP', ['S', 'C', 'MP']),
     b: rest(),
     note: NOTE,
@@ -125,19 +124,23 @@ export const REGION_STYRE_BLOCKS: Record<string, BlockConfig> = {
     b: rest(),
     note: NOTE,
   },
-  '20': { // Dalarna: S+C+KD+DSP, majoritet — DSP = Dalarnas Sjukvårdsparti, partikod 0472,
-    // OBS gemener i skarpa datan ("dsp"), inte versaler.
+  '20': { // Dalarna: S+C+KD+DSP, majoritet (47/83) — VERIFIERAD mot direkt läsning av
+    // wikipedia-tabellen (bekräftat av användaren 2026-09-07). DSP = Dalarnas
+    // Sjukvårdsparti, partikod 0472, OBS gemener i skarpa datan ("dsp"), inte versaler.
     a: styre('S+C+KD+DSP', ['S', 'C', 'KD', 'dsp']),
     b: rest(),
     note: NOTE,
   },
-  '21': { // Gävleborg: M+SD+KD+SJPG, majoritet — SJPG = Sjukvårdspartiet Gävleborg, partikod 0249
+  '21': { // Gävleborg: M+SD+KD+SJPG, majoritet (38/75) — VERIFIERAD mot direkt läsning av
+    // wikipedia-tabellen (bekräftat av användaren 2026-09-07). SJPG = Sjukvårdspartiet
+    // Gävleborg, partikod 0249
     a: styre('M+SD+KD+SJPG', ['M', 'SD', 'KD', 'SJPG']),
     b: rest(),
     note: NOTE,
   },
-  '22': { // Västernorrland: S+C, majoritet
-    a: styre('S+C', ['S', 'C']),
+  '22': { // Västernorrland: S+M+C, majoritet (39/71) — KORRIGERAD 2026-09-07 (ursprungligt
+    // "S+C" saknade M) mot direkt läsning av wikipedia-tabellen, bekräftat av användaren.
+    a: styre('S+M+C', ['S', 'M', 'C']),
     b: rest(),
     note: NOTE,
   },
@@ -146,12 +149,15 @@ export const REGION_STYRE_BLOCKS: Record<string, BlockConfig> = {
     b: rest(),
     note: NOTE,
   },
-  '24': { // Västerbotten: S+C, majoritet
-    a: styre('S+C', ['S', 'C']),
+  '24': { // Västerbotten: S+V+MP, majoritet (39/71) — KORRIGERAD 2026-09-07 (ursprungligt
+    // "S+C" var HELT FEL — C är inte ens med, V+MP är de riktiga partnerna) mot direkt
+    // läsning av wikipedia-tabellen, bekräftat av användaren.
+    a: styre('S+V+MP', ['S', 'V', 'MP']),
     b: rest(),
     note: NOTE,
   },
-  '25': { // Norrbotten: S+V+C, majoritet
+  '25': { // Norrbotten: S+V+C, majoritet (42/71) — VERIFIERAD mot direkt läsning av
+    // wikipedia-tabellen (bekräftat av användaren 2026-09-07).
     a: styre('S+V+C', ['S', 'V', 'C']),
     b: rest(),
     note: NOTE,

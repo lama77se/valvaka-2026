@@ -21,6 +21,7 @@ import { ResultTable } from '@/components/ResultTable'
 import { MandatBars } from '@/components/MandatBars'
 import { RIKET_BLOCKS, SPECTRUM } from '@/lib/soffa'
 import { REGION_STYRE_BLOCKS } from '@/lib/regionBlocks'
+import { KOMMUN_STYRE_BLOCKS } from '@/lib/kommunBlocks'
 import { SEAT_CONFIG_2026 } from '@/lib/seatConfig2026'
 import { onDark } from '@/lib/colors'
 import { ancestorsOf, childGroupsOf, childLevelOf } from '@/lib/hierarchy'
@@ -98,15 +99,17 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
   }
 
   // Tvåblocksvyn (MandatBars) — bara på valtypens högsta nivå: riksblocken för RD/riket,
-  // regionens sittande styre-vs-opposition för RF/region (bara de regioner som finns i
-  // REGION_STYRE_BLOCKS — övriga saknar en tillräckligt entydig config och visar ingen
-  // blockvy alls, se regionBlocks.ts).
+  // sittande styre-vs-opposition för RF/region resp. KF/kommun (samtliga 20 regioner och
+  // 290 kommuner finns i REGION_STYRE_BLOCKS/KOMMUN_STYRE_BLOCKS, se regionBlocks.ts/
+  // kommunBlocks.ts för källa/verifiering per post).
   const blocks =
     valtyp === 'RD' && selectedArea.level === 'riket'
       ? RIKET_BLOCKS
       : valtyp === 'RF' && selectedArea.level === 'region'
         ? REGION_STYRE_BLOCKS[selectedArea.code ?? '']
-        : undefined
+        : valtyp === 'KF' && selectedArea.level === 'kommun'
+          ? KOMMUN_STYRE_BLOCKS[selectedArea.code ?? '']
+          : undefined
 
   const areaIndex = areaIndexRef.current[valtyp]
 
