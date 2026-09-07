@@ -31,3 +31,13 @@ export const RIKET_BLOCKS: BlockConfig = {
   b: { label: 'L+KD+M+SD', parties: ['L', 'KD', 'M', 'SD'] },
   note: 'Blockindelningen bygger på en historisk/allmänt känd uppfattning om vilka partier som samarbetar om regeringsmakten — inte en officiell regel, och den kan ändras.',
 }
+
+// Delade hjälpare för "sittande styre mot opposition"-configerna (regionBlocks.ts,
+// kommunBlocks.ts) — INTE för riksblocken ovan, som är ideologiska och symmetriska.
+// "NUV." markerar tydligt att indelningen gäller DAGSLÄGET (2022–2026), inte ett resultat
+// av eller en prognos för 2026 års val.
+export const STYRE_NOTE =
+  'Uppdelningen visar det sittande styret (från perioden 2022–2026) mot oppositionen — en historisk uppfattning om vem som haft makten, inte en officiell regel eller en prognos för 2026 års val.'
+
+export const styre = (label: string, parties: string[]): PartyBlock => ({ label: `NUV.STYRE (${label})`, parties })
+export const rest = (): PartyBlock => ({ label: 'NUV.OPPOSITION', parties: 'rest' })
