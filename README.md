@@ -5,7 +5,7 @@ med [data.val.se](https://data.val.se) som enda källa.
 
 Klienterna rör aldrig val.se: en ingestion-worker pollar de statiska filerna och
 normaliserar till Postgres. Kartklienten håller sig själv färsk med en lätt
-inkrementell poll (en `updated_at`-delta, jittrad 45–90 s) och presenterar det som en
+inkrementell poll (en `updated_at`-delta, jittrad 30–45 s) och presenterar det som en
 nära-live-feed — distrikt rullar in på avgångstavlorna, kartan målas om per distrikt
 och en puls-indikator lyser — ovanpå en källa som bara publicerar platta filer på schema.
 
@@ -102,7 +102,7 @@ Fullständigt underlag i **[docs/arkitektur.md](./docs/arkitektur.md)** och
 | Frontend | React 18 + TypeScript + Vite + Tailwind + shadcn/ui |
 | Karta | MapLibre GL JS (pinnad v5.24) — statisk GeoJSON via Supabase Storage |
 | Mount-seed | CDN-cachad JSON-blob per valtyp (Supabase Storage/Cloudflare), keyset-fallback vid miss |
-| Uppdatering | Klient-polling — inkrementell resync-delta (`updated_at`), jittrad 45–90 s |
+| Uppdatering | Klient-polling — inkrementell resync-delta (`updated_at`), jittrad 30–45 s |
 | Backend | Supabase edge functions (Deno), `pg_cron` + `pg_net` |
 | Databas | Postgres + PostGIS |
 
@@ -118,7 +118,7 @@ Ingest edge function (Deno) ──upsert──▶ Postgres + PostGIS
                                              │                              snapshots/<valtyp>.json
                                              ▼                                       │
        React-klient (MapLibre) ◀── mount: 1 blob/valtyp (seed) ──────────────────────┘
-                              └─poll: updated_at-delta var 45–90 s (jittrat, synlig flik)
+                              └─poll: updated_at-delta var 30–45 s (jittrat, synlig flik)
 
 Statisk geometri (GeoJSON) ─────────────── laddas en gång ──────────▶ React-klient
 ```
@@ -131,7 +131,7 @@ EN sådan blob vid mount i stället för ~30 PostgREST-sidor — annars blir pol
 öppnar 20:00) en samtidig mount-herd mot Postgres (mätt: 50 flikar satte Small på 100 %
 CPU innan bloben fanns; se [docs/valnatt-lastkapacitet.md](./docs/valnatt-lastkapacitet.md)).
 Keyset-paginering mot Postgres kvarstår som fallback vid blob-miss. Därefter hämtar
-klientens poll bara resultatvärdenas delta (`updated_at`-delta, jittrad 45–90 s; bara
+klientens poll bara resultatvärdenas delta (`updated_at`-delta, jittrad 30–45 s; bara
 synlig flik pollar, bakgrundsflikar snappar färskt vid tab-fokus). Ingen Realtime/WAL-
 decoding-last — pollingen skalar med klienter/intervall, inte writes × prenumeranter.
 (Komprimering till vektortiles är en senare optimering; i dag räcker den förenklade GeoJSON:en.)

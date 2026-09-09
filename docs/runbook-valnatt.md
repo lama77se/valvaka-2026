@@ -7,7 +7,7 @@ detta dokument på natten. Bakgrund/detaljer: [resultat-ingest-genrep.md](./resu
 
 | Del | Vad | Var |
 |---|---|---|
-| **Edge `ingest-result`** | pollar val.se, **strömmar** in de **preliminära** filerna (`/p/`) → `result`/`uppsamling_result`; klienten pollar deltan (45–90 s) → karta | Supabase, pg_cron `30 s` |
+| **Edge `ingest-result`** | pollar val.se, **strömmar** in de **preliminära** filerna (`/p/`) → `result`/`uppsamling_result`; klienten pollar deltan (30–45 s) → karta | Supabase, pg_cron `30 s` |
 | **Storleksvakt + CPU-budget** | säkerhetsnät i edge (preliminära filer är små; slutliga filtreras redan bort) | i samma funktion |
 | **Lokalt skript** | `npm run ingest:slutlig` — **alla slutliga** filer (`/s/`): riks-RD + alla 21 RF + alla ~290 KF | din dator, **mån–fre** (Länsstyrelsen börjar måndag) |
 | **Frontend** | valvaka.tech, auto-deploy från `main` | Vercel |
@@ -114,7 +114,7 @@ val2026-deployen hunnit landa via CI. Ordningen är därför **N0 pausa → N1 r
   ger en kort omstart/nedtid → byt **dagen innan eller tidig eftermiddag 13 sep**, aldrig ~19:55.
   Kör sedan lasttestet på Large och **läs CPU i Supabase-dashboarden** (klient-väggtid mäter INTE
   server-CPU). Sedan **Realtime togs bort (1 sep)** är den kvarvarande lasten **mount-snapshot-herden**
-  — många samtidiga fulla snapshot-läsningar vid poll-close (~20:00) + delta-pollning var 45–90 s —
+  — många samtidiga fulla snapshot-läsningar vid poll-close (~20:00) + delta-pollning var 30–45 s —
   INTE Realtime-fan-out. **Verktyget är `npm run loadtest:poll`** (speglar dagens klient: blob-mount
   + delta-poll). ⚠️ `loadtest-clients/-heavy/-valnatt` är Realtime-era — `loadtest-valnatt.mjs`
   **raderar RD** ("ren tavla"), kör den inte mot prod.
