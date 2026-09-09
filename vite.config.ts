@@ -16,4 +16,10 @@ export default defineConfig({
     port: 5926,
     strictPort: true,
   },
+  optimizeDeps: {
+    // maplibre-gl v6 laddar sin worker som en separat fil; Vites dep-optimizer
+    // hittar den inte (404 på .vite/deps/maplibre-gl-worker.mjs) om paketet
+    // pre-bundlas — undanta det så kartan faktiskt får ett style/source-load.
+    exclude: ['maplibre-gl'],
+  },
 })
