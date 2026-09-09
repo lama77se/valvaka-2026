@@ -38,12 +38,14 @@ export const defaultAreaFor = (valtyp: Valtyp): Area => ({ level: NATIVE_LEVEL[v
 const AREA_LEVELS: Level[] = ['riket', 'region', 'kommun', 'valkrets', 'distrikt']
 
 // Poll-intervall: Realtime är BORTTAGET → resyncen (updated_at-delta) är PRIMÄR uppdateringsväg.
-// Jittrat 45–90 s så flikar inte pollar i takt (undviker synkron-herd på servern); en SYNLIG flik
-// pollar, en bakgrundsflik ligger tyst (och refreshar direkt vid tab-fokus). Deltan är liten (bara
-// det som ändrats sedan cursorn) → index-range-scan på (valtyp, updated_at) → lätt last som skalar
-// med klienter/intervall, inte writes×subscribers. UX förblir "live": staggrad reveal + puls-indikator.
-const RESYNC_MIN_MS = 45000
-const RESYNC_MAX_MS = 90000
+// Jittrat 30–45 s (sänkt från 45–90 s inför valnatten 9 sep — lasttest på Large visade gott om
+// CPU-marginal, se docs/valnatt-lastkapacitet.md) så flikar inte pollar i takt (undviker synkron-
+// herd på servern); en SYNLIG flik pollar, en bakgrundsflik ligger tyst (och refreshar direkt vid
+// tab-fokus). Deltan är liten (bara det som ändrats sedan cursorn) → index-range-scan på
+// (valtyp, updated_at) → lätt last som skalar med klienter/intervall, inte writes×subscribers.
+// UX förblir "live": staggrad reveal + puls-indikator.
+const RESYNC_MIN_MS = 30000
+const RESYNC_MAX_MS = 45000
 // Giltig timestamptz som "ingenting sett än" — se kommentaren vid cursorRef.
 const CURSOR_EPOCH = '1970-01-01T00:00:00Z'
 // ÖVERLAPPSFÖNSTER för deltan. `updated_at` sätts vid transaktionens START (now()), men raden blir
