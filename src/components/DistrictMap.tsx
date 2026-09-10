@@ -86,6 +86,9 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const hoveredIdRef = useRef<string | null>(null)
+  // Vilka feature-id:n som faktiskt har feature-state hover=true just nu — i
+  // "grupp"-läget är det HELA gruppen (se groupDistrictsFor), annars bara hoveredIdRef.
+  const hoveredGroupRef = useRef<string[]>([])
   const tooltipRef = useRef<HTMLDivElement>(null) // hover-rutan (positioneras vid pekaren via DOM)
   const [hover, setHover] = useState<HoverInfo | null>(null)
 
@@ -261,23 +264,38 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
       }
       return { winner, share: total > 0 ? top / total : 0, margin: total > 0 ? (top - Math.max(second, 0)) / total : 0, total }
     }
+    // Grupperingsindexet (distrikt-lista per grupp) för en valtyp — redan förberäknat
+    // (areaIndexRef.RD.vkToDistricts för valkrets; groupsRef.byLan/byKommun — samma
+    // index som mandaträkningen — för region/kommun). Delas av computeGroupWinners
+    // (röstsumma per grupp) och groupDistrictsFor (hover-highlightens utbredning).
+    const groupDistrictMapFor = (vt: Valtyp): Map<string, string[]> =>
+      vt === 'RD' ? areaIndexRef.current.RD.vkToDistricts
+        : vt === 'RF' ? groupsRef.current.byLan
+          : groupsRef.current.byKommun
     // Kartfärgläge 'grupp': varje distrikt får sin GRUPPS (en nivå under riket —
     // RD valkrets, RF region, KF kommun) sammanlagda vinnare i stället för sin egen.
-    // Grupperingen är redan förberäknad (areaIndexRef.RD.vkToDistricts för valkrets;
-    // groupsRef.byLan/byKommun — samma index som mandatuträkningen — för region/kommun)
     // → bara röstsumman räknas om här, O(alla distrikt) totalt, inte O(grupper × alla).
     const computeGroupWinners = (vt: Valtyp): Map<string, DistrictOutcome> => {
       const store = storesRef.current[vt]
-      const groupMap =
-        vt === 'RD' ? areaIndexRef.current.RD.vkToDistricts
-          : vt === 'RF' ? groupsRef.current.byLan
-            : groupsRef.current.byKommun
       const result = new Map<string, DistrictOutcome>()
-      for (const districts of groupMap.values()) {
+      for (const districts of groupDistrictMapFor(vt).values()) {
         const outcome = outcomeFromVotes(store.aggregate(districts))
         for (const vd of districts) result.set(vd, outcome)
       }
       return result
+    }
+    // Distrikten som delar vd:s grupp (aktiv valtyp) — används för att låta hover-
+    // highlighten (feature-state 'hover') täcka HELA gruppen i stället för bara det
+    // enskilda polygon-fältet pekaren råkar stå på. O(1): RD via districtToVk-
+    // uppslaget, RF/KF är ett rent prefix (län/kommun) av valdistriktskoden.
+    const groupDistrictsFor = (vd: string): string[] => {
+      const vt = activeValtypRef.current
+      if (vt === 'RD') {
+        const vk = areaIndexRef.current.RD.districtToVk.get(vd)
+        return (vk && areaIndexRef.current.RD.vkToDistricts.get(vk)) || [vd]
+      }
+      const key = vt === 'RF' ? vd.slice(0, 2) : vd.slice(0, 4)
+      return groupDistrictMapFor(vt).get(key) ?? [vd]
     }
 
     // --- Applicera ett distrikts resultat FÖR DEN AKTIVA VALTYPEN --------------
@@ -427,17 +445,20 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
         setMapReady(true) // källan biter nu → fokus/zoom-effekten får köra
       })
 
+      // I "grupp"-läget (Valkrets/Region/Kommun) highlightas HELA gruppens polygoner,
+      // inte bara det enskilda fältet pekaren råkar stå på — annars ser highlighten
+      // (och därmed vad man tror man pekar på) ut att gälla ett enda litet valdistrikt
+      // trots att hover-rutan visar hela gruppens resultat (se hoverRows/hoverBody).
       const setHovered = (id: string | null) => {
         if (hoveredIdRef.current === id) return
-        if (hoveredIdRef.current !== null) {
-          map.setFeatureState(
-            { source: 'districts', id: hoveredIdRef.current },
-            { hover: false },
-          )
+        for (const prevId of hoveredGroupRef.current) {
+          map.setFeatureState({ source: 'districts', id: prevId }, { hover: false })
         }
         hoveredIdRef.current = id
-        if (id !== null) {
-          map.setFeatureState({ source: 'districts', id }, { hover: true })
+        const ids = id === null ? [] : colorModeRef.current === 'grupp' ? groupDistrictsFor(id) : [id]
+        hoveredGroupRef.current = ids
+        for (const newId of ids) {
+          map.setFeatureState({ source: 'districts', id: newId }, { hover: true })
         }
       }
 
