@@ -11,6 +11,17 @@
 export const GEOMETRY_URL =
   import.meta.env.VITE_GEOMETRY_URL ?? '/valdistrikt-2026-wgs84.geojson'
 
+// Upplösta (dissolved) gränser för kartfärgläget "Valkrets/Region/Kommun" (en nivå
+// under riket, valtyp-beroende — se ColorMode/GROUP_LEVEL_LABEL i lib/results). Byggs
+// av scripts/build-group-boundaries.mjs ur SAMMA geometri (ingen extra nedladdning).
+// Härledda ur GEOMETRY_URL:s katalog i stället för egna VITE_-variabler — de ligger
+// alltid som SYSKON-filer i samma Storage-bucket/public-katalog, så inga nya env-
+// variabler behöver sättas i Vercel när prod-URL:en är en full Storage-länk.
+const GEOMETRY_DIR = GEOMETRY_URL.slice(0, GEOMETRY_URL.lastIndexOf('/') + 1)
+export const VALKRETS_RD_BOUNDARIES_URL = `${GEOMETRY_DIR}valkrets-rd-boundaries.geojson`
+export const REGION_BOUNDARIES_URL = `${GEOMETRY_DIR}region-boundaries.geojson`
+export const KOMMUN_BOUNDARIES_URL = `${GEOMETRY_DIR}kommun-boundaries.geojson`
+
 // Join-nyckel överallt: 8-siffrig valdistriktskod (kommunkod(4) + distrikt(4)).
 // I 2026-geometrin ligger den färdig i propertyn `Valdistriktskod` — används som
 // MapLibre `promoteId` så feature-id === valdistriktskod och `setFeatureState`

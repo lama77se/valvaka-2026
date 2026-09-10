@@ -6,9 +6,12 @@ type StyleSpecification = maplibregl.StyleSpecification
 import {
   DISTRICT_ID_PROPERTY,
   GEOMETRY_URL,
+  KOMMUN_BOUNDARIES_URL,
+  REGION_BOUNDARIES_URL,
   SWEDEN_BOUNDS,
+  VALKRETS_RD_BOUNDARIES_URL,
 } from '@/lib/geometry'
-import { VALTYPER, VALTYP_LABEL, slutligTag, type Valtyp } from '@/lib/results'
+import { VALTYPER, VALTYP_LABEL, slutligTag, type ColorMode, type DistrictOutcome, type Valtyp } from '@/lib/results'
 import { SPARR, applyComparison, buildRows, collapseForDisplay, districtsInArea } from '@/lib/aggregate'
 import { ancestorsOf } from '@/lib/hierarchy'
 import { defaultAreaFor, useResults } from '@/components/ResultsProvider'
@@ -21,6 +24,15 @@ export const REPORTED_NEUTRAL = '#64748b'
 export const UNREPORTED_FILL = '#334155'
 
 const hhmmss = () => new Date().toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+
+// Upplösta gränser för kartfärgläget "grupp" (se ColorMode) — en per valtyp, eftersom
+// gruppnivån skiljer (RD valkrets, RF region, KF kommun). Byggs av
+// scripts/build-group-boundaries.mjs; se lib/geometry.ts.
+const GROUP_BOUNDARIES_URL: Record<Valtyp, string> = {
+  RD: VALKRETS_RD_BOUNDARIES_URL,
+  RF: REGION_BOUNDARIES_URL,
+  KF: KOMMUN_BOUNDARIES_URL,
+}
 
 // Tom bakgrundsstil utan extern basemap: inga API-nycklar, inga externa tiles.
 const BLANK_STYLE: StyleSpecification = {
@@ -44,10 +56,12 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
     valtyp,
     selectedArea,
     setSelectedArea,
+    colorMode,
     storesRef,
     partyRef,
     metaRef,
     allCodesRef,
+    groupsRef,
     totalByValtyp,
     subscribeChanges,
     snapshotVersion,
@@ -97,6 +111,14 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
   const rafRef = useRef<number | null>(null)
   const sourceReadyRef = useRef(false)
   const activeValtypRef = useRef<Valtyp>(valtyp) // speglar `valtyp` för closures
+  const colorModeRef = useRef<ColorMode>(colorMode) // speglar `colorMode` för closures
+  // 'grupp'-läget cachar gruppens (valkrets/region/kommun) sammanlagda vinnare per
+  // distrikt — räknas om i scheduleFlush, inte per requestApply (en ändring i EN
+  // distrikt kan byta hela gruppens vinnare, alla dess syskon måste då om-målas).
+  const groupWinnersRef = useRef<Map<string, DistrictOutcome> | null>(null)
+  // Bro mellan recolorActive (definierad utanför 'load') och updateBoundaryVisibility
+  // (definierad inuti 'load', kräver att lagren finns) — satt en gång vid 'load'.
+  const updateBoundaryVisibilityRef = useRef<(() => void) | null>(null)
   const variantRef = useRef(variant) // stabil åtkomst i map-event-closures (mount-en gång)
   const recolorRef = useRef<(() => void) | null>(null)
   const refitRef = useRef<(() => void) | null>(null) // re-fit mot nuvarande urval vid resize
@@ -191,10 +213,43 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
       console.error('[DistrictMap] maplibre error:', e.error ?? e)
     })
 
+    // Vinnare ur en röstsumma per parti — samma logik som ResultStore.outcome, men
+    // från ett redan hopslaget Record (gruppens aggregat, inte ETT distrikts).
+    const EMPTY_OUTCOME: DistrictOutcome = { winner: null, share: 0, margin: 0, total: 0 }
+    const outcomeFromVotes = (votes: Record<string, number>): DistrictOutcome => {
+      let total = 0, top = -1, second = -1, winner: string | null = null
+      for (const [p, v] of Object.entries(votes)) {
+        total += v
+        if (v > top) { second = top; top = v; winner = p } else if (v > second) second = v
+      }
+      return { winner, share: total > 0 ? top / total : 0, margin: total > 0 ? (top - Math.max(second, 0)) / total : 0, total }
+    }
+    // Kartfärgläge 'grupp': varje distrikt får sin GRUPPS (en nivå under riket —
+    // RD valkrets, RF region, KF kommun) sammanlagda vinnare i stället för sin egen.
+    // Grupperingen är redan förberäknad (areaIndexRef.RD.vkToDistricts för valkrets;
+    // groupsRef.byLan/byKommun — samma index som mandatuträkningen — för region/kommun)
+    // → bara röstsumman räknas om här, O(alla distrikt) totalt, inte O(grupper × alla).
+    const computeGroupWinners = (vt: Valtyp): Map<string, DistrictOutcome> => {
+      const store = storesRef.current[vt]
+      const groupMap =
+        vt === 'RD' ? areaIndexRef.current.RD.vkToDistricts
+          : vt === 'RF' ? groupsRef.current.byLan
+            : groupsRef.current.byKommun
+      const result = new Map<string, DistrictOutcome>()
+      for (const districts of groupMap.values()) {
+        const outcome = outcomeFromVotes(store.aggregate(districts))
+        for (const vd of districts) result.set(vd, outcome)
+      }
+      return result
+    }
+
     // --- Applicera ett distrikts resultat FÖR DEN AKTIVA VALTYPEN --------------
     const applyDistrict = (vd: string) => {
       if (removed) return
-      const o = storesRef.current[activeValtypRef.current].outcome(vd)
+      const o =
+        colorModeRef.current === 'grupp'
+          ? (groupWinnersRef.current?.get(vd) ?? EMPTY_OUTCOME)
+          : storesRef.current[activeValtypRef.current].outcome(vd)
       const color = (o.winner && partyRef.current.get(o.winner)?.farg) || REPORTED_NEUTRAL
       map.setFeatureState(
         { source: 'districts', id: vd },
@@ -210,7 +265,14 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
       rafRef.current = requestAnimationFrame(() => {
         rafRef.current = null
         if (removed) return
-        for (const vd of pendingRef.current) applyDistrict(vd)
+        if (colorModeRef.current === 'grupp' && pendingRef.current.size > 0) {
+          // En ändring i ETT distrikt kan byta hela gruppens vinnare → måla om ALLA
+          // (samma unions-iteration som recolorActive), inte bara pendingRef-posterna.
+          groupWinnersRef.current = computeGroupWinners(activeValtypRef.current)
+          for (const vt of VALTYPER) for (const vd of storesRef.current[vt].districts()) applyDistrict(vd)
+        } else {
+          for (const vd of pendingRef.current) applyDistrict(vd)
+        }
         pendingRef.current.clear()
         const n = storesRef.current[activeValtypRef.current].reportedCount
         setReportedCount(n)
@@ -226,6 +288,7 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
     // Måste iterera unionen — annars behåller distrikt som fanns i förra valtypen
     // men saknas i den nya sin gamla färg (feature-state-fällan vid växling).
     const recolorActive = () => {
+      updateBoundaryVisibilityRef.current?.()
       if (!sourceReadyRef.current || removed) return
       for (const vt of VALTYPER)
         for (const vd of storesRef.current[vt].districts()) pendingRef.current.add(vd)
@@ -291,6 +354,32 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
           ],
         },
       })
+
+      // Upplösta gruppgränser (kartfärgläget "grupp") — en källa/lager PER valtyp
+      // (gruppnivån skiljer sig, se GROUP_BOUNDARIES_URL). Dolda by default; en enda
+      // synlig åt gången (aktiv valtyp), styrt av updateBoundaryVisibility nedan.
+      for (const vt of VALTYPER) {
+        map.addSource(`group-boundaries-${vt}`, { type: 'geojson', data: GROUP_BOUNDARIES_URL[vt] })
+        map.addLayer({
+          id: `group-line-${vt}`,
+          type: 'line',
+          source: `group-boundaries-${vt}`,
+          layout: { visibility: 'none' },
+          paint: { 'line-color': '#e2e8f0', 'line-width': 1.3 },
+        })
+      }
+      // Växla mellan distriktens FINA gränser (default) och EN valtyps upplösta
+      // gruppgräns (kartfärgläget "grupp") — annars syns distriktszickzacket kvar
+      // som en förvirrande mosaik inuti varje färgad grupp.
+      const updateBoundaryVisibility = () => {
+        const grouped = colorModeRef.current === 'grupp'
+        map.setLayoutProperty('district-line', 'visibility', grouped ? 'none' : 'visible')
+        for (const vt of VALTYPER) {
+          map.setLayoutProperty(`group-line-${vt}`, 'visibility', grouped && vt === activeValtypRef.current ? 'visible' : 'none')
+        }
+      }
+      updateBoundaryVisibilityRef.current = updateBoundaryVisibility
+      updateBoundaryVisibility()
 
       // Källan redo → setFeatureState biter; applicera hittills laddade resultat.
       map.on('sourcedata', (e) => {
@@ -389,9 +478,14 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
       removed = true
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
       recolorRef.current = null
+      updateBoundaryVisibilityRef.current = null
       map.remove()
       mapRef.current = null
     }
+    // Mount-en-gång: areaIndexRef/groupsRef läses via .current i computeGroupWinners
+    // (samma refs-inte-deps-mönster som storesRef/partyRef ovan — de är refar, inte
+    // reaktiv state, och ska inte trigga en ny karta).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subscribeChanges, storesRef, partyRef, setSelectedArea])
 
   // Bulkladdning (referens/snapshot) klar → full ompaint + färsk räknare.
@@ -412,6 +506,13 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
     recolorRef.current?.()
     // Hover-rutans mini-tabell räknar om via hoverRows (nyckel: valtyp + revision).
   }, [valtyp, storesRef])
+
+  // Kartfärgläge-växling (Valdistrikt ⇄ Valkrets/Region/Kommun) — måla om direkt,
+  // samma väg som valtyp-bytet ovan (gruppnivån följer valtypen, se GROUP_LEVEL_LABEL).
+  useEffect(() => {
+    colorModeRef.current = colorMode
+    recolorRef.current?.()
+  }, [colorMode])
 
   // Ladda distrikt-bboxarna en gång (samma mönster som comparison-2022.json).
   useEffect(() => {
@@ -633,7 +734,7 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
             Hela Sverige
           </button>
         )}
-        <ValtypSelector />
+        <ValtypSelector showColorMode />
         {total > 0 && (
           <div className="pointer-events-none rounded-md border border-slate-700 bg-slate-900/90 px-4 py-1.5 text-center text-sm text-slate-100 shadow-lg">
             <div className="flex items-center justify-center gap-2">
