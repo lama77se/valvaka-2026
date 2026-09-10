@@ -57,7 +57,7 @@ function DesktopApp() {
             </a>
             <h1 className="pr-7 text-xl font-bold tracking-tight">Valvaka 2026</h1>
             <p className="mt-1 text-sm text-slate-400">
-              Liveresultat på alla nivåer — per valdistrikt.
+              Liveresultat på alla nivåer.
             </p>
             {/* Källhänvisning — Valmyndighetens villkor: all data är fri att använda
                 förutsatt att Valmyndigheten anges som källa. */}
