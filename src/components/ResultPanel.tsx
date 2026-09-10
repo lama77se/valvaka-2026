@@ -15,6 +15,7 @@ import {
   districtsInArea,
   mergeVotes,
   uppsamlingForArea,
+  type Level,
 } from '@/lib/aggregate'
 import { RIKET, defaultAreaFor, useResults, type Area } from '@/components/ResultsProvider'
 import { ResultTable } from '@/components/ResultTable'
@@ -184,13 +185,30 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
             ? kommunName.get(a.code ?? '') ?? a.code ?? ''
             : distriktNamnRef.current.get(a.code ?? '') ?? a.code ?? ''
 
+  // Prompt-läge: RF/KF utan valt organ (ingen riksnivå finns för dem) — flyttad hit
+  // (används redan nedan i `drill`) från sitt gamla ställe längre ner i filen.
+  const isPrompt = selectedArea.level !== 'riket' && selectedArea.code == null
+
   // Drill-down: breadcrumb (uppåt) + barnens sammanfattning (nedåt). Barn-summeringen
   // är enhetlig för alla nivåer: ledande parti = argmax(aggregat), rapporterat = andel
   // av barnets distrikt som räknats. Nyckas på revision (strypt Realtime).
+  //
+  // Prompt-läge (RF/KF utan valt organ): det finns ingen ETT-STEG-UPP-nivå att bryta
+  // ned FRÅN (RF/KF saknar "riket" i sin HIERARCHY — se hierarchy.ts) — de "barnen"
+  // vi vill visa är i stället samtliga TOPPNIVÅ-organ själva (alla 20 regioner/290
+  // kommuner), samma index som kartans gruppfärgläge (groupsRef.byLan/byKommun).
+  // Detta ger en klickbar "Bryt ner"-lista redan innan användaren valt ett organ —
+  // se JSX:en nedan som numera renderar "Bryt ner" OBEROENDE av isPrompt.
   const drill = useMemo(() => {
     void revision
     const store = storesRef.current[valtyp]
-    const groups = childGroupsOf(valtyp, selectedArea, allCodesRef.current, areaIndex)
+    const groups = isPrompt
+      ? [...(valtyp === 'RF' ? groupsRef.current.byLan : groupsRef.current.byKommun)].map(([code, districts]) => ({
+          level: (valtyp === 'RF' ? 'region' : 'kommun') as Level,
+          code,
+          districts,
+        }))
+      : childGroupsOf(valtyp, selectedArea, allCodesRef.current, areaIndex)
     const comparison = comparisonRef.current
     const pmap = partyRef.current
     // Uppslag för per-parti-kolumnerna: beteckning→förkortning (2022 nycklas på namn),
@@ -272,8 +290,6 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
     for (const k of kommuner) ensureDistrictWinners2022(valtyp, k)
   }, [drill, valtyp, ensureDistrictWinners2022])
 
-  // Prompt-läge: RF/KF utan valt organ (ingen riksnivå finns för dem).
-  const isPrompt = selectedArea.level !== 'riket' && selectedArea.code == null
   const crumbs = ancestorsOf(valtyp, selectedArea, areaIndex)
   const drillItems = [...drill.items].sort((a, b) => nameOf(a).localeCompare(nameOf(b), 'sv'))
   const uppRow = drill.uppsamlingRow // sena röster för organet → egen rad sist i nedbrytningen
@@ -362,8 +378,12 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
 
       <div className="min-h-0 flex-1 overflow-auto pr-1">
         {isPrompt ? (
-          <p className="mt-8 text-center text-sm text-slate-400">
-            Välj {valtyp === 'RF' ? 'en region' : 'en kommun'} i listan ovan — eller klicka i kartan.
+          // Prompt-läge (RF/KF, inget organ valt än): ingen soffa/resultattabell finns
+          // att visa (ingen riksnivå för RF/KF) — men "Bryt ner" nedan listar samtliga
+          // toppnivå-organ (samma sektion som annars, se isPrompt-hanteringen i `drill`
+          // ovan) så man kan klicka sig rakt in i ett resultat därifrån också.
+          <p className="mb-2 mt-4 text-center text-sm text-slate-400">
+            Välj {valtyp === 'RF' ? 'en region' : 'en kommun'} i listan ovan — eller klicka i kartan/listan nedan.
           </p>
         ) : (
           <>
@@ -428,8 +448,11 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
                   Inga resultat inrapporterade för {VALTYP_LABEL[valtyp].toLowerCase()} i {areaName} än.
                 </p>
               ))}
-
-            {drill.anyLive && drill.childLevel && drillItems.length > 0 && (
+          </>
+        )}
+        {/* "Bryt ner" renders OBEROENDE av isPrompt (se kommentar vid `drill` ovan) —
+            RF/KF utan valt organ visar den ändå, med samtliga toppnivå-organ som rader. */}
+        {drill.anyLive && drill.childLevel && drillItems.length > 0 && (
               <div className="mt-3 border-t border-slate-800 pt-3">
                 <p className="mb-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[11px] font-semibold uppercase tracking-widest text-slate-400">
                   Bryt ner — {CHILD_LABEL[drill.childLevel] ?? drill.childLevel}
@@ -538,8 +561,6 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
                   </tbody>
                 </table>
               </div>
-            )}
-          </>
         )}
       </div>
     </div>
