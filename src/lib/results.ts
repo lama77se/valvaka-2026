@@ -17,6 +17,18 @@ export const VALTYP_LABEL: Record<Valtyp, string> = {
   KF: 'Kommun',
 }
 
+// Kartfärgläge: 'distrikt' (default) färgar varje valdistrikt efter sin EGEN vinnare;
+// 'grupp' färgar i stället alla distrikt inom samma närmast-över-riket-nivå efter DEN
+// nivåns sammanlagda vinnare — RD: valkrets, RF: region, KF: kommun (samma nivå som
+// HIERARCHY-toppen per valtyp, se hierarchy.ts). Delad state (inte bara DistrictMap-
+// lokal) eftersom väljaren bor i ValtypSelector, som även renderas i mobilchromen.
+export type ColorMode = 'distrikt' | 'grupp'
+export const GROUP_LEVEL_LABEL: Record<Valtyp, string> = {
+  RD: 'Valkrets',
+  RF: 'Region',
+  KF: 'Kommun',
+}
+
 // Slutresultat-läge per valtyp: preliminärt (valnatt) → sluträknas (onsdagsräkningen
 // pågår, distrikt för distrikt) → slutgiltigt (alla distrikt slutligt räknade).
 export type SlutligState = 'preliminar' | 'slutraknas' | 'slutlig'

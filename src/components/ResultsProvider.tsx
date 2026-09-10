@@ -14,7 +14,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { supabase } from '@/lib/supabase'
 import { fetchSnapshotBlob } from '@/lib/snapshotBlob'
-import { ResultStore, TurnoutStore, VALTYPER, VALTYP_VK_COLUMN, type Valtyp } from '@/lib/results'
+import { ResultStore, TurnoutStore, VALTYPER, VALTYP_VK_COLUMN, type ColorMode, type Valtyp } from '@/lib/results'
 import { buildGroups, type AreaComparison, type AreaGroups, type Comparison2022, type DistrictMeta, type Level, type PartyMeta } from '@/lib/aggregate'
 import type { PartyVotes } from '@/lib/mandate'
 import type { AreaIndex } from '@/lib/hierarchy'
@@ -89,22 +89,24 @@ function parseAreaParam(raw: string | null, valtyp: Valtyp): Area {
   return { level, code: code || null }
 }
 
-export function readViewFromUrl(): { valtyp: Valtyp; area: Area } {
-  if (typeof window === 'undefined') return { valtyp: 'RD', area: RIKET }
+export function readViewFromUrl(): { valtyp: Valtyp; area: Area; colorMode: ColorMode } {
+  if (typeof window === 'undefined') return { valtyp: 'RD', area: RIKET, colorMode: 'distrikt' }
   const q = new URLSearchParams(window.location.search)
   const raw = (q.get('val') ?? '').toUpperCase()
   const valtyp = (VALTYPER as readonly string[]).includes(raw) ? (raw as Valtyp) : 'RD'
-  return { valtyp, area: parseAreaParam(q.get('omrade'), valtyp) }
+  const colorMode: ColorMode = q.get('farg') === 'grupp' ? 'grupp' : 'distrikt'
+  return { valtyp, area: parseAreaParam(q.get('omrade'), valtyp), colorMode }
 }
 
-export function viewToSearch(valtyp: Valtyp, area: Area): string {
+export function viewToSearch(valtyp: Valtyp, area: Area, colorMode: ColorMode): string {
   const def = defaultAreaFor(valtyp)
   const areaIsDefault = area.level === def.level && area.code === def.code
-  if (valtyp === 'RD' && areaIsDefault) return '' // app-defaulten (Riksdag/Riket) → ren URL
+  const farg = colorMode === 'grupp' ? '&farg=grupp' : '' // default ('distrikt') → utelämnas, ren URL
+  if (valtyp === 'RD' && areaIsDefault && !farg) return '' // app-defaulten (Riksdag/Riket/Valdistrikt) → ren URL
   // Bygg strängen för hand så "nivå:kod" behåller ett läsbart kolon (URLSearchParams
   // %3A-kodar det). Koderna är siffror/korta alfanumeriska → encodeURIComponent är no-op.
   const omrade = areaIsDefault ? '' : `&omrade=${area.level}${area.code ? ':' + encodeURIComponent(area.code) : ''}`
-  return `?val=${valtyp}${omrade}`
+  return `?val=${valtyp}${omrade}${farg}`
 }
 
 type NamedCode = { code: string; name: string }
@@ -126,6 +128,11 @@ export interface ResultsContextValue {
   setValtyp: (v: Valtyp) => void
   selectedArea: Area
   setSelectedArea: (a: Area) => void
+  // Kartfärgläge (se ColorMode i lib/results): default 'distrikt'; 'grupp' färgar
+  // per valkrets/region/kommun (en nivå under riket, valtyp-beroende). Delad här
+  // (inte DistrictMap-lokal) eftersom väljaren renderas i ValtypSelector.
+  colorMode: ColorMode
+  setColorMode: (m: ColorMode) => void
 
   // Stabila referens-refar (läses vid beräkning; useMemo nycklar på revision).
   storesRef: RefObject<Record<Valtyp, ResultStore>>
@@ -183,6 +190,11 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
   // Startvy ur URL:en (delbar permalänk), annars Riksdag/Riket.
   const [valtyp, setValtypState] = useState<Valtyp>(() => readViewFromUrl().valtyp)
   const [selectedArea, setSelectedArea] = useState<Area>(() => readViewFromUrl().area)
+  // Kartfärgläge (se ColorMode) — global så ValtypSelector (mobil + desktop) och
+  // DistrictMap delar samma val; nollställs INTE vid valtyp-byte (gruppnivån följer
+  // bara med, se GROUP_LEVEL_LABEL). Delbar precis som valtyp/område — default
+  // ('distrikt') utelämnas ur URL:en, bara ?farg=grupp syns.
+  const [colorMode, setColorMode] = useState<ColorMode>(() => readViewFromUrl().colorMode)
   // Byt valtyp → nollställ området till den nya valtypens nativa default (ett
   // kommun-val kan inte visa "Riket" osv). Ett valt DISTRIKT behålls dock — samma
   // 8-siffriga kod gäller i alla tre valen, så man kan jämföra distriktets RD/RF/KF.
@@ -193,8 +205,8 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
   // Spegla vald vy i URL:en (delbar). replaceState → ingen historik-skräp; länken
   // pekar alltid på nuvarande valtyp + område.
   useEffect(() => {
-    window.history.replaceState(null, '', window.location.pathname + viewToSearch(valtyp, selectedArea) + window.location.hash)
-  }, [valtyp, selectedArea])
+    window.history.replaceState(null, '', window.location.pathname + viewToSearch(valtyp, selectedArea, colorMode) + window.location.hash)
+  }, [valtyp, selectedArea, colorMode])
   const [revision, setRevision] = useState(0)
   const [snapshotVersion, setSnapshotVersion] = useState(0)
   const [kommuner, setKommuner] = useState<NamedCode[]>([])
@@ -924,6 +936,8 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     setValtyp,
     selectedArea,
     setSelectedArea,
+    colorMode,
+    setColorMode,
     storesRef,
     partyRef,
     metaRef,
