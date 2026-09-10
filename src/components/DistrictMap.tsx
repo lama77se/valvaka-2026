@@ -11,8 +11,8 @@ import {
   SWEDEN_BOUNDS,
   VALKRETS_RD_BOUNDARIES_URL,
 } from '@/lib/geometry'
-import { VALTYPER, VALTYP_LABEL, slutligTag, type ColorMode, type DistrictOutcome, type Valtyp } from '@/lib/results'
-import { SPARR, applyComparison, buildRows, collapseForDisplay, districtsInArea } from '@/lib/aggregate'
+import { GROUP_LEVEL_LABEL, VALTYPER, VALTYP_LABEL, slutligTag, type ColorMode, type DistrictOutcome, type Valtyp } from '@/lib/results'
+import { SPARR, applyComparison, buildRows, collapseForDisplay, districtsInArea, type Level } from '@/lib/aggregate'
 import { ancestorsOf } from '@/lib/hierarchy'
 import { defaultAreaFor, useResults } from '@/components/ResultsProvider'
 import { ValtypSelector } from '@/components/ValtypSelector'
@@ -33,6 +33,9 @@ const GROUP_BOUNDARIES_URL: Record<Valtyp, string> = {
   RF: REGION_BOUNDARIES_URL,
   KF: KOMMUN_BOUNDARIES_URL,
 }
+// Samma "en nivå under riket" som ovan, men som en aggregat-Level (för
+// applyComparison/districtsInArea) — RD: valkrets, RF: region, KF: kommun.
+const GROUP_LEVEL: Record<Valtyp, Level> = { RD: 'valkrets', RF: 'region', KF: 'kommun' }
 
 // Tom bakgrundsstil utan extern basemap: inga API-nycklar, inga externa tiles.
 const BLANK_STYLE: StyleSpecification = {
@@ -43,7 +46,9 @@ const BLANK_STYLE: StyleSpecification = {
   ],
 }
 
-type HoverInfo = { kod: string; namn: string; kommun: string; lan: string }
+// riksdagsvalkrets/region kompletterar kommun (redan fanns) — de tre grupp-namnen
+// (RD/RF/KF) som hoverBody väljer mellan i kartfärgläget "grupp" (se GROUP_LEVEL_LABEL).
+type HoverInfo = { kod: string; namn: string; kommun: string; lan: string; riksdagsvalkrets: string; region: string }
 
 // variant='mobile' → kartan renderas i en flik: den interna valtyp-väljaren, HUD:en och
 // testdata-bannern släcks (den persistenta mobil-chromen äger dem), och `active` styr när
@@ -62,6 +67,7 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
     metaRef,
     allCodesRef,
     groupsRef,
+    comparisonRef,
     totalByValtyp,
     subscribeChanges,
     snapshotVersion,
@@ -160,25 +166,56 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
   // Samma byggstenar som panelen (buildRows → applyComparison → collapseForDisplay). 2022 per
   // distrikt lat-laddas per kommun (ensureDistrictWinners2022, effekt nedan) → revision-bump
   // fyller i deltat. Saknas 2022 för distriktet → has2022=false → note "ej jämförbart".
+  // Kartfärgläget "grupp": distrikten som delar det hovrade/tappade distriktets grupp
+  // (RD valkrets via areaIndexRef, RF/RF-prefix via groupsRef — samma index som
+  // computeGroupWinners i map-mount-effekten) resp. gruppens EGEN 2022-jämförelsekod.
+  // 'grupp' → hela ARTIKELN visar gruppens resultat, inte bara det klickade distriktet.
+  const groupDistrictsFor = (vd: string): string[] => {
+    if (valtyp === 'RD') {
+      const vk = areaIndexRef.current?.RD.districtToVk.get(vd)
+      return (vk && areaIndexRef.current?.RD.vkToDistricts.get(vk)) || [vd]
+    }
+    const key = valtyp === 'RF' ? vd.slice(0, 2) : vd.slice(0, 4)
+    const map = valtyp === 'RF' ? groupsRef.current?.byLan : groupsRef.current?.byKommun
+    return map?.get(key) ?? [vd]
+  }
+  const groupAreaCodeFor = (vd: string): string | null =>
+    valtyp === 'RD' ? (areaIndexRef.current?.RD.districtToVk.get(vd) ?? null)
+      : valtyp === 'RF' ? vd.slice(0, 2)
+        : vd.slice(0, 4)
+
   const hoverRows = useMemo(() => {
     if (!hover) return null
-    const votes = storesRef.current[valtyp].aggregate([hover.kod])
+    const grouped = colorMode === 'grupp'
+    const codes = grouped ? groupDistrictsFor(hover.kod) : [hover.kod]
+    const votes = storesRef.current[valtyp].aggregate(codes)
     const area = buildRows(votes, partyRef.current, SPARR[valtyp])
-    const a2022 = districtAndel2022Ref.current?.get(hover.kod)
-    const leaf = a2022 && Object.keys(a2022).length ? { andel: a2022, mandat: {} as Record<string, number> } : null
-    const withCmp = applyComparison(area, valtyp, 'distrikt', hover.kod, null, partyRef.current, leaf)
+    // Grupp: samma 2022-jämförelse som region-/kommun-/valkrets-panelerna redan
+    // använder (comparisonFor täcker RD-valkrets, RF-region, KF-kommun — se
+    // aggregate.ts). Distrikt: den lat-laddade per-distrikt-facit-raden (oförändrat).
+    const withCmp = grouped
+      ? applyComparison(area, valtyp, GROUP_LEVEL[valtyp], groupAreaCodeFor(hover.kod), comparisonRef.current, partyRef.current)
+      : applyComparison(
+          area, valtyp, 'distrikt', hover.kod, null, partyRef.current,
+          (() => {
+            const a2022 = districtAndel2022Ref.current?.get(hover.kod)
+            return a2022 && Object.keys(a2022).length ? { andel: a2022, mandat: {} as Record<string, number> } : null
+          })(),
+        )
     return {
       display: collapseForDisplay(withCmp),
       giltiga: withCmp.giltiga,
       has2022: withCmp.rows.some((r) => r.andel2022 != null),
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hover, valtyp, revision])
+  }, [hover, valtyp, revision, colorMode])
 
   // Lat-ladda 2022-siffrorna för det hovrade distriktets kommun (deduppat i providern).
+  // Bara distrikt-läget behöver detta — gruppläget använder redan-laddad comparisonRef
+  // (statisk fil, samma som region-/kommun-panelerna) synkront i hoverRows ovan.
   useEffect(() => {
-    if (hover?.kod) ensureDistrictWinners2022(valtyp, hover.kod.slice(0, 4))
-  }, [hover?.kod, valtyp, ensureDistrictWinners2022])
+    if (hover?.kod && colorMode === 'distrikt') ensureDistrictWinners2022(valtyp, hover.kod.slice(0, 4))
+  }, [hover?.kod, valtyp, colorMode, ensureDistrictWinners2022])
 
   // Mobil-fliken döljs med `hidden` (display:none) när man är på en annan flik. MapLibre
   // mäter då containern till 0 → måste resiza:s när fliken blir synlig igen. På desktop är
@@ -440,6 +477,8 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
             namn: p.Valdistriktsnamn ?? '',
             kommun: p.Kommun ?? '',
             lan: p['Län'] ?? '',
+            riksdagsvalkrets: p['Riksdagsvalkrets'] ?? '',
+            region: p['Region'] ?? '',
           })
         })
         map.on('mouseleave', 'district-fill', () => {
@@ -460,7 +499,14 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
         setSelectedArea({ level: 'distrikt', code: String(f.id) })
         if (variantRef.current === 'mobile') {
           const p = f.properties ?? {}
-          setHover({ kod: String(f.id), namn: p.Valdistriktsnamn ?? '', kommun: p.Kommun ?? '', lan: p['Län'] ?? '' })
+          setHover({
+            kod: String(f.id),
+            namn: p.Valdistriktsnamn ?? '',
+            kommun: p.Kommun ?? '',
+            lan: p['Län'] ?? '',
+            riksdagsvalkrets: p['Riksdagsvalkrets'] ?? '',
+            region: p['Region'] ?? '',
+          })
         }
       })
     })
@@ -638,13 +684,21 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
 
   // Distriktets mini-resultat (namn + hierarki + andel/±2022) — delas av desktop-hover-rutan
   // och mobilens tapp-sheet så det bara finns EN presentation av samma hoverRows.
+  // Kartfärgläget "grupp": rubriken/tabellen ska visa GRUPPENS namn/resultat, inte
+  // det enskilda klickade distriktets — annars läser man "Högadal" som rubrik ovanför
+  // en tabell som egentligen summerar hela valkretsen (missvisande).
+  const groupName = (h: HoverInfo): string =>
+    valtyp === 'RD' ? h.riksdagsvalkrets : valtyp === 'RF' ? h.region : h.kommun
+
   const hoverBody = () =>
     hover && (
       <>
         <div className="flex items-center gap-2">
-          <div className="min-w-0 flex-1 truncate font-semibold">{hover.namn || '—'}</div>
+          <div className="min-w-0 flex-1 truncate font-semibold">
+            {(colorMode === 'grupp' ? groupName(hover) : hover.namn) || '—'}
+          </div>
           <span className="shrink-0 rounded border border-sky-500/40 bg-sky-500/10 px-1.5 py-0.5 text-[11px] font-semibold text-sky-200">
-            {VALTYP_LABEL[valtyp]}
+            {colorMode === 'grupp' ? `${VALTYP_LABEL[valtyp]} · ${GROUP_LEVEL_LABEL[valtyp]}` : VALTYP_LABEL[valtyp]}
           </span>
         </div>
         <div className="text-slate-400">{hierarchyLabel || hover.kommun}</div>
