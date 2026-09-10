@@ -701,7 +701,12 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
             {colorMode === 'grupp' ? `${VALTYP_LABEL[valtyp]} · ${GROUP_LEVEL_LABEL[valtyp]}` : VALTYP_LABEL[valtyp]}
           </span>
         </div>
-        <div className="text-slate-400">{hierarchyLabel || hover.kommun}</div>
+        {/* Kartfärgläget "grupp": ancestry-raden ("Norrbottens län · Arvidsjaur") är
+            det HOVRADE DISTRIKTETS kedja, inte gruppens — visar den ändå läser man
+            lätt in att resultatet gäller just "Arvidsjaur", fast tabellen summerar
+            hela valkretsen (rubriken ovan). Släck raden i grupp-läget i stället för
+            att visa en missvisande underrubrik. */}
+        {colorMode !== 'grupp' && <div className="text-slate-400">{hierarchyLabel || hover.kommun}</div>}
         {hoverRows && hoverRows.giltiga > 0 ? (
           <div className="mt-1.5 text-xs">
             <div className="mb-0.5 flex items-center text-[10px] uppercase tracking-wide text-slate-500">
