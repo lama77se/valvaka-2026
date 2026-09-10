@@ -228,6 +228,18 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
     else setHover(null) // lämnar Karta-fliken → stäng ev. öppen tapp-sheet
   }, [active])
 
+  // Mobil: tapp-sheeten (hover-state) är HELT separat från selectedArea (ResultsProvider)
+  // — "Hela Sverige"-knappen (MobileChrome) och andra externa återställningar till
+  // valtypens toppnivå (t.ex. valtyp-byte) rör bara selectedArea, aldrig hover. Utan
+  // detta hängde sheeten kvar med ett gammalt distrikts/gruppens resultat trots att
+  // kartan redan zoomat ut och deselectat — stäng den när urvalet går tillbaka till
+  // toppnivån (samma atDefault-check som "Hela Sverige"-knappens egen synlighet).
+  useEffect(() => {
+    if (variant !== 'mobile' || !hover) return
+    const def = defaultAreaFor(valtyp)
+    if (selectedArea.level === def.level && selectedArea.code === def.code) setHover(null)
+  }, [selectedArea, valtyp, variant, hover])
+
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
 
