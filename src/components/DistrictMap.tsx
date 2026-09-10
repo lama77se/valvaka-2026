@@ -297,6 +297,15 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
       const key = vt === 'RF' ? vd.slice(0, 2) : vd.slice(0, 4)
       return groupDistrictMapFor(vt).get(key) ?? [vd]
     }
+    // vd:s gruppKOD (aktiv valtyp) — används av klick-hanteraren i "grupp"-läget så
+    // ett klick väljer HELA gruppen (valkrets/region/kommun), inte bara det klickade
+    // enskilda distriktet (annars zoomar/visar panelen fel område, se click-handlern
+    // nedan). Samma O(1)-uppslag som groupDistrictsFor.
+    const groupAreaCodeFor = (vd: string): string | null => {
+      const vt = activeValtypRef.current
+      if (vt === 'RD') return areaIndexRef.current.RD.districtToVk.get(vd) ?? null
+      return vt === 'RF' ? vd.slice(0, 2) : vd.slice(0, 4)
+    }
 
     // --- Applicera ett distrikts resultat FÖR DEN AKTIVA VALTYPEN --------------
     const applyDistrict = (vd: string) => {
@@ -517,11 +526,20 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
       map.on('click', 'district-fill', (e) => {
         const f = e.features?.[0]
         if (!f) return
-        setSelectedArea({ level: 'distrikt', code: String(f.id) })
+        const id = String(f.id)
+        // "grupp"-läget: klick väljer HELA gruppen (valkrets/region/kommun) — annars
+        // zoomar fokuseffekten (körs på selectedArea.level==='distrikt' → hela
+        // KOMMUNEN) och panelen visar fel/för snävt område jämfört med vad kartan
+        // faktiskt highlightar/färglägger vid hovring (se groupDistrictsFor ovan).
+        setSelectedArea(
+          colorModeRef.current === 'grupp'
+            ? { level: GROUP_LEVEL[activeValtypRef.current], code: groupAreaCodeFor(id) }
+            : { level: 'distrikt', code: id },
+        )
         if (variantRef.current === 'mobile') {
           const p = f.properties ?? {}
           setHover({
-            kod: String(f.id),
+            kod: id,
             namn: p.Valdistriktsnamn ?? '',
             kommun: p.Kommun ?? '',
             lan: p['Län'] ?? '',
