@@ -2,7 +2,7 @@
 // delad state (valtyp, valt område) kommer från <ResultsProvider>. Panelen räknar
 // om områdesaggregatet när `revision` bumpas (strypt Realtime) och renderar
 // <ResultTable>. Områdesväljaren styr delad `selectedArea` (kartklick → drilldown).
-import { Fragment, useEffect, useMemo } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { VALTYP_LABEL, slutligTag, type Valtyp } from '@/lib/results'
 import {
   SPARR,
@@ -291,7 +291,34 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
   }, [drill, valtyp, ensureDistrictWinners2022])
 
   const crumbs = ancestorsOf(valtyp, selectedArea, areaIndex)
-  const drillItems = [...drill.items].sort((a, b) => nameOf(a).localeCompare(nameOf(b), 'sv'))
+
+  // "Bryt ner"-tabellens sortering: default alfabetisk (områdesnamn). Klick på en
+  // partikolumn (V/S/MP/…) cyklar samma kolumn högst→lägst → lägst→högst → tillbaka
+  // till alfabetisk — samma tre-klicksmönster oavsett nivå (samma tabellkod driver
+  // valkretsar/regioner/kommuner/distrikt, se JSX:en nedan). Nollställs vid ny
+  // valtyp/område (annars kan en gammal kolumns sortering hänga kvar i fel tabell).
+  const [sortCol, setSortCol] = useState<{ fork: string; dir: 'desc' | 'asc' } | null>(null)
+  useEffect(() => setSortCol(null), [valtyp, selectedArea])
+  const cycleSortCol = (fork: string) => {
+    setSortCol((prev) => {
+      if (!prev || prev.fork !== fork) return { fork, dir: 'desc' }
+      if (prev.dir === 'desc') return { fork, dir: 'asc' }
+      return null // tredje klicket på SAMMA kolumn → tillbaka till alfabetisk
+    })
+  }
+  const drillItems = [...drill.items].sort((a, b) => {
+    if (sortCol) {
+      // Saknar raden ett 2026-tal för kolumnen (orapporterat/inget parti) → sist,
+      // oavsett riktning (annars hoppar orapporterade rader överst i stigande läge).
+      const av = a.live ? a.a26[sortCol.fork] : undefined
+      const bv = b.live ? b.a26[sortCol.fork] : undefined
+      if (av == null && bv == null) return nameOf(a).localeCompare(nameOf(b), 'sv')
+      if (av == null) return 1
+      if (bv == null) return -1
+      if (av !== bv) return sortCol.dir === 'desc' ? bv - av : av - bv
+    }
+    return nameOf(a).localeCompare(nameOf(b), 'sv')
+  })
   const uppRow = drill.uppsamlingRow // sena röster för organet → egen rad sist i nedbrytningen
   const levels = LEVELS[valtyp]
   const selectValue = isPrompt
@@ -466,11 +493,29 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
                   <thead>
                     <tr className="text-slate-400">
                       <th className="pb-1 pr-1 text-left font-medium">Område</th>
-                      {drill.cols.map((c) => (
-                        <th key={c.fork} className="px-0.5 pb-1 text-center font-bold" style={{ color: onDark(c.farg) }} title={c.fork}>
-                          {c.fork}
-                        </th>
-                      ))}
+                      {drill.cols.map((c) => {
+                        const active = sortCol?.fork === c.fork
+                        return (
+                          <th key={c.fork} className="px-0.5 pb-1 text-center font-bold">
+                            <button
+                              type="button"
+                              onClick={() => cycleSortCol(c.fork)}
+                              style={{ color: onDark(c.farg) }}
+                              title={
+                                active
+                                  ? sortCol!.dir === 'desc'
+                                    ? `Sorterat på ${c.fork}, högst→lägst — tryck för lägst→högst`
+                                    : `Sorterat på ${c.fork}, lägst→högst — tryck för alfabetisk`
+                                  : `Sortera på ${c.fork} (2026), högst→lägst`
+                              }
+                              className={`inline-flex items-center gap-0.5 rounded px-0.5 hover:bg-slate-800/70 ${active ? 'underline decoration-dotted underline-offset-2' : ''}`}
+                            >
+                              {c.fork}
+                              {active && <span className="text-[9px] leading-none">{sortCol!.dir === 'desc' ? '▼' : '▲'}</span>}
+                            </button>
+                          </th>
+                        )
+                      })}
                       <th className="pb-1 pl-1 text-right font-medium">Räkn.</th>
                     </tr>
                   </thead>
