@@ -7,7 +7,33 @@
 //   • kompakt rapporteringsstatus (X av Y · %) + live-indikator.
 import { useResults, defaultAreaFor } from '@/components/ResultsProvider'
 import { ValtypSelector } from '@/components/ValtypSelector'
-import { VALTYP_LABEL } from '@/lib/results'
+import { GROUP_LEVEL_LABEL, VALTYP_LABEL } from '@/lib/results'
+
+// Kartfärgläget (se ColorMode/ValtypSelector showColorMode) på mobil: samma två lägen
+// som desktop-ramen, men ingen plats för två extra knappar i den smala fill-raden →
+// en enda liten ikon-knapp som VÄXLAR läge vid tryck (bara två lägen finns, så en
+// toggle räcker — ingen meny behövs). Highlightas när "grupp" är aktivt.
+function ColorModeToggle() {
+  const { valtyp, colorMode, setColorMode } = useResults()
+  const grouped = colorMode === 'grupp'
+  return (
+    <button
+      type="button"
+      onClick={() => setColorMode(grouped ? 'distrikt' : 'grupp')}
+      aria-label={grouped ? `Färglagd per ${GROUP_LEVEL_LABEL[valtyp]} — tryck för valdistrikt` : `Färglagd per valdistrikt — tryck för ${GROUP_LEVEL_LABEL[valtyp]}`}
+      title={grouped ? `Kartan är färglagd per ${GROUP_LEVEL_LABEL[valtyp].toLowerCase()} — tryck för valdistrikt` : `Kartan är färglagd per valdistrikt — tryck för ${GROUP_LEVEL_LABEL[valtyp].toLowerCase()}`}
+      className={`flex shrink-0 items-center justify-center rounded-md border p-2 ${
+        grouped ? 'border-sky-500 bg-sky-500/20 text-sky-300' : 'border-slate-700 bg-slate-900/90 text-slate-300'
+      }`}
+    >
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="m12 2 8.5 5-8.5 5-8.5-5L12 2Z" />
+        <path d="m3.5 12 8.5 5 8.5-5" />
+        <path d="m3.5 17 8.5 5 8.5-5" />
+      </svg>
+    </button>
+  )
+}
 
 function TestdataBanner() {
   return (
@@ -83,8 +109,9 @@ export function MobileChrome({ onOpenArea }: { onOpenArea: () => void }) {
       style={{ paddingTop: 'env(safe-area-inset-top)' }}
     >
       {dataset?.test && <TestdataBanner />}
-      <div className="px-3 pt-2">
+      <div className="flex items-center gap-1.5 px-3 pt-2">
         <ValtypSelector fill />
+        <ColorModeToggle />
       </div>
       <div className="flex items-center gap-2 px-3 py-2">
         <button
