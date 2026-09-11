@@ -820,8 +820,7 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
               </span>
             ) : (
               <span>
-                <span className="font-bold">Väntar på valnatten</span> — inga skarpa resultat inrapporterade än
-                <span className="ml-1 font-normal text-amber-200/70">(källan är redan bytt till de skarpa filerna)</span>
+                <span className="font-bold">Väntar på valnatten</span> — inga resultat inrapporterade än
               </span>
             )}
           </div>
