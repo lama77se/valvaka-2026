@@ -169,3 +169,51 @@ export function computeAssembly(
     overhangParties,
   }
 }
+
+// Placerar UTJÄMNINGSMANDAT (steg D:s levelingByParty) på SPECIFIKA valkretsar — den
+// jämförelsetal-baserade placeringen (Vallag/val.se "Så fördelas mandaten") som
+// computeAssembly medvetet INTE gör (den ger bara VILKET parti, inte VILKEN valkrets).
+//
+// Metod: samma jämkade uddatalsmetod, körd EN gång till per parti — men nu ETT
+// jämförelsetal PER VALKRETS i stället för ett nationellt, som fortsätter räkningen
+// från de mandat partiet REDAN har där (fasta + redan tilldelade utjämningsmandat i
+// denna omgång). Ett i taget: partiets nästa utjämningsmandat går till valkretsen med
+// högst jämförelsetal just nu, tills partiets hela `levelingByParty`-andel är placerad.
+//
+// ⚠️ EN verifierad specialregel (12 sep, se scripts/verify-mandate-leveling.ts): i en
+// valkrets där partiet har NOLL fasta mandat används INTE den jämkade förstadivisorn
+// (1,2) för dess första möjliga mandat där — jämförelsetalet är då bara röstetalet
+// (divisor 1), sedan vanlig 3, 5, 7 … om fler mandat hamnar där. Utan denna specialregel
+// (dvs. samma 1,2:a som annars) gav 10 av 232 kontrollerade (valkrets, parti)-par fel
+// mandat mot Valmyndighetens 2022-facit; MED den matchar samtliga 232 exakt.
+export function placeLevelingSeats(
+  votesByConstituency: ConstituencyVotes,
+  fixedByConstituencyParty: Record<string, Record<string, number>>,
+  levelingByParty: Record<string, number>,
+): Record<string, Record<string, number>> {
+  const constituencies = Object.keys(votesByConstituency)
+  const placed: Record<string, Record<string, number>> = Object.fromEntries(constituencies.map((vk) => [vk, {}]))
+  for (const [party, remaining0] of Object.entries(levelingByParty)) {
+    let remaining = remaining0
+    if (remaining <= 0) continue
+    const current: Record<string, number> = {}
+    for (const vk of constituencies) current[vk] = fixedByConstituencyParty[vk]?.[party] ?? 0
+    while (remaining > 0) {
+      let best: string | null = null
+      let bestQ = -Infinity
+      for (const vk of constituencies) {
+        const votes = votesByConstituency[vk][party] ?? 0
+        if (votes === 0) continue
+        const n = current[vk]
+        const divisor = n === 0 ? 1 : 2 * n + 1 // OBS: 1, inte firstDivisor — se kommentar ovan
+        const q = votes / divisor
+        if (q > bestQ || (q === bestQ && best !== null && vk < best)) { bestQ = q; best = vk }
+      }
+      if (best === null) break // inga fler valkretsar med röster på partiet kvar (bör inte hända i praktiken)
+      current[best]++
+      placed[best][party] = (placed[best][party] ?? 0) + 1
+      remaining--
+    }
+  }
+  return placed
+}

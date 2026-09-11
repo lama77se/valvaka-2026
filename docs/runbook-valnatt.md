@@ -177,12 +177,16 @@ select cron.alter_job((select jobid from cron.job where jobname='ingest-result-g
 - Testdata-bannern släcks.
 - Kartan börjar fyllas, rapporteringsgrad-HUD:en tickar, statustaggen = **Preliminärt**.
 - Avgångstavlorna visar inrapporterade distrikt med val.se:s klockslag.
-- **Nytt (PR #129):** på **valkretsnivå** — riksdagens 29, samt de 11/20 delade regionerna och
-  17/290 delade kommunerna (t.ex. Blekinge · Karlskronakretsen, Täby · Täby Västra) — visas en
-  amber "Preliminär fördelning"-ruta ovanför tabellen och Mandat-kolumnen får en `*`. **Detta är
-  förväntat, inte ett fel:** mandat är egentligen riks-/region-/kommuntäckande (utjämningsmandaten
-  placeras bara på den nivån), så valkretsvyn visar bara de fasta valkretsmandaten som en
-  "minst"-siffra. Riks-/region-/kommunnivåns egen mandattotal påverkas inte.
+- **RD:s 29 valkretsar (PR #129, uppgraderad 12 sep):** visar numera den RIKTIGA slutgiltiga
+  mandatfördelningen (fasta + geografiskt placerad utjämning) — INGEN amber ruta, ingen
+  "minst"-markering. Verifierad exakt mot 2022-facit (`npm run verify:mandate-leveling`,
+  232/232 (valkrets,parti)-par). Ser talen konstiga ut under natten är det sannolikt bara
+  ofärdig räkning (samma "preliminärt tills färdigräknat" som riket redan har), inte ett fel.
+- **RF/KF:s 11/17 delade regioner/kommuner (t.ex. Blekinge · Karlskronakretsen, Täby ·
+  Täby Västra):** visar fortfarande bara en amber "Preliminär fördelning"-ruta + `*`-märkt
+  Mandat-kolumn — bara de FASTA valkretsmandaten, en "minst"-siffra. **Detta är förväntat,
+  inte ett fel:** utjämningens geografiska placering är inte byggd för RF/KF (till skillnad
+  från RD sedan 12 sep). Riks-/region-/kommunnivåns egen mandattotal påverkas inte i något fall.
 - **Snapshot-blobbarna är färska** (nya flikar seedar från dem — mount-herden går mot CDN, inte
   Postgres): smoke-POST-svaret har `"snapshots":{"RD":"… kB på … ms",…}` efter körningar som
   ändrade något, och
@@ -219,21 +223,23 @@ select cron.alter_job((select jobid from cron.job where jobname='ingest-result-g
   fastnar på samma manifest-md5 flera varv i rad.
 - [ ] Edge-loggen (Supabase Dashboard → Functions → `ingest-result` → Logs) — inga upprepade
   `WORKER_RESOURCE_LIMIT`/krasch-loop-rader (se *Vanliga fel* nedan).
-- [ ] **Nytt (11 sep) — mandat-avstämning mot Valmyndighetens EGEN mandatfördelningsfil:**
+- [ ] **Mandat-avstämning mot Valmyndighetens EGEN mandatfördelningsfil (11–12 sep):**
   Valmyndigheten publicerar en separat `mandatfordelning`-JSON i SAMMA zip vi redan hämtar
   för röster (fanns hela tiden, hittills oanvänd — se docs/arkitektur.md §5b). Kör:
   ```bash
   node --env-file=.env.local scripts/verify-mandatfordelning-live.ts
   ```
   Jämför VÅR beräkning (samma aggregate.ts/mandate.ts-kod som klientens siffror) mot filens
-  officiella mandat — organ-totalen OCH (nytt för PR #129) fasta valkretsmandat i de 29
-  RD-valkretsarna + 11 delade RF-regionerna + 17 delade KF-kommunerna. Läser BARA (aldrig DB-
+  officiella mandat — organ-totalen, RD:s FULLA valkretsmandat (fasta+placerad utjämning,
+  jämfört mot filens `antalMandat`), och RF/KF:s fasta valkretsmandat i de 11/17 delade
+  regionerna/kommunerna (jämfört mot filens `antalFastaMandat`). Läser BARA (aldrig DB-
   skrivning), säkert att köra när som helst. Grönt (`exit 0`) = beräkningen bekräftad mot
   Valmyndighetens egna siffror, inte bara mot 2022-facit. Se skriptets header för flaggor
   (`--status s` för slutliga filer, `--valtyp RF`, `--limit-kf 290` för alla kommuner).
-  ⚠️ Förväntat, INTE ett fel: skriptet jämför bara FASTA valkretsmandat på valkretsnivå — filens
-  egen utjämningsmandat-placering per valkrets (som vi medvetet inte räknar ut, se PR #129)
-  loggas bara informativt (`↳ filens FULLA total här: …`), aldrig som en ❌.
+  ⚠️ Förväntat, INTE ett fel för RF/KF: filens egen utjämningsmandat-placering per valkrets
+  (som vi medvetet inte räknar ut för RF/KF) loggas bara informativt
+  (`↳ filens FULLA total här: …`), aldrig som en ❌. RD har inget sådant undantag längre —
+  där jämförs mot filens FULLA tal och ska matcha exakt.
 
 *Frontend (manuellt i browsern, valvaka.tech):*
 - [ ] Testdata-bannern är BORTA. Statustaggen (alla tre valtyper) = **Preliminärt**,
@@ -243,10 +249,11 @@ select cron.alter_job((select jobid from cron.job where jobname='ingest-result-g
   det, stämmer siffrorna mot valresultat.svt.se/val.se för samma distrikt (en stickprovskoll räcker).
 - [ ] Riksdag → Riket, Region → en region, Kommun → en kommun: MandatBars/tabellen ser normal ut
   (inga NaN, inga negativa tal, majoritetslinjen vid rätt tal).
-- [ ] **Nytt denna omgång (PR #129) — kolla att den INTE ser trasig ut på riktiga röster:** öppna
-  en RD-valkrets, en delad region (t.ex. Blekinge · Karlskronakretsen) och en delad kommun (t.ex.
-  Stockholm eller Täby → dess valkretsar). Amber "Preliminär fördelning"-rutan ska visa en riktig
-  siffra (inte "?"), och länken tillbaka till Riket/regionen/kommunen ska funka.
+- [ ] **Valkrets-mandat på riktiga röster:** öppna en RD-valkrets (t.ex. Kalmar län) — ska visa
+  den fulla mandatsiffran, INGEN amber ruta. Öppna en delad region (t.ex. Blekinge ·
+  Karlskronakretsen) och en delad kommun (t.ex. Stockholm eller Täby → dess valkretsar) — de
+  ska fortfarande visa den amber "Preliminär fördelning"-rutan med en riktig siffra (inte "?"),
+  och länken tillbaka till Riket/regionen/kommunen ska funka.
 - [ ] Kartfärgläget "grupp" (valkrets/region/kommun-togglen bredvid valtyp-väljaren): gränserna
   ritas rent på RIKTIGA röster — inga vita prickar/linjer i mitten av polygoner (fixat i PR #120
   på genrep-data, inte tidigare verifierat på skarpt).
@@ -330,7 +337,8 @@ gången; edge-budgeten är 25 s (< 30 s-kadensen). Fastnar leasen (bör inte hä
   fortfarande på `genrep` (lockstep-switchen bytte bara edge-filen).
 - **Bannern släcks inte** → ingen skarp fil har flödat än (val2026 fortfarande 404/tom) eller
   `dataset_meta` inte uppdaterats — kolla att cron:en hittar ändrade filer.
-- **Mandat-kolumnen har en amber `*` och "Mandat"-summan verkar för låg på valkretsnivå** → inte
-  ett fel, se N4 ovan (PR #129) — det är medvetet bara de fasta valkretsmandaten, inte den slutliga
-  riks-/region-/kommuntotalen. Syns bara på valkretsnivå i riksdagen och i de 11/17 delade
-  regionerna/kommunerna; riket/region/kommun visar som vanligt hela mandattotalen.
+- **Mandat-kolumnen har en amber `*` på valkretsnivå (RF/KF)** → inte ett fel, se N4 ovan —
+  det är medvetet bara de fasta valkretsmandaten för de 11/17 delade regionerna/kommunerna,
+  inte den slutliga region-/kommuntotalen. RD:s 29 valkretsar har INGEN sådan `*` längre
+  (visar den riktiga slutgiltiga siffran sedan 12 sep) — ser du en amber ruta/`*` på en
+  RD-valkrets är NÅGOT fel, kolla att `main` faktiskt deployat den senaste ändringen.
