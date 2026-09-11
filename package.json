@@ -25,6 +25,7 @@
     "verify:uppsamling": "tsx scripts/verify-uppsamling.ts",
     "verify:overhang": "tsx scripts/verify-overhang.ts",
     "verify:mandate-leveling": "tsx scripts/verify-mandate-leveling.ts",
+    "verify:mandate-leveling-rfkf": "tsx scripts/verify-mandate-leveling-rfkf.ts",
     "verify:mandatfordelning-live": "node --env-file=.env.local --import tsx scripts/verify-mandatfordelning-live.ts",
     "ingest:slutlig": "node --env-file=.env.local --max-old-space-size=4096 scripts/ingest-slutlig.mjs",
     "simulate:valnatt": "node --env-file=.env.local scripts/simulate-valnatt.mjs",

@@ -40,22 +40,21 @@ valnatten, så kartan visar "inga 2026-röster än" tills dess.
 - **Mandatberäkning** med jämkade uddatalsmetoden, verifierad mot 2022-facit:
   **riksdag 349 exakt, region 20/20, kommun 289/290** (de två avvikelserna är lottning
   resp. ändrad fullmäktigestorlek, inte metodfel).
-- **Valkrets-mandatfördelning för riksdagen** — 349 riksdagsmandat = 310 fasta valkrets-
-  mandat + 39 utjämningsmandat, de senare placerade geografiskt med ett jämförelsetal per
-  valkrets (samma jämkade uddatalsmetod, fortsatt per valkrets i stället för nationellt).
-  På **RD:s 29 valkretsar** visas den **riktiga slutgiltiga fördelningen** — fasta OCH
-  geografiskt placerad utjämning — inte en preliminär "minst"-siffra. Verifierad EXAKT mot
-  Valmyndighetens 2022-facit på valkretsnivå (232 av 232 (valkrets, parti)-par,
-  `scripts/verify-mandate-leveling.ts`).
-- **Preliminär valkrets-mandatfördelning för region/kommun** — samma princip gäller de
-  **11 av 20** delade regionerna och **17 av 290** delade kommunerna, men utjämningens
-  geografiska placering är där INTE byggd (stretch goal). Visar i stället en tydligt märkt
-  "minst"-siffra: bara de FASTA valkretsmandaten (Valmyndighetens beslutsfil,
-  `fasta-valkretsmandat-2026.xlsx`) fördelade live på inkomna röster, med en amber
-  varningsruta + "*"-märkt Mandat-kolumn. Riks-/region-/kommunnivåns egen mandattotal
-  (ovan) är i båda fallen oförändrad och opåverkad. Odelade regioner/kommuner (t.ex.
-  Region Gävleborg = en enda valkrets) har ingen egen valkrets-nivå och visar därför
-  ingen sådan ruta/siffra.
+- **Valkrets-mandatfördelning — riksdag, region OCH kommun** — mandat är i grunden fasta
+  valkretsmandat + utjämningsmandat, de senare placerade geografiskt med ett jämförelsetal
+  per valkrets (samma jämkade uddatalsmetod, fortsatt per valkrets i stället för nationellt/
+  region-/kommunvitt). På **RD:s 29 valkretsar** samt de **11 av 20** delade regionerna och
+  **17 av 290** delade kommunerna visas den **riktiga slutgiltiga fördelningen** — fasta OCH
+  geografiskt placerad utjämning — inte en preliminär "minst"-siffra. Riks-/region-/
+  kommunnivåns egen mandattotal (ovan) är oförändrad och opåverkad i alla tre fallen.
+  Odelade regioner/kommuner (t.ex. Region Gävleborg = en enda valkrets) har ingen egen
+  valkrets-nivå och visar därför ingen sådan siffra.
+  Verifierad mot Valmyndighetens riktiga 2022-resultat: **RD 232/232 (valkrets,parti)-par
+  exakt** (`scripts/verify-mandate-leveling.ts`); **KF 100 % exakt (alla 17 delade
+  kommuner)**; **RF 9/11 regioner exakta**, 2 kvarvarande enstaka avvikelser (Kalmar,
+  Västra Götaland) som varken beror på tie-breaking (jämförelsetalen skiljer sig klart)
+  eller en identifierad bugg — 677/679 par totalt, 99,7 %
+  (`scripts/verify-mandate-leveling-rfkf.ts`, se filens header för detaljer).
 - **Reconciliation mot Valmyndighetens egen mandatfördelningsfil** — en separat,
   hittills oanvänd "mandatfordelning"-JSON i samma zip vi redan hämtar för röster,
   med Valmyndighetens EGET redan beräknade mandat (`scripts/verify-mandatfordelning-live.ts`,

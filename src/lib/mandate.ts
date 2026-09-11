@@ -84,11 +84,21 @@ function sumVotes(cv: ConstituencyVotes): PartyVotes {
 // config skiljer (platser, spärr, valkretsar, fasta mandat). För riksdag: spärr
 // 4 % riks ELLER 12 % i en valkrets. För region/kommun: ingen 12 %-regel → sätt
 // constituencyThreshold till Infinity så bara den församlingsvida spärren gäller.
+//
+// `extraVotes` (valfri): röster som INTE hör till någon specifik valkrets — uppsamlings-
+// röster (sena förtids-/utlandsröster) väger in i organets spärr/proportionella mål (steg
+// A/C, alltså kvalificering OCH `nationalTarget`/`levelingByParty`) precis som klientens
+// `computeMandate`/`uppsamlingForArea` redan gör för den VISADE organtotalen — men kan
+// aldrig tilldelas en valkrets, så steg B (fixedByConstituencyParty) rör dem inte.
+// Utelämnad (vanligaste fallet, RD-riket där uppsamling redan vägs in annorlunda) = NO-OP.
 export function computeAssembly(
   votesByConstituency: ConstituencyVotes,
   config: MandateConfig,
+  extraVotes?: PartyVotes,
 ): MandateResult {
-  const nationalVotes = sumVotes(votesByConstituency)
+  const geoVotes = sumVotes(votesByConstituency)
+  const nationalVotes = { ...geoVotes }
+  if (extraVotes) for (const [p, v] of Object.entries(extraVotes)) nationalVotes[p] = (nationalVotes[p] ?? 0) + v
   const nationalTotal = Object.values(nationalVotes).reduce((a, b) => a + b, 0)
 
   // Steg A — spärr: ≥4% i riket ELLER ≥12% i en valkrets.

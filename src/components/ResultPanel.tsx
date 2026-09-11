@@ -10,9 +10,9 @@ import {
   buildRows,
   collapseForDisplay,
   comparisonFor,
-  computeFixedRegionOrKommunValkretsMandate,
   computeMandate,
   computeRdValkretsMandate,
+  computeRegionOrKommunValkretsMandate,
   districtsInArea,
   mergeVotes,
   sparrFor,
@@ -48,6 +48,17 @@ const LEVELS: Record<Valtyp, ('riket' | 'valkrets' | 'region' | 'kommun')[]> = {
   KF: ['kommun'],
 }
 const PROMPT: Record<Valtyp, string> = { RD: '', RF: 'Välj region…', KF: 'Välj kommun…' }
+
+// Nivåer där mandat överhuvudtaget är ett meningsfullt tal (organets EGEN nivå + valkrets)
+// — OBEROENDE av om röster hunnit räknas än. RD:s "kommun" är bara en geografisk
+// nedbrytning (se LEVELS ovan), inte riksdagens organ-nivå, så den räknas INTE hit trots
+// att KF:s "kommun" gör det. val.se visar inte mandat under valkretsnivå heller (distrikt,
+// och för RD även kommun) — döljer Mandat-kolumnerna helt där i stället för tre "–"-kolumner.
+const MANDAT_LEVELS: Record<Valtyp, Level[]> = {
+  RD: ['riket', 'valkrets'],
+  RF: ['region', 'valkrets'],
+  KF: ['kommun', 'valkrets'],
+}
 
 // `compact` sätts av mobil-layouten: samma panel, men de mest breddkänsliga delarna
 // (blockrutorna i MandatBars) kortas ner så de ryms på en rad i halva mobilbredden.
@@ -115,6 +126,7 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
           : undefined
 
   const areaIndex = areaIndexRef.current[valtyp]
+  const showMandat = MANDAT_LEVELS[valtyp].includes(selectedArea.level)
 
   const areaName =
     selectedArea.level === 'riket'
@@ -137,35 +149,30 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
     const uppsamling = uppsamlingRef.current[valtyp]
     const votes = mergeVotes(store.aggregate(codes), uppsamlingForArea(valtyp, selectedArea.level, selectedArea.code, uppsamling))
     const mandate = computeMandate(valtyp, selectedArea.level, selectedArea.code, (c) => store.aggregate(c), groupsRef.current, uppsamling)
-    // RD, valkretsnivå: computeMandate ger null (mandat är annars riksvitt) — fyll i den
-    // RIKTIGA slutgiltiga fördelningen (fasta + geografiskt PLACERAD utjämning, se
-    // computeRdValkretsMandate/placeLevelingSeats i mandate.ts) — inte längre en "minst"-
-    // golvsiffra (12 sep). Samma "preliminärt tills färdigräknat"-status som riket redan
-    // har (statusTag nedan) gäller automatiskt även här, ingen extra markering behövs.
-    const rdValkretsMandate =
-      valtyp === 'RD' && selectedArea.level === 'valkrets' && selectedArea.code
-        ? computeRdValkretsMandate(selectedArea.code, areaIndexRef.current.RD.vkToDistricts, (c) => store.aggregate(c))
-        : null
-    // RF/KF, valkretsnivå (bara de 11/17 delade): computeMandate ger null där också, men
-    // HÄR fyller vi bara en PRELIMINÄR "minst"-siffra ur de fasta valkretsmandaten (se
-    // computeFixedRegionOrKommunValkretsMandate) — utjämningens geografiska placering är
-    // inte byggd för RF/KF (stretch goal, se PR-diskussion 12 sep). Tydligt märkt i UI:t.
-    const fixedRfKfValkretsMandate =
-      (valtyp === 'RF' || valtyp === 'KF') && selectedArea.level === 'valkrets' && selectedArea.code
-        ? computeFixedRegionOrKommunValkretsMandate(
-            valtyp,
-            valtyp === 'RF' ? selectedArea.code.slice(0, 2) : selectedArea.code.slice(0, 4),
-            selectedArea.code,
-            areaIndexRef.current[valtyp].vkToDistricts,
-            (c) => store.aggregate(c),
-            sparrFor(valtyp, 'valkrets', selectedArea.code),
-          )
-        : null
+    // Valkretsnivå (RD:s 29, samt RF/KF:s 11/17 delade organ): computeMandate ger null där
+    // (mandat är annars riks-/region-/kommunvitt) — fyll i den RIKTIGA slutgiltiga
+    // fördelningen i stället: fasta valkretsmandat PLUS utjämningsmandaten geografiskt
+    // PLACERADE (jämförelsetal per valkrets, se placeLevelingSeats i mandate.ts) — inte en
+    // "minst"-golvsiffra (12 sep, gäller nu alla tre valtyper). Samma "preliminärt tills
+    // färdigräknat"-status som riket/region/kommun redan har (statusTag nedan) gäller
+    // automatiskt även här, ingen extra markering behövs.
+    const valkretsMandate =
+      selectedArea.level !== 'valkrets' || !selectedArea.code
+        ? null
+        : valtyp === 'RD'
+          ? computeRdValkretsMandate(selectedArea.code, areaIndexRef.current.RD.vkToDistricts, (c) => store.aggregate(c))
+          : computeRegionOrKommunValkretsMandate(
+              valtyp,
+              valtyp === 'RF' ? selectedArea.code.slice(0, 2) : selectedArea.code.slice(0, 4),
+              selectedArea.code,
+              areaIndexRef.current[valtyp].vkToDistricts,
+              (c) => store.aggregate(c),
+              sparrFor(valtyp, 'valkrets', selectedArea.code),
+              uppsamling?.get(valtyp === 'RF' ? selectedArea.code.slice(0, 2) : selectedArea.code.slice(0, 4)),
+            )
     let areaResult = applyMandate(
       buildRows(votes, partyRef.current, sparrFor(valtyp, selectedArea.level, selectedArea.code)),
-      mandate
-        ?? (rdValkretsMandate && { seatsByParty: rdValkretsMandate.seatsByParty, totalMandat: rdValkretsMandate.totalSeats })
-        ?? (fixedRfKfValkretsMandate && { seatsByParty: fixedRfKfValkretsMandate.seatsByParty, totalMandat: fixedRfKfValkretsMandate.totalFixed }),
+      mandate ?? (valkretsMandate && { seatsByParty: valkretsMandate.seatsByParty, totalMandat: valkretsMandate.totalSeats }),
     )
     const districtLeaf =
       selectedArea.level === 'distrikt' && selectedArea.code
@@ -184,7 +191,6 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
       giltiga: areaResult.giltiga,
       totalMandat: areaResult.totalMandat,
       totalMandat2022: areaResult.totalMandat2022,
-      isFixedValkretsMandate: fixedRfKfValkretsMandate != null, // RD-valkrets är numera den RIKTIGA totalen, ingen banner där
       has2022,
       reported,
       total: codes.length,
@@ -469,52 +475,6 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
                 })}
               </nav>
             )}
-            {/* RF/KF, valkretsnivå (bara de 11/17 delade organen — odelade som Gävleborgs
-                regionfullmäktige har ingen egen valkrets-nivå alls, hierarchy.ts hoppar
-                över den, och view.isFixedValkretsMandate blir aldrig true där). Mandat är
-                i grunden REGION-/KOMMUNTÄCKANDE — utjämningsmandaten placeras via ett
-                jämförelsetal mellan den egna regionens/kommunens EGNA valkretsar, en
-                placering som INTE är byggd för RF/KF (till skillnad från RD sedan 12 sep,
-                se computeRdValkretsMandate/placeLevelingSeats i mandate.ts — RD-valkrets
-                visar därför den RIKTIGA totalen och går inte via denna gren alls). Visar
-                bara de fasta mandaten, tydligt märkt (amber, "*") så det aldrig läses som
-                en slutgiltig siffra. Oberoende av view.giltiga (visas ÄVEN innan några
-                röster kommit in) — annars ser "–"/tomt i tabellen ut som ett fel snarare
-                än ett medvetet val så fort röster börjar synas. */}
-            {view.isFixedValkretsMandate && selectedArea.code && (() => {
-              const parent =
-                valtyp === 'RF'
-                  ? {
-                      level: 'region' as const,
-                      code: selectedArea.code.slice(0, 2),
-                      name: regionName.get(selectedArea.code.slice(0, 2)) ?? selectedArea.code.slice(0, 2),
-                      total: SEAT_CONFIG_2026.RF[selectedArea.code.slice(0, 2)],
-                    }
-                  : {
-                      level: 'kommun' as const,
-                      code: selectedArea.code.slice(0, 4),
-                      name: kommunName.get(selectedArea.code.slice(0, 4)) ?? selectedArea.code.slice(0, 4),
-                      total: SEAT_CONFIG_2026.KF[selectedArea.code.slice(0, 4)]?.seats,
-                    }
-              const fixedCount = view.totalMandat
-              return (
-                <p className="mb-3 rounded border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-300">
-                  <span className="font-semibold">Preliminär fördelning:</span> Mandat nedan visar bara de{' '}
-                  {fixedCount ?? '?'} FASTA valkretsmandaten för {areaName}
-                  {parent.total ? ` (av ${parent.name}s ${parent.total})` : ''} — utjämningsmandaten avgörs bara på{' '}
-                  {valtyp === 'RF' ? 'regionnivå' : 'kommunnivå'}.
-                  Varje partis slutliga mandat i valkretsen blir alltså minst detta antal, se{' '}
-                  <button
-                    type="button"
-                    onClick={() => setSelectedArea({ level: parent.level, code: parent.code })}
-                    className="underline hover:text-amber-200"
-                  >
-                    {parent.name}
-                  </button>
-                  {parent.total ? ` för den fullständiga ${parent.total}-fördelningen.` : '.'}
-                </p>
-              )
-            })()}
             {valtyp === 'RD' && selectedArea.level !== 'riket' && selectedArea.level !== 'valkrets' && (
               <p className="mb-3 text-xs text-slate-500">
                 Riksdagsmandat räknas bara ut på riksnivå — se{' '}
@@ -529,7 +489,7 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
                 <MandatBars
                   shown={view.display.shown}
                   ovriga={view.display.ovriga}
-                  totalMandat={view.isFixedValkretsMandate ? null : view.totalMandat}
+                  totalMandat={view.totalMandat}
                   giltiga={view.giltiga}
                   sparr={sparrFor(valtyp, selectedArea.level, selectedArea.code)}
                   reportPct={pct}
@@ -548,13 +508,9 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
               giltiga={view.giltiga}
               sparr={sparrFor(valtyp, selectedArea.level, selectedArea.code)}
               showSparr={selectedArea.level !== 'distrikt'}
+              showMandat={showMandat}
               totalMandat={view.totalMandat}
               totalMandat2022={view.totalMandat2022}
-              mandatCaveat={
-                view.isFixedValkretsMandate
-                  ? `Endast fasta valkretsmandat — preliminärt, exkl. utjämningsmandat (avgörs på ${valtyp === 'RF' ? 'regionnivå' : 'kommunnivå'})`
-                  : undefined
-              }
             />
             {view.giltiga === 0 &&
               (view.has2022 ? (
