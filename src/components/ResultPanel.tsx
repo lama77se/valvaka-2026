@@ -112,6 +112,14 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
     return compact ? `${vd} % röstade` : `Valdeltagande ${vd} %`
   }
 
+  // De absoluta talen bakom valdeltagande-%:en (val.se visar dem själva: "Räknade röster" /
+  // "Röstberättigade") — hover-tooltip på samma etikett i stället för egen rad, för att inte
+  // tränga ut Parti/Röster-huvudet. rb=0 → ingen röstlängd inrapporterad än → ingen tooltip.
+  const turnoutDetail = (total: number, rb: number) => {
+    if (rb <= 0) return undefined
+    return `Räknade röster: ${total.toLocaleString('sv-SE')} · Röstberättigade: ${rb.toLocaleString('sv-SE')}`
+  }
+
   // Tvåblocksvyn (MandatBars) — bara på valtypens högsta nivå: riksblocken för RD/riket,
   // sittande styre-vs-opposition för RF/region resp. KF/kommun (samtliga 20 regioner och
   // 290 kommuner finns i REGION_STYRE_BLOCKS/KOMMUN_STYRE_BLOCKS, se regionBlocks.ts/
@@ -186,6 +194,19 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
     // null när nämnaren är 0 (inga rapporterade distrikt med röstlängd än) → visas ej.
     const t = turnoutStoresRef.current[valtyp].aggregate(codes)
     const turnout = t.rb > 0 ? (t.total / t.rb) * 100 : null
+    // Ogiltiga röster (val.se: Blanka / Ej anmälda partier / Övriga ogiltiga / Totalt) — bara
+    // när ALLA rapporterade distrikt i området har fälten (se TurnoutStore.aggregate). %:en är
+    // av samtliga AVGIVNA röster (t.total, inte bara giltiga partiröster — val.se:s egen nämnare).
+    const invalidVotes =
+      t.blanka != null && t.ejAnmalda != null && t.ovrigaOgiltiga != null
+        ? {
+            blanka: t.blanka,
+            ejAnmalda: t.ejAnmalda,
+            ovrigaOgiltiga: t.ovrigaOgiltiga,
+            totalt: t.blanka + t.ejAnmalda + t.ovrigaOgiltiga,
+            pctOfTotal: t.total > 0 ? ((t.blanka + t.ejAnmalda + t.ovrigaOgiltiga) / t.total) * 100 : null,
+          }
+        : null
     return {
       display,
       giltiga: areaResult.giltiga,
@@ -195,6 +216,8 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
       reported,
       total: codes.length,
       turnout,
+      turnoutTitle: turnoutDetail(t.total, t.rb),
+      invalidVotes,
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [valtyp, selectedArea, revision])
@@ -513,9 +536,11 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
               statusTag={statusTag}
               subtitle={subtitle(view.reported, view.total, pct)}
               turnoutLabel={turnoutLabel(view.turnout)}
+              turnoutTitle={view.turnoutTitle}
               reportPct={view.total > 0 ? (view.reported / view.total) * 100 : 0}
               display={view.display}
               giltiga={view.giltiga}
+              invalidVotes={view.invalidVotes}
               sparr={sparrFor(valtyp, selectedArea.level, selectedArea.code)}
               showSparr={selectedArea.level !== 'distrikt'}
               showMandat={showMandat}

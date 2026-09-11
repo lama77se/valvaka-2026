@@ -176,18 +176,40 @@ export class ResultStore {
   }
 }
 
-// Valdeltagande per distrikt: totaltAntalRoster (alla avgivna röster) + antalRostberattigade.
-// Egen store (skild från ResultStore) eftersom valdeltagande INTE kan härledas ur partiröster —
-// täljaren är alla avgivna röster inkl. blanka/ogiltiga, inte summan av giltiga partiröster.
-// Aggregat för ett område = Σtotalt / Σröstberättigade (aldrig medel av distrikts-%).
+// Valdeltagande per distrikt: totaltAntalRoster (alla avgivna röster) + antalRostberattigade,
+// plus ogiltiga röster nedbrutet (blanka/ej anmälda partier/övriga ogiltiga — val.se:s egen
+// indelning, tillagd 12 sep). Egen store (skild från ResultStore) eftersom varken valdeltagande
+// eller de ogiltiga rösterna kan härledas ur partiröster — täljaren där är alla avgivna röster
+// inkl. blanka/ogiltiga, inte summan av giltiga partiröster. Aggregat för ett område = Σ av varje
+// fält (aldrig medel av distrikts-%). De tre ogiltiga-fälten är null tills distriktet fått dem
+// (äldre rader innan migrationen, eller en v1-snapshot-blob under en kort övergång).
+export interface TurnoutRow {
+  total: number
+  rb: number
+  blanka: number | null
+  ejAnmalda: number | null
+  ovrigaOgiltiga: number | null
+}
+
 export class TurnoutStore {
-  private byDistrict = new Map<string, { total: number; rb: number }>()
+  private byDistrict = new Map<string, TurnoutRow>()
 
   // true om värdet ändrades (se ResultStore.set).
-  set(valdistriktskod: string, totalAntalRoster: number, antalRostberattigade: number): boolean {
+  set(
+    valdistriktskod: string,
+    totalAntalRoster: number,
+    antalRostberattigade: number,
+    blanka: number | null = null,
+    ejAnmalda: number | null = null,
+    ovrigaOgiltiga: number | null = null,
+  ): boolean {
     const prev = this.byDistrict.get(valdistriktskod)
-    if (prev && prev.total === totalAntalRoster && prev.rb === antalRostberattigade) return false
-    this.byDistrict.set(valdistriktskod, { total: totalAntalRoster, rb: antalRostberattigade })
+    const next: TurnoutRow = { total: totalAntalRoster, rb: antalRostberattigade, blanka, ejAnmalda, ovrigaOgiltiga }
+    if (
+      prev && prev.total === next.total && prev.rb === next.rb &&
+      prev.blanka === next.blanka && prev.ejAnmalda === next.ejAnmalda && prev.ovrigaOgiltiga === next.ovrigaOgiltiga
+    ) return false
+    this.byDistrict.set(valdistriktskod, next)
     return true
   }
 
@@ -195,17 +217,36 @@ export class TurnoutStore {
     return this.byDistrict.has(valdistriktskod)
   }
 
-  // Summera täljare + nämnare över en uppsättning distrikt. Andelen (procent) beräknas av anroparen
+  // Summera alla fält över en uppsättning distrikt. Andelen (procent) beräknas av anroparen
   // först på aggregatet: pct = total / rb * 100. rb=0 → inget att visa (returnera null-läge där).
-  aggregate(codes: Iterable<string>): { total: number; rb: number } {
+  // De ogiltiga-summorna blir null om NÅGOT av de summerade distrikten ännu saknar dem (hellre
+  // "vet inte" än en tyst underskattning av en delvis rapporterad ogiltig-summa).
+  aggregate(codes: Iterable<string>): { total: number; rb: number; blanka: number | null; ejAnmalda: number | null; ovrigaOgiltiga: number | null } {
     let total = 0
     let rb = 0
+    let blanka = 0
+    let ejAnmalda = 0
+    let ovrigaOgiltiga = 0
+    let ogiltigaKnown = true
     for (const vd of codes) {
       const t = this.byDistrict.get(vd)
       if (!t) continue
       total += t.total
       rb += t.rb
+      if (t.blanka == null || t.ejAnmalda == null || t.ovrigaOgiltiga == null) {
+        ogiltigaKnown = false
+        continue
+      }
+      blanka += t.blanka
+      ejAnmalda += t.ejAnmalda
+      ovrigaOgiltiga += t.ovrigaOgiltiga
     }
-    return { total, rb }
+    return {
+      total,
+      rb,
+      blanka: ogiltigaKnown ? blanka : null,
+      ejAnmalda: ogiltigaKnown ? ejAnmalda : null,
+      ovrigaOgiltiga: ogiltigaKnown ? ovrigaOgiltiga : null,
+    }
   }
 }

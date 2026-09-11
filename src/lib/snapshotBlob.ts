@@ -19,7 +19,9 @@ export interface SnapshotBlob {
   hwm: string
   turnout_hwm: string
   result: Array<[string, string, number, string | null, string | null]> // vd, pk, roster, status, rapporteringstid
-  turnout: Array<[string, number, number]> // vd, totalt_antal_roster, antal_rostberattigade
+  // vd, totalt_antal_roster, antal_rostberattigade, [blanka, ej_anmalda_partier, ovriga_ogiltiga]
+  // — de tre sista tillkom i v2 (ogiltiga röster); saknas i en v1-blob, se fetchSnapshotBlob.
+  turnout: Array<[string, number, number, (number | null)?, (number | null)?, (number | null)?]>
 }
 
 const MAX_AGE_MS = 15 * 60_000
@@ -38,8 +40,11 @@ export async function fetchSnapshotBlob(vt: Valtyp): Promise<SnapshotBlob | null
     const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) })
     if (!res.ok) return null
     const blob = (await res.json()) as Partial<SnapshotBlob>
+    // v1 (utan ogiltiga röster) och v2 (med) accepteras båda — en kort övergångsperiod efter
+    // migration finns alltid (nästa 1-min-refresh regenererar) och v1:s turnout-tupler har bara
+    // 3 element, saknar de tre sista → TurnoutStore.set defaultar dem till null, som väntat.
     if (
-      blob.v !== 1 || blob.valtyp !== vt ||
+      (blob.v !== 1 && blob.v !== 2) || blob.valtyp !== vt ||
       typeof blob.hwm !== 'string' || typeof blob.turnout_hwm !== 'string' || typeof blob.generated_at !== 'string' ||
       !Array.isArray(blob.result) || !Array.isArray(blob.turnout)
     ) return null

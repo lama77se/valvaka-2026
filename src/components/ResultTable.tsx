@@ -19,17 +19,18 @@ export interface ResultTableProps {
   reportPct?: number // 0..100 → fyller progress-baren bakom undertexten (inrapporterat)
   statusTag?: { tone: string; label: string; title: string } // slutresultat-fas (`slutligTag`), egen badge — SKILT från reportPct
   turnoutLabel?: string // t.ex. "Valdeltagande 84,5 %" — sitter i tabellhuvudets annars tomma yta ovanför Parti/Röster
+  turnoutTitle?: string // hover-tooltip på turnoutLabel: de absoluta talen ("Räknade röster: … · Röstberättigade: …")
   display: DisplayRows
   giltiga: number
   sparr: number
-  blanka?: number | null
+  invalidVotes?: { blanka: number; ejAnmalda: number; ovrigaOgiltiga: number; totalt: number; pctOfTotal: number | null } | null
   totalMandat?: number | null
   totalMandat2022?: number | null
   showSparr?: boolean // spärr-linjen är en församlingsvid bestämning → dölj på distriktsnivå
   showMandat?: boolean // mandat är bara meningsfullt på organ-/valkretsnivå → dölj kolumnerna annars
 }
 
-export function ResultTable({ title, subtitle, reportPct, statusTag, turnoutLabel, display, giltiga, sparr, blanka, totalMandat, totalMandat2022, showSparr = true, showMandat = true }: ResultTableProps) {
+export function ResultTable({ title, subtitle, reportPct, statusTag, turnoutLabel, turnoutTitle, display, giltiga, sparr, invalidVotes, totalMandat, totalMandat2022, showSparr = true, showMandat = true }: ResultTableProps) {
   const { shown, ovriga, sparrIndex } = display
   const sparrLabel = `${(sparr * 100).toFixed(0)} %-spärr`
   const cols = showMandat ? 8 : 5
@@ -84,7 +85,7 @@ export function ResultTable({ title, subtitle, reportPct, statusTag, turnoutLabe
           <tr className="text-[11px] uppercase tracking-wider text-slate-500">
             {/* Parti/Röster har ingen egen rad-1-etikett (de är inte grupperade som Andel/
                 Mandat) — den ytan används i stället till valdeltagandet i valt område. */}
-            <th colSpan={2} className="pb-0.5 text-left font-medium">{turnoutLabel}</th>
+            <th colSpan={2} className="pb-0.5 text-left font-medium" title={turnoutTitle}>{turnoutLabel}</th>
             <th colSpan={3} className="border-l border-slate-800 pb-0.5 text-center font-semibold text-slate-300">Andel</th>
             {showMandat && <th colSpan={3} className="border-l border-slate-800 pb-0.5 text-center font-semibold text-slate-300">Mandat</th>}
           </tr>
@@ -167,12 +168,39 @@ export function ResultTable({ title, subtitle, reportPct, statusTag, turnoutLabe
               </>
             )}
           </tr>
-          {blanka != null && (
-            <tr>
-              <td className="pt-1">Blanka / ogiltiga</td>
-              <td className="pt-1 px-1 text-right">{nf.format(blanka)}</td>
-              <td colSpan={showMandat ? 6 : 3} />
-            </tr>
+          {invalidVotes && (
+            <>
+              <tr>
+                <td className="pt-1.5" colSpan={cols}>
+                  <span className="text-[11px] uppercase tracking-wider text-slate-500">Ogiltiga röster</span>
+                </td>
+              </tr>
+              <tr>
+                <td className="pt-0.5">Blanka</td>
+                <td className="pt-0.5 px-1 text-right">{nf.format(invalidVotes.blanka)}</td>
+                <td colSpan={cols - 2} />
+              </tr>
+              <tr>
+                <td className="pt-0.5">Ej anmälda partier</td>
+                <td className="pt-0.5 px-1 text-right">{nf.format(invalidVotes.ejAnmalda)}</td>
+                <td colSpan={cols - 2} />
+              </tr>
+              <tr>
+                <td className="pt-0.5">Övriga ogiltiga</td>
+                <td className="pt-0.5 px-1 text-right">{nf.format(invalidVotes.ovrigaOgiltiga)}</td>
+                <td colSpan={cols - 2} />
+              </tr>
+              <tr className="font-medium text-slate-300">
+                <td className="pt-0.5">Totalt</td>
+                <td className="pt-0.5 px-1 text-right">
+                  {nf.format(invalidVotes.totalt)}
+                  {invalidVotes.pctOfTotal != null && (
+                    <span className="ml-1 font-normal text-slate-500">({invalidVotes.pctOfTotal.toFixed(1).replace('.', ',')} %)</span>
+                  )}
+                </td>
+                <td colSpan={cols - 2} />
+              </tr>
+            </>
           )}
         </tfoot>
       </table>

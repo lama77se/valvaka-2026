@@ -86,7 +86,20 @@ async function processFile(f, sets) {
     // nämnaren = röstberättigade i räknade distrikt (som val.se:s aggregat) och orapporterade inte
     // blåser upp den. (Slutliga filer har allt rapporterat, men gaten håller även vid partiell.)
     if (typeof vd.totaltAntalRoster === 'number' && vd.totaltAntalRoster > 0 && typeof vd.antalRostberattigade === 'number' && vd.antalRostberattigade > 0) {
-      turnoutRows.push({ valtyp: j.valtyp, valdistriktskod: kod, totalt_antal_roster: vd.totaltAntalRoster, antal_rostberattigade: vd.antalRostberattigade, status: rakstatus })
+      // Ogiltiga röster — samma syskon-nyckel/logik som edge (ingest-result/index.ts), läst
+      // defensivt så en oväntad form aldrig stoppar upserten av röster/valdeltagande ovan.
+      const ejPaverka = vd.rostfordelning?.rosterEjPaverkaMandat
+      const asInt = (v) => (typeof v === 'number' ? v : null)
+      turnoutRows.push({
+        valtyp: j.valtyp,
+        valdistriktskod: kod,
+        totalt_antal_roster: vd.totaltAntalRoster,
+        antal_rostberattigade: vd.antalRostberattigade,
+        status: rakstatus,
+        blanka: asInt(ejPaverka?.blankaRoster?.antalRoster),
+        ej_anmalda_partier: asInt(ejPaverka?.rosterEjAnmaltDeltagande?.antalRoster),
+        ovriga_ogiltiga: asInt(ejPaverka?.ovrigaOgiltiga?.antalRoster),
+      })
     }
     for (const p of vd.rostfordelning?.rosterPaverkaMandat?.partiRoster ?? []) {
       if (!sets.partySet.has(p.partikod)) continue

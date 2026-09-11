@@ -372,7 +372,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
           const store = storesRef.current[vt]
           const tstore = turnoutStoresRef.current[vt]
           for (const [vd, pk, roster, status, rt] of blob.result) store?.set(vd, pk, roster, rt, status)
-          for (const [vd, total, rb] of blob.turnout) tstore?.set(vd, total, rb)
+          for (const [vd, total, rb, blanka, ejAnmalda, ovrigaOgiltiga] of blob.turnout) tstore?.set(vd, total, rb, blanka ?? null, ejAnmalda ?? null, ovrigaOgiltiga ?? null)
           if (blob.hwm > cursorRef.current[vt]) cursorRef.current[vt] = blob.hwm
           if (blob.turnout_hwm > turnoutCursorRef.current[vt]) turnoutCursorRef.current[vt] = blob.turnout_hwm
           // Första deltan börjar vid blobens generering (− txn-marginal), inte vid hwm − 30 s.
@@ -441,15 +441,15 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
           while (aliveRef.current) {
             let tq = supabase
               .from('turnout')
-              .select('valdistriktskod,totalt_antal_roster,antal_rostberattigade,updated_at')
+              .select('valdistriktskod,totalt_antal_roster,antal_rostberattigade,blanka,ej_anmalda_partier,ovriga_ogiltiga,updated_at')
               .eq('valtyp', vt)
               .order('valdistriktskod', { ascending: true })
               .limit(PAGE)
             if (tLast !== '') tq = tq.gt('valdistriktskod', tLast)
             const { data, error } = await tq
             if (error || !data || data.length === 0) break
-            for (const r of data as unknown as Array<{ valdistriktskod: string; totalt_antal_roster: number; antal_rostberattigade: number; updated_at?: string | null }>) {
-              turnoutStoresRef.current[vt]?.set(r.valdistriktskod, r.totalt_antal_roster, r.antal_rostberattigade)
+            for (const r of data as unknown as Array<{ valdistriktskod: string; totalt_antal_roster: number; antal_rostberattigade: number; blanka: number | null; ej_anmalda_partier: number | null; ovriga_ogiltiga: number | null; updated_at?: string | null }>) {
+              turnoutStoresRef.current[vt]?.set(r.valdistriktskod, r.totalt_antal_roster, r.antal_rostberattigade, r.blanka, r.ej_anmalda_partier, r.ovriga_ogiltiga)
               if (r.updated_at && r.updated_at > turnoutCursorRef.current[vt]) turnoutCursorRef.current[vt] = r.updated_at
             }
             tLast = data[data.length - 1].valdistriktskod
@@ -565,7 +565,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
       while (aliveRef.current) {
         const { data, error } = await supabase
           .from('turnout')
-          .select('valdistriktskod,totalt_antal_roster,antal_rostberattigade,updated_at')
+          .select('valdistriktskod,totalt_antal_roster,antal_rostberattigade,blanka,ej_anmalda_partier,ovriga_ogiltiga,updated_at')
           .eq('valtyp', vt)
           .gte('updated_at', since)
           .order('updated_at', { ascending: true })
@@ -573,8 +573,8 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
           .range(from, from + PAGE - 1)
         if (error) { markPollError(`turnout ${vt}: ${error.message}`); failedPoll = true; break }
         if (!data || data.length === 0) break
-        for (const r of data as unknown as Array<{ valdistriktskod: string; totalt_antal_roster: number; antal_rostberattigade: number; updated_at?: string | null }>) {
-          const wasNew = turnoutStoresRef.current[vt]?.set(r.valdistriktskod, r.totalt_antal_roster, r.antal_rostberattigade) ?? false // idempotent
+        for (const r of data as unknown as Array<{ valdistriktskod: string; totalt_antal_roster: number; antal_rostberattigade: number; blanka: number | null; ej_anmalda_partier: number | null; ovriga_ogiltiga: number | null; updated_at?: string | null }>) {
+          const wasNew = turnoutStoresRef.current[vt]?.set(r.valdistriktskod, r.totalt_antal_roster, r.antal_rostberattigade, r.blanka, r.ej_anmalda_partier, r.ovriga_ogiltiga) ?? false // idempotent
           if (wasNew || (r.updated_at && r.updated_at > cursor)) changed++
           if (r.updated_at && r.updated_at > maxTs) maxTs = r.updated_at
         }
