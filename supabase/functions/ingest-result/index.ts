@@ -170,7 +170,21 @@ async function processFile(url: string, districtSet: Set<string>, partySet: Set<
     // Valdeltagande: bara RAPPORTERADE distrikt (totaltAntalRoster > 0) — val.se:s aggregat använder
     // röstberättigade i RÄKNADE distrikt som nämnare; orapporterade får inte blåsa upp nämnaren.
     if (typeof vd.totaltAntalRoster === 'number' && vd.totaltAntalRoster > 0 && typeof vd.antalRostberattigade === 'number' && vd.antalRostberattigade > 0) {
-      turnout.push({ valtyp, valdistriktskod: kod, totalt_antal_roster: vd.totaltAntalRoster, antal_rostberattigade: vd.antalRostberattigade, status })
+      // Ogiltiga röster — syskon-nyckel till rosterPaverkaMandat, en per distrikt. Läses defensivt
+      // (aldrig kastande): en oväntad form här får bara ge null (visas som "–"), aldrig stoppa
+      // upserten av de faktiska rösterna/valdeltagandet ovan, som är den kritiska vägen.
+      const ejPaverka = vd.rostfordelning?.rosterEjPaverkaMandat
+      const asInt = (v: unknown) => (typeof v === 'number' ? v : null)
+      turnout.push({
+        valtyp,
+        valdistriktskod: kod,
+        totalt_antal_roster: vd.totaltAntalRoster,
+        antal_rostberattigade: vd.antalRostberattigade,
+        status,
+        blanka: asInt(ejPaverka?.blankaRoster?.antalRoster),
+        ej_anmalda_partier: asInt(ejPaverka?.rosterEjAnmaltDeltagande?.antalRoster),
+        ovriga_ogiltiga: asInt(ejPaverka?.ovrigaOgiltiga?.antalRoster),
+      })
     }
     for (const p of partier) {
       if (!partySet.has(p.partikod)) continue
