@@ -40,6 +40,16 @@ valnatten, så kartan visar "inga 2026-röster än" tills dess.
 - **Mandatberäkning** med jämkade uddatalsmetoden, verifierad mot 2022-facit:
   **riksdag 349 exakt, region 20/20, kommun 289/290** (de två avvikelserna är lottning
   resp. ändrad fullmäktigestorlek, inte metodfel).
+- **Preliminär valkrets-mandatfördelning** — riksdags-, region- och kommunmandat är i
+  grunden riks-/region-/kommuntäckande (fasta valkretsmandat + utjämningsmandat, de
+  senare placerade via ett jämförelsetal mellan valkretsarna — den placeringsalgoritmen
+  är inte byggd). På **valkretsnivå** (riksdagens 29, samt de **11 av 20** delade regionerna
+  och **17 av 290** delade kommunerna) visas ändå en tydligt märkt "minst"-siffra: bara
+  de FASTA valkretsmandaten (Valmyndighetens beslutsfil, `fasta-valkretsmandat-2026.xlsx`)
+  fördelade live på inkomna röster, med en amber varningsruta + "*"-märkt Mandat-kolumn.
+  Riks-/region-/kommunnivåns egen mandattotal (ovan) är oförändrad och opåverkad.
+  Odelade regioner/kommuner (t.ex. Region Gävleborg = en enda valkrets) har ingen egen
+  valkrets-nivå och visar därför ingen sådan ruta.
 - **Resultatpanel** — parti · röster · andel · mandat, **2026 mot 2022** i egna kolumner
   (2022 visas alltid, även innan första rösten kommit). Resultatet ritas som två liggande
   staplar (röstandel + mandat) med 50 %-linjer, spärr-filtrering och 2022-baslinje.

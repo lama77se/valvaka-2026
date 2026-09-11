@@ -25,9 +25,10 @@ export interface ResultTableProps {
   totalMandat?: number | null
   totalMandat2022?: number | null
   showSparr?: boolean // spärr-linjen är en församlingsvid bestämning → dölj på distriktsnivå
+  mandatCaveat?: string // t.ex. RD/valkrets "endast fasta mandat" — visas som (i)-hint på Mandat-rubriken
 }
 
-export function ResultTable({ title, subtitle, reportPct, statusTag, turnoutLabel, display, giltiga, sparr, blanka, totalMandat, totalMandat2022, showSparr = true }: ResultTableProps) {
+export function ResultTable({ title, subtitle, reportPct, statusTag, turnoutLabel, display, giltiga, sparr, blanka, totalMandat, totalMandat2022, showSparr = true, mandatCaveat }: ResultTableProps) {
   const { shown, ovriga, sparrIndex } = display
   const sparrLabel = `${(sparr * 100).toFixed(0)} %-spärr`
 
@@ -83,7 +84,13 @@ export function ResultTable({ title, subtitle, reportPct, statusTag, turnoutLabe
                 Mandat) — den ytan används i stället till valdeltagandet i valt område. */}
             <th colSpan={2} className="pb-0.5 text-left font-medium">{turnoutLabel}</th>
             <th colSpan={3} className="border-l border-slate-800 pb-0.5 text-center font-semibold text-slate-300">Andel</th>
-            <th colSpan={3} className="border-l border-slate-800 pb-0.5 text-center font-semibold text-slate-300">Mandat</th>
+            <th
+              colSpan={3}
+              className={`border-l border-slate-800 pb-0.5 text-center font-semibold ${mandatCaveat ? 'text-amber-400' : 'text-slate-300'}`}
+              title={mandatCaveat}
+            >
+              Mandat{mandatCaveat ? ' *' : ''}
+            </th>
           </tr>
           <tr className="border-b border-slate-700 text-[11px] uppercase tracking-wide text-slate-400">
             <th className="py-1 pr-2 text-left font-medium">Parti</th>
@@ -158,6 +165,7 @@ export function ResultTable({ title, subtitle, reportPct, statusTag, turnoutLabe
         </tfoot>
       </table>
       </div>
+      {mandatCaveat && <p className="mt-1.5 text-[11px] text-amber-400/90">* {mandatCaveat}</p>}
     </div>
   )
 }
