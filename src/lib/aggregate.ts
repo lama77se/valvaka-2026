@@ -248,6 +248,16 @@ export function computeMandate(
 
   if (valtyp === 'RD') {
     if (level !== 'riket') return null
+    // ⚠️ KÄND FÖRENKLING: en enda nationell jämkad uddatalsomgång på hela 349,
+    // bara 4 %-spärren — implementerar INTE 12 %-i-en-valkrets-undantaget (§ eller
+    // fasta valkretsmandat/utjämningsmandat-uppdelningen). Den KORREKTA, redan
+    // 2022-facit-verifierade metoden finns i lib/mandate.ts (computeAssembly,
+    // se dess docstring + scripts/verify-mandate.ts) men är inte kopplad in här —
+    // kräver fasta mandat PER VALKRETS (SEAT_CONFIG_2026.RD saknar detta, se
+    // build-seat-config.mjs) + röster grupperade per RD-valkrets i denna funktion,
+    // ingetdera finns idag. Bedömning inför 2026 (diskuterad med användaren 11 sep):
+    // inget parti är nära scenariot (<4 % riks men >12 % i en enskild valkrets) →
+    // risken bedöms försumbar, medvetet oåtgärdat.
     add(proportionalSeats(votesFor(groups.all, ''), SEAT_CONFIG_2026.RD.totalSeats, SEAT_CONFIG_2026.RD.threshold))
   } else if (valtyp === 'RF') {
     if (level === 'region') {
