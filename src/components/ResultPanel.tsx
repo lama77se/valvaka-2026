@@ -5,7 +5,6 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { VALTYP_LABEL, slutligTag, type Valtyp } from '@/lib/results'
 import {
-  SPARR,
   applyComparison,
   applyMandate,
   buildRows,
@@ -14,6 +13,7 @@ import {
   computeMandate,
   districtsInArea,
   mergeVotes,
+  sparrFor,
   uppsamlingForArea,
   type Level,
 } from '@/lib/aggregate'
@@ -135,7 +135,7 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
     const uppsamling = uppsamlingRef.current[valtyp]
     const votes = mergeVotes(store.aggregate(codes), uppsamlingForArea(valtyp, selectedArea.level, selectedArea.code, uppsamling))
     const mandate = computeMandate(valtyp, selectedArea.level, selectedArea.code, (c) => store.aggregate(c), groupsRef.current, uppsamling)
-    let areaResult = applyMandate(buildRows(votes, partyRef.current, SPARR[valtyp]), mandate)
+    let areaResult = applyMandate(buildRows(votes, partyRef.current, sparrFor(valtyp, selectedArea.level, selectedArea.code)), mandate)
     const districtLeaf =
       selectedArea.level === 'distrikt' && selectedArea.code
         ? district2022Ref.current.get(`${valtyp}:${selectedArea.code}`) ?? null
@@ -444,7 +444,7 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
                   ovriga={view.display.ovriga}
                   totalMandat={view.totalMandat}
                   giltiga={view.giltiga}
-                  sparr={SPARR[valtyp]}
+                  sparr={sparrFor(valtyp, selectedArea.level, selectedArea.code)}
                   reportPct={pct}
                   blocks={blocks}
                   compact={compact}
@@ -459,7 +459,7 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
               reportPct={view.total > 0 ? (view.reported / view.total) * 100 : 0}
               display={view.display}
               giltiga={view.giltiga}
-              sparr={SPARR[valtyp]}
+              sparr={sparrFor(valtyp, selectedArea.level, selectedArea.code)}
               showSparr={selectedArea.level !== 'distrikt'}
               totalMandat={view.totalMandat}
               totalMandat2022={view.totalMandat2022}
