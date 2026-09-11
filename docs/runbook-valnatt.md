@@ -219,6 +219,21 @@ select cron.alter_job((select jobid from cron.job where jobname='ingest-result-g
   fastnar på samma manifest-md5 flera varv i rad.
 - [ ] Edge-loggen (Supabase Dashboard → Functions → `ingest-result` → Logs) — inga upprepade
   `WORKER_RESOURCE_LIMIT`/krasch-loop-rader (se *Vanliga fel* nedan).
+- [ ] **Nytt (11 sep) — mandat-avstämning mot Valmyndighetens EGEN mandatfördelningsfil:**
+  Valmyndigheten publicerar en separat `mandatfordelning`-JSON i SAMMA zip vi redan hämtar
+  för röster (fanns hela tiden, hittills oanvänd — se docs/arkitektur.md §5b). Kör:
+  ```bash
+  node --env-file=.env.local scripts/verify-mandatfordelning-live.ts
+  ```
+  Jämför VÅR beräkning (samma aggregate.ts/mandate.ts-kod som klientens siffror) mot filens
+  officiella mandat — organ-totalen OCH (nytt för PR #129) fasta valkretsmandat i de 29
+  RD-valkretsarna + 11 delade RF-regionerna + 17 delade KF-kommunerna. Läser BARA (aldrig DB-
+  skrivning), säkert att köra när som helst. Grönt (`exit 0`) = beräkningen bekräftad mot
+  Valmyndighetens egna siffror, inte bara mot 2022-facit. Se skriptets header för flaggor
+  (`--status s` för slutliga filer, `--valtyp RF`, `--limit-kf 290` för alla kommuner).
+  ⚠️ Förväntat, INTE ett fel: skriptet jämför bara FASTA valkretsmandat på valkretsnivå — filens
+  egen utjämningsmandat-placering per valkrets (som vi medvetet inte räknar ut, se PR #129)
+  loggas bara informativt (`↳ filens FULLA total här: …`), aldrig som en ❌.
 
 *Frontend (manuellt i browsern, valvaka.tech):*
 - [ ] Testdata-bannern är BORTA. Statustaggen (alla tre valtyper) = **Preliminärt**,

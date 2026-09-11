@@ -24,6 +24,7 @@
     "verify:aggregate": "tsx scripts/verify-aggregate.ts",
     "verify:uppsamling": "tsx scripts/verify-uppsamling.ts",
     "verify:overhang": "tsx scripts/verify-overhang.ts",
+    "verify:mandatfordelning-live": "node --env-file=.env.local --import tsx scripts/verify-mandatfordelning-live.ts",
     "ingest:slutlig": "node --env-file=.env.local --max-old-space-size=4096 scripts/ingest-slutlig.mjs",
     "simulate:valnatt": "node --env-file=.env.local scripts/simulate-valnatt.mjs",
     "results:reset": "node --env-file=.env.local scripts/reset-results.mjs",
