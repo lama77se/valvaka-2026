@@ -846,37 +846,36 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
         )}
         <ValtypSelector showColorMode />
         {total > 0 && (
-          <div className="pointer-events-none rounded-md border border-slate-700 bg-slate-900/90 px-4 py-1.5 text-center text-sm text-slate-100 shadow-lg">
-            <div className="flex items-center justify-center gap-2">
-              <span
-                className={`rounded px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${tagTone}`}
-                title={tagTitle}
-              >
-                {tagLabel}
+          <div className="pointer-events-none mx-auto flex w-fit items-center gap-2 whitespace-nowrap rounded-md border border-slate-700 bg-slate-900/90 px-4 py-1.5 text-sm text-slate-100 shadow-lg">
+            <span
+              className={`rounded px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${tagTone}`}
+              title={tagTitle}
+            >
+              {tagLabel}
+            </span>
+            <span>
+              <span className="font-mono text-base font-semibold tabular-nums">{reportedCount}</span>
+              <span className="text-slate-400"> av {total.toLocaleString('sv-SE')}</span>
+              <span className="ml-2 text-xs text-sky-300">{reportedPct}%</span>
+            </span>
+            {/* Egen liten avdelare mot Live-gruppen — samma rad nu (rymdes gott om
+                bredd över, se rad-1 vs rad-2 innan), i stället för en egen rad. */}
+            <span className="text-slate-700">·</span>
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${realtimeConnected ? 'animate-pulse bg-emerald-400' : pollError ? 'bg-amber-400' : 'bg-slate-500'}`}
+              title={realtimeConnected ? 'Live — senaste uppdatering lyckades nyss' : pollError ?? 'Pausad (fliken i bakgrunden)'}
+            />
+            <span className={`text-xs ${pollError && !realtimeConnected ? 'text-amber-300' : 'text-slate-400'}`}>
+              {realtimeConnected ? 'Live' : pollError ?? 'Pausad'}
+            </span>
+            {/* Klockslaget lyftes fram: större (text-sm) + ljusare (slate-300) + tabular så
+                siffrorna inte hoppar. "Live"-prickens tooltip förklarar redan att det är
+                en uppdateringstid, så ordet självt är överflödigt i den synliga texten. */}
+            {lastUpdated && (
+              <span className="text-xs text-slate-500">
+                · <span className="text-sm font-medium tabular-nums text-slate-300">{lastUpdated}</span>
               </span>
-              <span>
-                <span className="font-mono text-base font-semibold tabular-nums">{reportedCount}</span>
-                <span className="text-slate-400"> av {total.toLocaleString('sv-SE')}</span>
-                <span className="ml-2 text-xs text-sky-300">{reportedPct}%</span>
-              </span>
-            </div>
-            <div className="mt-0.5 flex items-center justify-center gap-1.5 text-xs text-slate-400">
-              <span
-                className={`h-1.5 w-1.5 rounded-full ${realtimeConnected ? 'animate-pulse bg-emerald-400' : pollError ? 'bg-amber-400' : 'bg-slate-500'}`}
-                title={realtimeConnected ? 'Live — senaste uppdatering lyckades nyss' : pollError ?? 'Pausad (fliken i bakgrunden)'}
-              />
-              <span className={pollError && !realtimeConnected ? 'text-amber-300' : undefined}>
-                {realtimeConnected ? 'Live' : pollError ?? 'Pausad'}
-              </span>
-              {/* Klockslaget lyftes fram: större (text-sm) + ljusare (slate-300) + tabular så
-                  siffrorna inte hoppar. "Live"-prickens tooltip förklarar redan att det är
-                  en uppdateringstid, så ordet självt är överflödigt i den synliga texten. */}
-              {lastUpdated && (
-                <span className="text-slate-500">
-                  · <span className="text-sm font-medium tabular-nums text-slate-300">{lastUpdated}</span>
-                </span>
-              )}
-            </div>
+            )}
           </div>
         )}
       </div>
