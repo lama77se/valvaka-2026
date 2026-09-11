@@ -26,7 +26,19 @@ export function ValtypSelector({ className = '', fill = false, showColorMode = f
       ))}
       {showColorMode && (
         <>
-          <div className="my-1.5 w-px bg-slate-700" aria-hidden="true" />
+          {/* Tydligare "det här är en egen, kombinerbar grupp"-signal än bara en tunn
+              delare: full-höjd delare + en liten dämpad lager-ikon (samma motiv som
+              mobilens färgläges-knapp) — annars kan fem knappar i rad läsas som EN
+              platt lista i stället för val × färgläge. Ingen egen ram → bryter inte
+              den enhetliga piller-strukturen. */}
+          <div className="w-px self-stretch bg-slate-600" aria-hidden="true" />
+          <span className="flex shrink-0 items-center pl-2 pr-0.5 text-slate-500" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <path d="m12 2 8.5 5-8.5 5-8.5-5L12 2Z" />
+              <path d="m3.5 12 8.5 5 8.5-5" />
+              <path d="m3.5 17 8.5 5 8.5-5" />
+            </svg>
+          </span>
           <button
             type="button"
             onClick={() => setColorMode('distrikt')}

@@ -798,10 +798,12 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
     <div className="absolute inset-0">
       <div ref={containerRef} className="h-full w-full" />
 
-      {/* Provenance-banner: kartan färgas av GENERALREPETITIONENS testdata (inte skarpa
-          valresultat) tills ingest-result byter till val2026 på valnatten. Data-styrd
-          (dataset.test) så den försvinner av sig själv när skarp data börjar flöda.
-          Mobil: chromen äger bannern → släck den här. */}
+      {/* Provenance-banner: dataset.test → antingen GENERALREPETITIONENS testdata (source
+          'genrep2026') eller mellanläget efter valnatts-cutover men innan Valmyndigheten
+          publicerat något (source 'reset', se reset-results.mjs) — två olika texter, annars
+          läser man fel efter en tidig cutover ("generalrepetition" trots att källan redan är
+          skarp, bara tom). Data-styrd så den försvinner av sig själv när skarp data flödar
+          (source blir 'val2026', test=false). Mobil: chromen äger bannern → släck den här. */}
       {variant !== 'mobile' && dataset?.test && (
         // Centrerad över den SYNLIGA kartan (samma uträkning som valtyp-väljaren), inte
         // skärmens mitt som ligger en bit in under panelen.
@@ -811,10 +813,17 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
               <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
               <path d="M12 9v4M12 17h.01" />
             </svg>
-            <span>
-              Generalrep · <span className="font-bold">testdata</span> — inte skarpa valresultat
-              <span className="ml-1 font-normal text-amber-200/70">(Valmyndighetens generalrepetition inför valet 13 sep)</span>
-            </span>
+            {dataset.source === 'genrep2026' ? (
+              <span>
+                Generalrep · <span className="font-bold">testdata</span> — inte skarpa valresultat
+                <span className="ml-1 font-normal text-amber-200/70">(Valmyndighetens generalrepetition inför valet 13 sep)</span>
+              </span>
+            ) : (
+              <span>
+                <span className="font-bold">Väntar på valnatten</span> — inga skarpa resultat inrapporterade än
+                <span className="ml-1 font-normal text-amber-200/70">(källan är redan bytt till de skarpa filerna)</span>
+              </span>
+            )}
           </div>
         </div>
       )}
