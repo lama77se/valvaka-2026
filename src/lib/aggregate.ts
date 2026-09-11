@@ -309,6 +309,15 @@ function valkretsMandate(
 ): ValkretsMandate | null {
   const totalFixed = fixedSeatsByConstituency[areaCode]
   if (!totalFixed) return null
+  // Valkretsen har själv INGA röster än (typiskt: tidigt på valnatten, innan just DEN
+  // valkretsen börjat rapportera). computeAssembly fyller annars i alla kvalificerade
+  // partier med 0 röster (keepQualified) → modifiedSainteLague blir 0–0–0 hela vägen →
+  // tie-breaken (deterministisk på partikod) delar ut ALLA valkretsens fasta mandat till
+  // vilket parti som råkar sortera först. Det ser ut som ett riktigt (om än snett) resultat
+  // men är helt påhittat — noll information låg bakom. Visa hellre inget alls (null → "–"
+  // i UI:t) tills valkretsen faktiskt har egna röster, hur få som helst.
+  const hasOwnVotes = Object.values(votesByConstituency[areaCode] ?? {}).some((v) => v > 0)
+  if (!hasOwnVotes) return null
   const result = computeAssembly(
     votesByConstituency,
     {
