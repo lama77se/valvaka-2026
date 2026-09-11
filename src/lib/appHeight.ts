@@ -33,8 +33,15 @@ function measure(): Rect {
 
 // Efterskott (ms) efter varje läge där browsern kan ha layoutat mot fel viewport. Serien
 // täcker både snabba fall (chrome-animationen ~300 ms) och en flik som renderas i
-// bakgrunden och visas först en bit senare.
-const SETTLE_MS = [120, 320, 700, 1500]
+// bakgrunden och visas först en bit senare. Svansen förlängd (11 sep, verifierad-i-fält
+// bugg): en flik Safari kastat ur minnet och laddar om från grunden (inte bfcache-`pageshow`,
+// en RIKTIG remount) kan hålla `visualViewport` på ett övergångsvärde märkbart längre än
+// ~1,5 s medan iOS fortfarande återställer sin egen scrollposition/chrome-animation — synligt
+// som headern förskjuten ovanför bild + ett vitt fält under bottom-nav:en tills nästa
+// touch/scroll råkar trigga en ommätning. Extra sena kontroller kostar inget (samma
+// tröga `apply()`, no-op om inget ändrats) men täcker det långsamma fallet automatiskt
+// i stället för att vänta på att användaren råkar röra skärmen.
+const SETTLE_MS = [120, 320, 700, 1500, 2500, 4000, 6000, 9000]
 
 // Låser även dokumentscrollen medan skalet är monterat: skalet fyller exakt det synliga
 // fältet, så all scroll hör hemma inuti flikarna. Utan låset kan en gummibands-drag skjuta
@@ -81,6 +88,9 @@ export function useAppHeight() {
     // Sista skyddsnätet: en flik som Safari laddat om i bakgrunden kan visas utan att
     // något av ovanstående event kommer. Första beröringen rättar då till geometrin.
     window.addEventListener('touchstart', apply, { passive: true })
+    // `window`-scroll (utöver visualViewport-scroll ovan): täcker "nedskrollad i slacken"-
+    // fallet innan `app-locked` hunnit låsa dokumentscrollen (t.ex. mitt i en bakgrundsomladdning).
+    window.addEventListener('scroll', apply, { passive: true })
     document.addEventListener('visibilitychange', onVisibility)
     window.visualViewport?.addEventListener('resize', apply)
     window.visualViewport?.addEventListener('scroll', apply)
@@ -93,6 +103,7 @@ export function useAppHeight() {
       window.removeEventListener('pageshow', applySoon)
       window.removeEventListener('focus', applySoon)
       window.removeEventListener('touchstart', apply)
+      window.removeEventListener('scroll', apply)
       document.removeEventListener('visibilitychange', onVisibility)
       window.visualViewport?.removeEventListener('resize', apply)
       window.visualViewport?.removeEventListener('scroll', apply)
