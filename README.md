@@ -9,17 +9,21 @@ inkrementell poll (en `updated_at`-delta, jittrad 30–45 s) och presenterar det
 nära-live-feed — distrikt rullar in på avgångstavlorna, kartan målas om per distrikt
 och en puls-indikator lyser — ovanpå en källa som bara publicerar platta filer på schema.
 
-**Live:** [valvaka.tech](https://valvaka.tech) — färgas just nu av Valmyndighetens
-**generalrepetition** (testdata) tills skarpa resultat flödar på valnatten 13 sep 2026.
+**Live:** [valvaka.tech](https://valvaka.tech) — källan byttes redan **11 sep** till de
+**skarpa** resultatfilerna (`val2026`, två dagar före valnatten). Valmyndigheten har
+ännu inte publicerat några filer där, så kartan visar "inga 2026-röster än" tills
+räkningen börjar på valnatten 13 sep 2026.
 
 ## Status
 
 **Live på [valvaka.tech](https://valvaka.tech), funktionellt komplett inför valet
 13 sep 2026.** Hela kedjan är byggd och verifierad mot 2022 års officiella facit:
 realtidsingest → Postgres → karta, resultatpanel och alla tre valen (riksdag, region,
-kommun). Just nu matas appen av Valmyndighetens generalrepetition (testdata) — på
-valnatten byts källan till de skarpa resultatfilerna via en enda konstant, utan andra
-ändringar.
+kommun). Källan byttes redan **11 sep** (två dagar i förväg) från Valmyndighetens
+generalrepetition till de skarpa resultatfilerna (`val2026`) via samma enda konstant
+som var förberedd — hela produktionskedjan är alltså verifierad mot den riktiga
+källan, inte bara generalrepetitionen. Valmyndigheten publicerar inga filer där förrän
+valnatten, så kartan visar "inga 2026-röster än" tills dess.
 
 ## Vad den gör
 
