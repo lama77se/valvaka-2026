@@ -12,7 +12,7 @@ import {
   VALKRETS_RD_BOUNDARIES_URL,
 } from '@/lib/geometry'
 import { GROUP_LEVEL_LABEL, VALTYPER, VALTYP_LABEL, slutligTag, type ColorMode, type DistrictOutcome, type Valtyp } from '@/lib/results'
-import { SPARR, applyComparison, buildRows, collapseForDisplay, districtsInArea, type Level } from '@/lib/aggregate'
+import { applyComparison, buildRows, collapseForDisplay, districtsInArea, sparrFor, type Level } from '@/lib/aggregate'
 import { ancestorsOf } from '@/lib/hierarchy'
 import { defaultAreaFor, useResults } from '@/components/ResultsProvider'
 import { ValtypSelector } from '@/components/ValtypSelector'
@@ -192,7 +192,10 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
     const grouped = colorMode === 'grupp'
     const codes = grouped ? groupDistrictsFor(hover.kod) : [hover.kod]
     const votes = storesRef.current[valtyp].aggregate(codes)
-    const area = buildRows(votes, partyRef.current, SPARR[valtyp])
+    // hover.kod är alltid en 8-siffrig valdistriktskod (både i grupp- och distrikt-läge
+    // — KF:s "grupp" ÄR kommunen, samma 4-siffriga prefix) → sparrFor('distrikt', ...)
+    // ger rätt kommuns tröskel oavsett läge (RD/RF struntar i level, se sparrFor).
+    const area = buildRows(votes, partyRef.current, sparrFor(valtyp, 'distrikt', hover.kod))
     // Grupp: samma 2022-jämförelse som region-/kommun-/valkrets-panelerna redan
     // använder (comparisonFor täcker RD-valkrets, RF-region, KF-kommun — se
     // aggregate.ts). Distrikt: den lat-laddade per-distrikt-facit-raden (oförändrat).

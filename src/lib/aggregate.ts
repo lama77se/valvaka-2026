@@ -12,10 +12,30 @@ import { SEAT_CONFIG_2026 } from './seatConfig2026'
 
 export type Level = 'riket' | 'region' | 'kommun' | 'valkrets' | 'distrikt'
 
-// Riksspärr per valtyp (för spärr-linjen). KF varierar 2 %/3 % per kommun —
-// förfinas när mandat wiras (increment 2); 2 % som default här.
+// Riksspärr per valtyp — fallback/default för nivåer där ETT tal inte är entydigt
+// (KF-aggregat över FLERA kommuner, t.ex. riket/region-summering — varje kommun
+// väger då in sin EGEN spärr i mandaträkningen ändå, se computeMandate/sparrFor).
 export const SPARR: Record<Valtyp, number> = { RD: 0.04, RF: 0.03, KF: 0.02 }
 export const DISPLAY_THRESHOLD = 0.01 // visa individuellt ≥1 %, resten → Övriga
+
+// Spärren att VISA (spärr-linjen i tabellen/soffan) för ett specifikt område — skiljer
+// sig från den statiska SPARR[valtyp] bara för KF: tröskeln är 2 % i en odelad kommun
+// (en enda valkrets) men 3 % i en kommun indelad i flera valkretsar (vallagen, ändrad
+// 2018) — se build-seat-config.mjs, som härleder threshold PER KOMMUN direkt ur
+// Valmyndighetens fasta-fil (räknar valkrets-rader per kommun i källfilen). RD/RF har
+// ingen sådan variation i lagen (bekräftat mot val.se/SKR/Riksdagen) → samma konstant
+// som computeMandate redan använder. computeMandate har ALLTID använt rätt per-kommun-
+// tröskel för själva mandaträkningen — denna funktion för bara samma värde till VISNINGEN
+// (spärr-linjen i ResultTable/MandatBars/hover-rutan), som tidigare låg fast på 2 % även
+// för de ~17 delade kommunerna (Stockholm, Malmö, Göteborg m.fl.).
+export function sparrFor(valtyp: Valtyp, level: Level, code: string | null): number {
+  if (valtyp !== 'KF' || !code) return SPARR[valtyp]
+  // KF: 'kommun' är koden själv; 'distrikt'/'valkrets' ligger alltid inuti EN kommun
+  // (kommun-prefixade koder) → samma kommuns tröskel gäller. 'riket' (alla kommuner
+  // blandade) → ingen enskild kommun är rätt svar, falla tillbaka på defaulten.
+  const kommunkod = level === 'kommun' ? code : level === 'distrikt' || level === 'valkrets' ? code.slice(0, 4) : null
+  return (kommunkod && SEAT_CONFIG_2026.KF[kommunkod]?.threshold) ?? SPARR.KF
+}
 
 export interface PartyMeta {
   forkortning: string | null
