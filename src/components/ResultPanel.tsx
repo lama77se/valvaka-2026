@@ -212,6 +212,16 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
   const regionName = useMemo(() => new Map(regioner.map((r) => [r.code, r.name])), [regioner])
   const kommunName = useMemo(() => new Map(kommuner.map((k) => [k.code, k.name])), [kommuner])
   const valkretsName = useMemo(() => new Map(valkretsar.map((v) => [v.code, v.name])), [valkretsar])
+
+  // Valkretsar i den PLATTA väljaren (bara RD/RF — se levels.includes('valkrets') nedan)
+  // sorteras om till den text som FAKTISKT visas: `valkretsar` självt är sorterat på bara
+  // valkretsens EGET namn (ResultsProvider.tsx), men RF:s rad skriver ut "Region · Valkrets"
+  // — sorterat på suffixet ser då slumpmässigt blandat ut (Jönköping mellan Halland och
+  // Kalmar). Sortera i stället på den riktiga visningstexten.
+  const valkretsarForSelect = useMemo(() => {
+    const label = (v: (typeof valkretsar)[number]) => (valtyp === 'RF' ? `${regionName.get(v.code.slice(0, 2)) ?? ''} · ${v.name}` : v.name)
+    return [...valkretsar].sort((a, b) => label(a).localeCompare(label(b), 'sv'))
+  }, [valkretsar, valtyp, regionName])
   const nameOf = (a: { level: string; code: string | null }): string =>
     a.level === 'riket'
       ? 'Riket'
@@ -416,7 +426,7 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
         )}
         {levels.includes('valkrets') && (
           <optgroup label="Valkrets">
-            {valkretsar.map((v) => (
+            {valkretsarForSelect.map((v) => (
               // RF-valkretsnamn ("Nordväst") är region-lokala → prefixa med regionen i
               // den platta listan; i breadcrumb/drill räcker namnet (regionen är förälder).
               <option key={v.code} value={`vk:${v.code}`}>
