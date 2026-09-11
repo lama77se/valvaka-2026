@@ -689,7 +689,10 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
       } else {
         const panelW = document.querySelector('aside')?.clientWidth ?? 0
         const boardsRight = document.getElementById('left-boards')?.getBoundingClientRect().right ?? 0
-        pad = { top: 150, right: panelW + 24, bottom: 48, left: Math.round(boardsRight) + 24 }
+        // Väljarraden hoppar upp (top-14 → top-4, se dataset?.test nedan i JSX:en) när
+        // testdata-bannern släcks — annars reserverar fitBounds ett tomt fält ovanför
+        // väljaren i stället för att kartan faktiskt får den frigjorda ytan.
+        pad = { top: dataset?.test ? 150 : 110, right: panelW + 24, bottom: 48, left: Math.round(boardsRight) + 24 }
       }
       // maxZoom kapar bara mycket små kommuner — annars fit:ar vi områdets egen utsträckning.
       if (on && box) m.fitBounds(box, { padding: pad, maxZoom: level === 'distrikt' ? 11 : 10, duration })
@@ -702,7 +705,7 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
     // klar. Utan detta missar en initial URL-vy (t.ex. ?omrade=kommun:2184) sin inzoomning om
     // effekten kör innan metadatan finns — selectedArea ändras aldrig sen, så den kör aldrig om.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedArea, valtyp, mapReady, boundsReady, snapshotVersion])
+  }, [selectedArea, valtyp, mapReady, boundsReady, snapshotVersion, dataset?.test])
 
   // Fönsterstorleksändring: MapLibre resizar canvasen (trackResize) men BEHÅLLER zoom →
   // Sverige/området "fastnar" i den gamla storleken tills man laddar om eller zoomar. Re-fit:a
