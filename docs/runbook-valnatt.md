@@ -177,6 +177,12 @@ select cron.alter_job((select jobid from cron.job where jobname='ingest-result-g
 - Testdata-bannern släcks.
 - Kartan börjar fyllas, rapporteringsgrad-HUD:en tickar, statustaggen = **Preliminärt**.
 - Avgångstavlorna visar inrapporterade distrikt med val.se:s klockslag.
+- **Nytt (PR #129):** på **valkretsnivå** — riksdagens 29, samt de 11/20 delade regionerna och
+  17/290 delade kommunerna (t.ex. Blekinge · Karlskronakretsen, Täby · Täby Västra) — visas en
+  amber "Preliminär fördelning"-ruta ovanför tabellen och Mandat-kolumnen får en `*`. **Detta är
+  förväntat, inte ett fel:** mandat är egentligen riks-/region-/kommuntäckande (utjämningsmandaten
+  placeras bara på den nivån), så valkretsvyn visar bara de fasta valkretsmandaten som en
+  "minst"-siffra. Riks-/region-/kommunnivåns egen mandattotal påverkas inte.
 - **Snapshot-blobbarna är färska** (nya flikar seedar från dem — mount-herden går mot CDN, inte
   Postgres): smoke-POST-svaret har `"snapshots":{"RD":"… kB på … ms",…}` efter körningar som
   ändrade något, och
@@ -197,6 +203,42 @@ select cron.alter_job((select jobid from cron.job where jobname='ingest-result-g
 > ryms i edge. **Slutliga filer (`/s/`) finns INTE än på natten** — men Länsstyrelsen börjar
 > sluträkna redan **måndag** (dagen efter), så `/s/` dyker upp från måndag (se "Efter valnatten").
 > Ingen körning av det lokala skriptet på söndagsnatten.
+
+**N5. Första riktiga resultaten — snabbcheck (kör EN gång, så fort de första distrikten tänds,
+~20:00–20:15):**
+
+*Backend/skript (från din dator):*
+- [ ] `node --env-file=.env.local scripts/db-status.mjs` → `preliminar`-rader > 0 och växande,
+  `slutlig`-rader = 0 (för tidigt, se N4-noten ovan).
+- [ ] Smoke-POST (se *Verifiering* nedan) → `"source":"val2026"`, `"failed":0`, `changed>0`/
+  `upserted>0` på minst en körning.
+- [ ] Cron-hälsa i SQL (samma fråga som N4) → inga rader med `status_code <> 200` eller
+  `"ok":false`.
+- [ ] Snapshot-blobbarna färska (N4-kommandot) → `generated_at` inom de senaste minuterna.
+- [ ] `monitor-flow.mjs` (redan igång sen N4) visar val.se-filantal i takt med DB — inget som
+  fastnar på samma manifest-md5 flera varv i rad.
+- [ ] Edge-loggen (Supabase Dashboard → Functions → `ingest-result` → Logs) — inga upprepade
+  `WORKER_RESOURCE_LIMIT`/krasch-loop-rader (se *Vanliga fel* nedan).
+
+*Frontend (manuellt i browsern, valvaka.tech):*
+- [ ] Testdata-bannern är BORTA. Statustaggen (alla tre valtyper) = **Preliminärt**,
+  rapporteringsgrad-HUD:en > 0 % och tickar uppåt.
+- [ ] Avgångstavlorna visar riktiga val.se-klockslag (inte genrep-tider, inte "0 av 6 …").
+- [ ] Minst ett distrikt är färglagt på kartan (inte bara grått "ej rapporterat") — klicka in på
+  det, stämmer siffrorna mot valresultat.svt.se/val.se för samma distrikt (en stickprovskoll räcker).
+- [ ] Riksdag → Riket, Region → en region, Kommun → en kommun: MandatBars/tabellen ser normal ut
+  (inga NaN, inga negativa tal, majoritetslinjen vid rätt tal).
+- [ ] **Nytt denna omgång (PR #129) — kolla att den INTE ser trasig ut på riktiga röster:** öppna
+  en RD-valkrets, en delad region (t.ex. Blekinge · Karlskronakretsen) och en delad kommun (t.ex.
+  Stockholm eller Täby → dess valkretsar). Amber "Preliminär fördelning"-rutan ska visa en riktig
+  siffra (inte "?"), och länken tillbaka till Riket/regionen/kommunen ska funka.
+- [ ] Kartfärgläget "grupp" (valkrets/region/kommun-togglen bredvid valtyp-väljaren): gränserna
+  ritas rent på RIKTIGA röster — inga vita prickar/linjer i mitten av polygoner (fixat i PR #120
+  på genrep-data, inte tidigare verifierat på skarpt).
+- [ ] "Bryt ner"-listan: klicka en partikolumn, sorteringen cyklar (störst→minst→alfabetiskt) med
+  riktiga siffror.
+- [ ] Mobil (telefon eller smal viewport): flik-växling, färgläges-togglen och att bottom-sheeten
+  stänger vid "Hela Sverige" fungerar med riktig data.
 
 ---
 
@@ -273,3 +315,7 @@ gången; edge-budgeten är 25 s (< 30 s-kadensen). Fastnar leasen (bör inte hä
   fortfarande på `genrep` (lockstep-switchen bytte bara edge-filen).
 - **Bannern släcks inte** → ingen skarp fil har flödat än (val2026 fortfarande 404/tom) eller
   `dataset_meta` inte uppdaterats — kolla att cron:en hittar ändrade filer.
+- **Mandat-kolumnen har en amber `*` och "Mandat"-summan verkar för låg på valkretsnivå** → inte
+  ett fel, se N4 ovan (PR #129) — det är medvetet bara de fasta valkretsmandaten, inte den slutliga
+  riks-/region-/kommuntotalen. Syns bara på valkretsnivå i riksdagen och i de 11/17 delade
+  regionerna/kommunerna; riket/region/kommun visar som vanligt hela mandattotalen.
