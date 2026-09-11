@@ -437,6 +437,22 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
                 })}
               </nav>
             )}
+            {/* RD:s mandat är ett RIKSTÄCKANDE begrepp — fasta valkretsmandat +
+                utjämningsmandat placerade per valkrets beräknas inte live (kräver
+                Valmyndighetens fasta-valkretsmandat-fil + en ännu obyggd
+                jämförelsetal-placeringsalgoritm för utjämningsmandaten, se
+                computeMandate i aggregate.ts). Oberoende av view.giltiga (visas
+                ÄVEN innan några röster kommit in) — annars ser "–" i tabellen ut
+                som ett fel snarare än ett medvetet val så fort röster börjar synas. */}
+            {valtyp === 'RD' && selectedArea.level !== 'riket' && (
+              <p className="mb-3 text-xs text-slate-500">
+                Riksdagsmandat räknas bara ut på riksnivå — se{' '}
+                <button type="button" onClick={() => setSelectedArea(RIKET)} className="underline hover:text-slate-300">
+                  Riket
+                </button>{' '}
+                för mandatfördelning. Här visas bara röstandelen för {areaName}.
+              </p>
+            )}
             {view.giltiga > 0 && (
               <div className="mb-3 border-b border-slate-800 pb-3">
                 <MandatBars
