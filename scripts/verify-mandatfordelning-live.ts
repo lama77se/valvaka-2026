@@ -31,8 +31,8 @@ import { unzipSync } from 'fflate'
 import {
   buildGroups,
   computeFixedRegionOrKommunValkretsMandate,
-  computeFixedValkretsMandate,
   computeMandate,
+  computeRdValkretsMandate,
   type UppsamlingVotes,
 } from '../src/lib/aggregate.ts'
 import { SEAT_CONFIG_2026 } from '../src/lib/seatConfig2026.ts'
@@ -162,19 +162,17 @@ async function loadVkIndex() {
   return idx
 }
 
-// Fasta valkretsmandat: jämför VÅR computeFixedValkretsMandate/computeFixedRegionOrKommun-
-// ValkretsMandate mot filens valkretsLista — det NYA (PR #129) som inget annat skript testar.
+// Valkretsmandat: jämför vår beräkning mot filens valkretsLista.
 //
-// ⚠️ MEDVETET bara FASTA mandat, inte totalen (antalMandat): valkretsLista[].mandatfordelning
-// har (om schemat i slut-/prel-mandatfordelning.md stämmer) SAMMA partiLista-schema som
-// organnivån — dvs. även antalUtjamningsmandat PER VALKRETS, alltså Valmyndighetens EGEN
-// placering av utjämningsmandat ner på valkrets (jämförelsetal-metoden). Vår
-// computeFixedValkretsMandate gör INTE den placeringen (dokumenterad, avsiktlig begränsning,
-// se aggregate.ts) — den ger bara fasta mandat som en "minst"-siffra. Jämför vi mot
-// antalMandat (totalen) i stället för antalFastaMandat skulle en KORREKT implementation se
-// ut som trasig varje gång ett parti fått utjämningsmandat i just den valkretsen. Loggar
-// därför båda talen (fasta jämfört, total bara informativt) så gapet syns tydligt, inte
-// tyst eller som en falsk ❌.
+// RD (sedan 12 sep, se aggregate.ts computeRdValkretsMandate + mandate.ts
+// placeLevelingSeats): vi beräknar numera den RIKTIGA totalen — fasta OCH geografiskt
+// placerad utjämning — verifierad exakt mot 2022-facit (scripts/verify-mandate-leveling.ts,
+// 232/232). Jämförs därför mot filens FULLA antalMandat, inte bara antalFastaMandat.
+//
+// RF/KF: fortfarande bara FASTA mandat (computeFixedRegionOrKommunValkretsMandate) — den
+// placeringen är INTE byggd för RF/KF (dokumenterad, avsiktlig begränsning). Jämförs mot
+// antalFastaMandat, med filens fulla antalMandat loggat informativt (inte en assert) så
+// det FÖRVÄNTADE gapet syns tydligt i stället för att se ut som en falsk ❌.
 function testValkretsar(valtyp: Valtyp, organKod: string, mandat: MandatFile, vkIndex: Record<Valtyp, Map<string, string[]>>, aggregate: (cs: Iterable<string>) => PartyVotes) {
   const list = mandat.valomrade.valkretsLista
   if (!list || list.length === 0) return // odelat valområde — ingen egen valkrets-nivå (som väntat)
@@ -185,26 +183,33 @@ function testValkretsar(valtyp: Valtyp, organKod: string, mandat: MandatFile, vk
       continue
     }
     checkedValkretsar++
+
+    if (valtyp === 'RD') {
+      const facitTotal = Object.fromEntries(facitParti.map((p) => [p.partikod, p.antalMandat ?? 0]))
+      const ours = computeRdValkretsMandate(vk.kod, vkIndex.RD, aggregate)
+      const label = `RD ${vk.namnValkrets} (${vk.kod})`
+      if (!ours) { log(false, `${label}: vår computeRdValkretsMandate gav null (saknas i SEAT_CONFIG_2026.RD.valkrets?)`); continue }
+      const diffs = seatDiff(ours.seatsByParty, facitTotal)
+      log(diffs.length === 0, `${label}: TOTALT mandat (fasta+utjämning) per parti == fil${diffs.length ? ' — ' + diffs.join(', ') : ''}`)
+      const facitTotalSum = Object.values(facitTotal).reduce((a, b) => a + b, 0)
+      log(ours.totalSeats === facitTotalSum, `${label}: totalsumma ${ours.totalSeats} == ${facitTotalSum} (${ours.totalFixed} fasta + ${ours.totalSeats - ours.totalFixed} placerad utjämning)`)
+      continue
+    }
+
     const facit = Object.fromEntries(facitParti.map((p) => [p.partikod, p.antalFastaMandat ?? 0]))
-    const ours =
-      valtyp === 'RD'
-        ? computeFixedValkretsMandate(vk.kod, vkIndex.RD, aggregate)
-        : computeFixedRegionOrKommunValkretsMandate(
-            valtyp,
-            organKod,
-            vk.kod,
-            vkIndex[valtyp],
-            aggregate,
-            valtyp === 'KF' ? (SEAT_CONFIG_2026.KF[organKod]?.threshold ?? 0.02) : 0.03,
-          )
+    const ours = computeFixedRegionOrKommunValkretsMandate(
+      valtyp,
+      organKod,
+      vk.kod,
+      vkIndex[valtyp],
+      aggregate,
+      valtyp === 'KF' ? (SEAT_CONFIG_2026.KF[organKod]?.threshold ?? 0.02) : 0.03,
+    )
     const label = `${valtyp} ${vk.namnValkrets} (${vk.kod}) — ${vk.totaltAntalFastaMandat} fasta mandat`
-    if (!ours) { log(false, `${label}: vår computeFixedValkretsMandate gav null (saknas i SEAT_CONFIG_2026?)`); continue }
+    if (!ours) { log(false, `${label}: vår computeFixedRegionOrKommunValkretsMandate gav null (saknas i SEAT_CONFIG_2026?)`); continue }
     const diffs = seatDiff(ours.seatsByParty, facit)
     log(diffs.length === 0, `${label}: fasta mandat per parti == fil${diffs.length ? ' — ' + diffs.join(', ') : ''}`)
     log(ours.totalFixed === vk.totaltAntalFastaMandat, `${label}: totalt fasta ${ours.totalFixed} == ${vk.totaltAntalFastaMandat}`)
-    // Informativt, INTE en assert: filens fulla antalMandat (fasta + val.se:s egen
-    // utjämnings-placering) jämfört med vad vi visar (bara fasta) — det FÖRVÄNTADE gapet,
-    // se kommentaren ovanför funktionen. > 0 här betyder "denna valkrets fick utjämning".
     const facitTotalMandat = facitParti.reduce((a, p) => a + (p.antalMandat ?? 0), 0)
     const utjamningHer = facitTotalMandat - (vk.totaltAntalFastaMandat ?? 0)
     if (utjamningHer > 0) {
