@@ -1,7 +1,10 @@
 // Resultattabell — ren presentation. Driver alla nivåer (rike/region/kommun/
-// valkrets); bara props skiljer. Kolumner: Parti · Röster · Andel(2026·2022·±) ·
-// Mandat(2026·2022·±). 2022 visas ALLTID i egna kolumner (ingen switch) — även
-// innan 2026 kommit in — med ±-differens bredvid. Ej wirade fält (null) → "–".
+// valkrets/distrikt); bara props skiljer. Kolumner: Parti · Röster · Andel(2026·2022·±) ·
+// Mandat(2026·2022·±) — Mandat-kolumnerna döljs helt när mandat inte är meningsfullt på
+// den här nivån (distrikt, och för RD även kommun) i stället för att visa tre kolumner
+// med bara "–" (val.se visar inte mandat där heller). 2022 visas ALLTID i egna kolumner
+// (ingen switch) — även innan 2026 kommit in — med ±-differens bredvid. Ej wirade fält
+// (null) → "–".
 import { Fragment } from 'react'
 import type { DisplayRows } from '@/lib/aggregate'
 import { deltaColor, formatDelta as delta, formatDeltaInt as dInt } from '@/lib/delta'
@@ -9,8 +12,6 @@ import { deltaColor, formatDelta as delta, formatDeltaInt as dInt } from '@/lib/
 const NEUTRAL = '#64748b'
 const nf = new Intl.NumberFormat('sv-SE')
 const pct = (a: number | null) => (a == null ? '–' : `${(a * 100).toFixed(1).replace('.', ',')} %`)
-
-const COLS = 8
 
 export interface ResultTableProps {
   title: string
@@ -25,16 +26,17 @@ export interface ResultTableProps {
   totalMandat?: number | null
   totalMandat2022?: number | null
   showSparr?: boolean // spärr-linjen är en församlingsvid bestämning → dölj på distriktsnivå
-  mandatCaveat?: string // t.ex. RD/valkrets "endast fasta mandat" — visas som (i)-hint på Mandat-rubriken
+  showMandat?: boolean // mandat är bara meningsfullt på organ-/valkretsnivå → dölj kolumnerna annars
 }
 
-export function ResultTable({ title, subtitle, reportPct, statusTag, turnoutLabel, display, giltiga, sparr, blanka, totalMandat, totalMandat2022, showSparr = true, mandatCaveat }: ResultTableProps) {
+export function ResultTable({ title, subtitle, reportPct, statusTag, turnoutLabel, display, giltiga, sparr, blanka, totalMandat, totalMandat2022, showSparr = true, showMandat = true }: ResultTableProps) {
   const { shown, ovriga, sparrIndex } = display
   const sparrLabel = `${(sparr * 100).toFixed(0)} %-spärr`
+  const cols = showMandat ? 8 : 5
 
   const SparrLine = () => (
     <tr aria-hidden>
-      <td colSpan={COLS} className="py-1">
+      <td colSpan={cols} className="py-1">
         <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider text-slate-500">
           <span className="h-px flex-1 border-t border-dashed border-slate-600" />
           {sparrLabel}
@@ -84,13 +86,7 @@ export function ResultTable({ title, subtitle, reportPct, statusTag, turnoutLabe
                 Mandat) — den ytan används i stället till valdeltagandet i valt område. */}
             <th colSpan={2} className="pb-0.5 text-left font-medium">{turnoutLabel}</th>
             <th colSpan={3} className="border-l border-slate-800 pb-0.5 text-center font-semibold text-slate-300">Andel</th>
-            <th
-              colSpan={3}
-              className={`border-l border-slate-800 pb-0.5 text-center font-semibold ${mandatCaveat ? 'text-amber-400' : 'text-slate-300'}`}
-              title={mandatCaveat}
-            >
-              Mandat{mandatCaveat ? ' *' : ''}
-            </th>
+            {showMandat && <th colSpan={3} className="border-l border-slate-800 pb-0.5 text-center font-semibold text-slate-300">Mandat</th>}
           </tr>
           <tr className="border-b border-slate-700 text-[11px] uppercase tracking-wide text-slate-400">
             <th className="py-1 pr-2 text-left font-medium">Parti</th>
@@ -98,9 +94,13 @@ export function ResultTable({ title, subtitle, reportPct, statusTag, turnoutLabe
             <th className="py-1 px-1 text-right font-medium border-l border-slate-800">2026</th>
             <th className="py-1 px-1 text-right font-medium">2022</th>
             <th className="py-1 px-1 text-right font-medium">±</th>
-            <th className="py-1 px-1 text-right font-medium border-l border-slate-800">2026</th>
-            <th className="py-1 px-1 text-right font-medium">2022</th>
-            <th className="py-1 pl-1 text-right font-medium">±</th>
+            {showMandat && (
+              <>
+                <th className="py-1 px-1 text-right font-medium border-l border-slate-800">2026</th>
+                <th className="py-1 px-1 text-right font-medium">2022</th>
+                <th className="py-1 pl-1 text-right font-medium">±</th>
+              </>
+            )}
           </tr>
         </thead>
         <tbody>
@@ -120,11 +120,15 @@ export function ResultTable({ title, subtitle, reportPct, statusTag, turnoutLabe
                 <td className={`py-1 px-1 text-right ${r.ny ? 'text-amber-400' : deltaColor(r.deltaAndel)}`}>
                   {r.ny ? 'ny' : delta(r.deltaAndel)}
                 </td>
-                <td className="py-1 px-1 text-right font-semibold border-l border-slate-800">{r.mandat ?? '–'}</td>
-                <td className="py-1 px-1 text-right text-slate-400">{r.mandat2022 ?? '–'}</td>
-                <td className={`py-1 pl-1 text-right ${r.ny ? 'text-amber-400' : deltaColor(r.deltaMandat)}`}>
-                  {r.ny ? 'ny' : dInt(r.deltaMandat)}
-                </td>
+                {showMandat && (
+                  <>
+                    <td className="py-1 px-1 text-right font-semibold border-l border-slate-800">{r.mandat ?? '–'}</td>
+                    <td className="py-1 px-1 text-right text-slate-400">{r.mandat2022 ?? '–'}</td>
+                    <td className={`py-1 pl-1 text-right ${r.ny ? 'text-amber-400' : deltaColor(r.deltaMandat)}`}>
+                      {r.ny ? 'ny' : dInt(r.deltaMandat)}
+                    </td>
+                  </>
+                )}
               </tr>
             </Fragment>
           ))}
@@ -138,9 +142,13 @@ export function ResultTable({ title, subtitle, reportPct, statusTag, turnoutLabe
               <td className="py-1 px-1 text-right border-l border-slate-800">{pct(ovriga.andel)}</td>
               <td className="py-1 px-1 text-right">{pct(ovriga.andel2022)}</td>
               <td className="py-1 px-1 text-right text-slate-500">–</td>
-              <td className="py-1 px-1 text-right border-l border-slate-800">{ovriga.mandat ?? '–'}</td>
-              <td className="py-1 px-1 text-right">{ovriga.mandat2022 ?? '–'}</td>
-              <td className="py-1 pl-1 text-right text-slate-500">–</td>
+              {showMandat && (
+                <>
+                  <td className="py-1 px-1 text-right border-l border-slate-800">{ovriga.mandat ?? '–'}</td>
+                  <td className="py-1 px-1 text-right">{ovriga.mandat2022 ?? '–'}</td>
+                  <td className="py-1 pl-1 text-right text-slate-500">–</td>
+                </>
+              )}
             </tr>
           )}
         </tbody>
@@ -151,21 +159,24 @@ export function ResultTable({ title, subtitle, reportPct, statusTag, turnoutLabe
             <td className="pt-2 px-1 text-right border-l border-slate-800">100 %</td>
             <td className="pt-2 px-1 text-right">{totalMandat2022 != null ? '100 %' : ''}</td>
             <td className="pt-2 px-1 text-right" />
-            <td className="pt-2 px-1 text-right font-semibold text-slate-300 border-l border-slate-800">{totalMandat ?? '–'}</td>
-            <td className="pt-2 px-1 text-right font-semibold text-slate-400">{totalMandat2022 ?? '–'}</td>
-            <td className="pt-2 pl-1 text-right" />
+            {showMandat && (
+              <>
+                <td className="pt-2 px-1 text-right font-semibold text-slate-300 border-l border-slate-800">{totalMandat ?? '–'}</td>
+                <td className="pt-2 px-1 text-right font-semibold text-slate-400">{totalMandat2022 ?? '–'}</td>
+                <td className="pt-2 pl-1 text-right" />
+              </>
+            )}
           </tr>
           {blanka != null && (
             <tr>
               <td className="pt-1">Blanka / ogiltiga</td>
               <td className="pt-1 px-1 text-right">{nf.format(blanka)}</td>
-              <td colSpan={6} />
+              <td colSpan={showMandat ? 6 : 3} />
             </tr>
           )}
         </tfoot>
       </table>
       </div>
-      {mandatCaveat && <p className="mt-1.5 text-[11px] text-amber-400/90">* {mandatCaveat}</p>}
     </div>
   )
 }

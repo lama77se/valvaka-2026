@@ -6,13 +6,12 @@
 // att isolera beräkningskorrekthet från ingest-timing.
 //
 // Generalisering av scripts/verify-uppsamling.ts (samma fetchOrgan/build-mönster, bevisat
-// mot genrep tidigare i höst) på två sätt:
-//   1. `--base` konfigurerbar (default val2026 — genrep2026 är riven, se nedan) i stället
-//      för hårdkodad genrep-URL.
-//   2. Täcker ÄVEN det nya (PR #129, 11 sep): fasta valkretsmandat per valkrets, jämfört
-//      mot filens egen valkretsLista[].totaltAntalFastaMandat / nested
-//      mandatfordelning.partiLista[].antalFastaMandat — inget tidigare skript testar detta
-//      mot en RIKTIG Valmyndighets-fil.
+// mot genrep tidigare i höst): `--base` konfigurerbar (default val2026 — genrep2026 är
+// riven, se nedan) i stället för hårdkodad genrep-URL, samt täcker ÄVEN valkretsnivån
+// (RD:s 29 + RF/KF:s 11/17 delade organ, tillagt PR #129 och utökat 12 sep) — jämfört mot
+// filens FULLA antalMandat (fasta+utjämning) för alla tre valtyper sedan
+// computeRegionOrKommunValkretsMandate/computeRdValkretsMandate båda numera placerar
+// utjämningen geografiskt (se scripts/verify-mandate-leveling.ts /-rfkf.ts).
 //
 // Skriver ALDRIG till DB:n. Kräver nätverk mot BASE (val.se) + Supabase (bara för att läsa
 // `district`, för samma vk_rd/vk_rf/vk_kf-index som klienten bygger klientsidan, se
@@ -30,9 +29,9 @@ import { createClient } from '@supabase/supabase-js'
 import { unzipSync } from 'fflate'
 import {
   buildGroups,
-  computeFixedRegionOrKommunValkretsMandate,
   computeMandate,
   computeRdValkretsMandate,
+  computeRegionOrKommunValkretsMandate,
   type UppsamlingVotes,
 } from '../src/lib/aggregate.ts'
 import { SEAT_CONFIG_2026 } from '../src/lib/seatConfig2026.ts'
@@ -173,7 +172,20 @@ async function loadVkIndex() {
 // placeringen är INTE byggd för RF/KF (dokumenterad, avsiktlig begränsning). Jämförs mot
 // antalFastaMandat, med filens fulla antalMandat loggat informativt (inte en assert) så
 // det FÖRVÄNTADE gapet syns tydligt i stället för att se ut som en falsk ❌.
-function testValkretsar(valtyp: Valtyp, organKod: string, mandat: MandatFile, vkIndex: Record<Valtyp, Map<string, string[]>>, aggregate: (cs: Iterable<string>) => PartyVotes) {
+// Uppsamling skickas som ORGAN-VID bucket (upp.get(organKod)) — väger in i spärr/mål
+// (computeAssembly extraVotes) men placeras aldrig geografiskt här. Mindre precist än
+// scripts/verify-mandate-leveling-rfkf.ts (som läser filens EGEN kretskod och kan
+// attribuera VISS uppsamling till en specifik valkrets, se dess header) — den här
+// funktionens `aggregate`/vkIndex är byggd på `district`-tabellen (samma index klienten
+// använder), som bara känner till RIKTIGA valdistrikt, aldrig uppsamlingsdistrikt-koder.
+function testValkretsar(
+  valtyp: Valtyp,
+  organKod: string,
+  mandat: MandatFile,
+  vkIndex: Record<Valtyp, Map<string, string[]>>,
+  aggregate: (cs: Iterable<string>) => PartyVotes,
+  uppsamling: UppsamlingVotes,
+) {
   const list = mandat.valomrade.valkretsLista
   if (!list || list.length === 0) return // odelat valområde — ingen egen valkrets-nivå (som väntat)
   for (const vk of list) {
@@ -184,37 +196,25 @@ function testValkretsar(valtyp: Valtyp, organKod: string, mandat: MandatFile, vk
     }
     checkedValkretsar++
 
-    if (valtyp === 'RD') {
-      const facitTotal = Object.fromEntries(facitParti.map((p) => [p.partikod, p.antalMandat ?? 0]))
-      const ours = computeRdValkretsMandate(vk.kod, vkIndex.RD, aggregate)
-      const label = `RD ${vk.namnValkrets} (${vk.kod})`
-      if (!ours) { log(false, `${label}: vår computeRdValkretsMandate gav null (saknas i SEAT_CONFIG_2026.RD.valkrets?)`); continue }
-      const diffs = seatDiff(ours.seatsByParty, facitTotal)
-      log(diffs.length === 0, `${label}: TOTALT mandat (fasta+utjämning) per parti == fil${diffs.length ? ' — ' + diffs.join(', ') : ''}`)
-      const facitTotalSum = Object.values(facitTotal).reduce((a, b) => a + b, 0)
-      log(ours.totalSeats === facitTotalSum, `${label}: totalsumma ${ours.totalSeats} == ${facitTotalSum} (${ours.totalFixed} fasta + ${ours.totalSeats - ours.totalFixed} placerad utjämning)`)
-      continue
-    }
-
-    const facit = Object.fromEntries(facitParti.map((p) => [p.partikod, p.antalFastaMandat ?? 0]))
-    const ours = computeFixedRegionOrKommunValkretsMandate(
-      valtyp,
-      organKod,
-      vk.kod,
-      vkIndex[valtyp],
-      aggregate,
-      valtyp === 'KF' ? (SEAT_CONFIG_2026.KF[organKod]?.threshold ?? 0.02) : 0.03,
-    )
-    const label = `${valtyp} ${vk.namnValkrets} (${vk.kod}) — ${vk.totaltAntalFastaMandat} fasta mandat`
-    if (!ours) { log(false, `${label}: vår computeFixedRegionOrKommunValkretsMandate gav null (saknas i SEAT_CONFIG_2026?)`); continue }
-    const diffs = seatDiff(ours.seatsByParty, facit)
-    log(diffs.length === 0, `${label}: fasta mandat per parti == fil${diffs.length ? ' — ' + diffs.join(', ') : ''}`)
-    log(ours.totalFixed === vk.totaltAntalFastaMandat, `${label}: totalt fasta ${ours.totalFixed} == ${vk.totaltAntalFastaMandat}`)
-    const facitTotalMandat = facitParti.reduce((a, p) => a + (p.antalMandat ?? 0), 0)
-    const utjamningHer = facitTotalMandat - (vk.totaltAntalFastaMandat ?? 0)
-    if (utjamningHer > 0) {
-      console.log(`   ↳ filens FULLA total här: ${facitTotalMandat} mandat (${utjamningHer} utjämning utöver de ${vk.totaltAntalFastaMandat} fasta) — vi visar bara de fasta, per design.`)
-    }
+    const facitTotal = Object.fromEntries(facitParti.map((p) => [p.partikod, p.antalMandat ?? 0]))
+    const ours =
+      valtyp === 'RD'
+        ? computeRdValkretsMandate(vk.kod, vkIndex.RD, aggregate)
+        : computeRegionOrKommunValkretsMandate(
+            valtyp,
+            organKod,
+            vk.kod,
+            vkIndex[valtyp],
+            aggregate,
+            valtyp === 'KF' ? (SEAT_CONFIG_2026.KF[organKod]?.threshold ?? 0.02) : 0.03,
+            uppsamling.get(organKod),
+          )
+    const label = `${valtyp} ${vk.namnValkrets} (${vk.kod})`
+    if (!ours) { log(false, `${label}: vår beräkning gav null (saknas i SEAT_CONFIG_2026?)`); continue }
+    const diffs = seatDiff(ours.seatsByParty, facitTotal)
+    log(diffs.length === 0, `${label}: TOTALT mandat (fasta+utjämning) per parti == fil${diffs.length ? ' — ' + diffs.join(', ') : ''}`)
+    const facitTotalSum = Object.values(facitTotal).reduce((a, b) => a + b, 0)
+    log(ours.totalSeats === facitTotalSum, `${label}: totalsumma ${ours.totalSeats} == ${facitTotalSum} (${ours.totalFixed} fasta + ${ours.totalSeats - ours.totalFixed} placerad utjämning)`)
   }
 }
 
@@ -259,7 +259,7 @@ async function testOrgan(rel: string, valtyp: Valtyp, level: Level, vkIndex: Rec
 
   // Valkrets-nivån är oberoende av "full" — fasta mandat är kända från Valmyndighetens
   // BESLUTSFIL redan innan valet, filen speglar dem oavsett räkningsläge.
-  testValkretsar(valtyp, mandat.valomrade.kod, mandat, vkIndex, aggregate)
+  testValkretsar(valtyp, mandat.valomrade.kod, mandat, vkIndex, aggregate, upp)
 }
 
 const main = async () => {

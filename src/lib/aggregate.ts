@@ -287,41 +287,49 @@ export function computeMandate(
   return totalMandat === 0 ? null : { seatsByParty: acc, totalMandat }
 }
 
-export interface FixedValkretsMandate {
-  seatsByParty: Record<string, number> // parti -> fasta valkretsmandat i DENNA valkrets
+export interface ValkretsMandate {
+  seatsByParty: Record<string, number> // parti -> TOTALT mandat i denna valkrets (fasta + placerad utjämning)
+  fixedSeatsByParty: Record<string, number> // parti -> bara de fasta, för "N av M är fasta"-visning
   totalFixed: number // valkretsens andel av valområdets fasta mandat
+  totalSeats: number // fasta + utjämning som landade här — den RIKTIGA slutsiffran
 }
 
-// Delad kärna FÖR RF/KF (RD har sin egen, se computeRdValkretsMandate nedan — den PLACERAR
-// numera utjämningen också). Kör computeAssembly på ETT valområdes (region/kommun) egna
-// valkretsar och plockar bara ut steg B (fixedByConstituencyParty) för `areaCode` — steg
-// C/D (den riktiga slutfördelningen, redan korrekt beräknad av computeMandate för HELA
-// valområdet) ignoreras medvetet här, se computeFixedRegionOrKommunValkretsMandate.
-// totalSeats i configen påverkar aldrig steg B, bara C/D → 0 duger, den läses aldrig.
-function fixedByValkrets(
+// Delad kärna: kör computeAssembly på ETT valområdes (riket/region/kommun) egna valkretsar,
+// PLACERA utjämningen geografiskt (placeLevelingSeats, mandate.ts) och slå ihop till den
+// RIKTIGA totalen per valkrets — fasta OCH utjämning, inte en "minst"-golvsiffra. Delas av
+// RD (nationellt, 12 %-kvalificering) och RF/KF (region-/kommunscopat, ingen 12 %-regel).
+function valkretsMandate(
   votesByConstituency: ConstituencyVotes,
   fixedSeatsByConstituency: Record<string, number>,
   areaCode: string,
+  totalSeatsOrgan: number,
   nationalThreshold: number,
   constituencyThreshold: number,
-): FixedValkretsMandate | null {
+  uppsamling?: PartyVotes,
+): ValkretsMandate | null {
   const totalFixed = fixedSeatsByConstituency[areaCode]
   if (!totalFixed) return null
-  const result = computeAssembly(votesByConstituency, {
-    totalSeats: 0,
-    firstDivisor: 1.2,
-    nationalThreshold,
-    constituencyThreshold,
-    fixedSeatsByConstituency,
-  })
-  return { seatsByParty: result.fixedByConstituencyParty[areaCode] ?? {}, totalFixed }
-}
-
-export interface RdValkretsMandate {
-  seatsByParty: Record<string, number> // parti -> TOTALT mandat i denna valkrets (fasta + placerad utjämning)
-  fixedSeatsByParty: Record<string, number> // parti -> bara de fasta, för "N av M är fasta"-visning
-  totalFixed: number // = SEAT_CONFIG_2026.RD.valkrets[kod]
-  totalSeats: number // fasta + utjämning som landade här — den RIKTIGA slutsiffran
+  const result = computeAssembly(
+    votesByConstituency,
+    {
+      totalSeats: totalSeatsOrgan,
+      firstDivisor: 1.2,
+      nationalThreshold,
+      constituencyThreshold,
+      fixedSeatsByConstituency,
+      fullyLevels: constituencyThreshold === Infinity, // RF/KF (Vallag 14 kap.); RD hanterar överhäng i steg D
+    },
+    uppsamling,
+  )
+  const placed = placeLevelingSeats(votesByConstituency, result.fixedByConstituencyParty, result.levelingByParty)
+  const fixedHere = result.fixedByConstituencyParty[areaCode] ?? {}
+  const placedHere = placed[areaCode] ?? {}
+  const seatsByParty: Record<string, number> = {}
+  for (const p of new Set([...Object.keys(fixedHere), ...Object.keys(placedHere)])) {
+    seatsByParty[p] = (fixedHere[p] ?? 0) + (placedHere[p] ?? 0)
+  }
+  const totalSeats = Object.values(seatsByParty).reduce((a, b) => a + b, 0)
+  return { seatsByParty, fixedSeatsByParty: fixedHere, totalFixed, totalSeats }
 }
 
 // RD, valkretsnivå — den RIKTIGA slutgiltiga mandatfördelningen per valkrets, LIVE på
@@ -336,52 +344,54 @@ export function computeRdValkretsMandate(
   areaCode: string,
   vkToDistricts: Map<string, string[]>,
   aggregate: (codes: Iterable<string>) => PartyVotes,
-): RdValkretsMandate | null {
-  const totalFixed = SEAT_CONFIG_2026.RD.valkrets[areaCode]
-  if (!totalFixed) return null
+): ValkretsMandate | null {
   const votesByConstituency: ConstituencyVotes = {}
   for (const [vk, districts] of vkToDistricts) votesByConstituency[vk] = aggregate(districts)
-  const result = computeAssembly(votesByConstituency, {
-    totalSeats: SEAT_CONFIG_2026.RD.totalSeats,
-    firstDivisor: 1.2,
-    nationalThreshold: SEAT_CONFIG_2026.RD.threshold,
-    constituencyThreshold: 0.12,
-    fixedSeatsByConstituency: SEAT_CONFIG_2026.RD.valkrets,
-  })
-  const placed = placeLevelingSeats(votesByConstituency, result.fixedByConstituencyParty, result.levelingByParty)
-  const fixedHere = result.fixedByConstituencyParty[areaCode] ?? {}
-  const placedHere = placed[areaCode] ?? {}
-  const seatsByParty: Record<string, number> = {}
-  for (const p of new Set([...Object.keys(fixedHere), ...Object.keys(placedHere)])) {
-    seatsByParty[p] = (fixedHere[p] ?? 0) + (placedHere[p] ?? 0)
-  }
-  const totalSeats = Object.values(seatsByParty).reduce((a, b) => a + b, 0)
-  return { seatsByParty, fixedSeatsByParty: fixedHere, totalFixed, totalSeats }
+  return valkretsMandate(
+    votesByConstituency,
+    SEAT_CONFIG_2026.RD.valkrets,
+    areaCode,
+    SEAT_CONFIG_2026.RD.totalSeats,
+    SEAT_CONFIG_2026.RD.threshold,
+    0.12,
+  )
 }
 
-// RF/KF, valkretsnivå — samma princip som RD (se ovan), men bara för de 11 delade
-// regionerna resp. 17 delade kommunerna (SEAT_CONFIG_2026.RF_VALKRETS/KF_VALKRETS —
-// övriga saknar en egen valkrets-nivå, hierarchy.ts hoppar över den). Två SKILLNADER
-// mot RD: (1) röstunderlaget är bara det EGNA valområdets valkretsar (regionen/
-// kommunen), inte hela riket — RF/KF-spärren är region-/kommunvid, inte nationell;
-// (2) ingen 12 %-i-en-valkrets-kvalificering (bara RD har den, Vallag) →
-// constituencyThreshold = Infinity. `prefix` filtrerar vkToDistricts (RF-valkretskod
-// är länsprefixad 4 siffror, KF-valkretskod kommunprefixad 6) till bara den egna
-// regionens/kommunens valkretsar.
-export function computeFixedRegionOrKommunValkretsMandate(
+// RF/KF, valkretsnivå — samma princip som RD (se ovan): den RIKTIGA slutgiltiga
+// fördelningen, fasta + geografiskt placerad utjämning, för de 11 delade regionerna resp.
+// 17 delade kommunerna (SEAT_CONFIG_2026.RF_VALKRETS/KF_VALKRETS — övriga saknar en egen
+// valkrets-nivå, hierarchy.ts hoppar över den). Två SKILLNADER mot RD: (1) röstunderlaget
+// är bara det EGNA valområdets valkretsar (regionen/kommunen), inte hela riket —
+// RF/KF-spärren är region-/kommunvid, inte nationell; (2) ingen 12 %-i-en-valkrets-
+// kvalificering (bara RD har den, Vallag) → constituencyThreshold = Infinity, vilket också
+// slår på `fullyLevels` (Vallag 14 kap. — inget överskott, se valkretsMandate). `prefix`
+// filtrerar vkToDistricts (RF-valkretskod är länsprefixad 4 siffror, KF-valkretskod
+// kommunprefixad 6) till bara den egna regionens/kommunens valkretsar. `uppsamling`
+// (organets EGNA sena röster, ingen egen valkrets) väger in i spärr/mål men placeras
+// aldrig geografiskt — se computeAssembly/placeLevelingSeats.
+//
+// Verifierad mot Valmyndighetens riktiga 2022-resultatarkiv (scripts/verify-mandate-
+// leveling-rfkf.ts, 12 sep): KF 100 % exakt (17/17 delade kommuner). RF 9/11 regioner
+// exakta, 2 kvarvarande enstaka avvikelser (Kalmar, Västra Götaland) som INTE beror på
+// tie-breaking (jämförelsetalen skiljer sig klart) eller en känd bugg — se skriptets
+// header. 677/679 (valkrets,parti)-par totalt, 99,7 %.
+export function computeRegionOrKommunValkretsMandate(
   valtyp: 'RF' | 'KF',
   prefix: string,
   areaCode: string,
   vkToDistricts: Map<string, string[]>,
   aggregate: (codes: Iterable<string>) => PartyVotes,
   threshold: number,
-): FixedValkretsMandate | null {
+  uppsamling?: PartyVotes,
+): ValkretsMandate | null {
   const votesByConstituency: ConstituencyVotes = {}
   for (const [vk, districts] of vkToDistricts) {
     if (vk.startsWith(prefix)) votesByConstituency[vk] = aggregate(districts)
   }
   const config = valtyp === 'RF' ? SEAT_CONFIG_2026.RF_VALKRETS : SEAT_CONFIG_2026.KF_VALKRETS
-  return fixedByValkrets(votesByConstituency, config, areaCode, threshold, Infinity)
+  const totalSeatsOrgan = valtyp === 'RF' ? SEAT_CONFIG_2026.RF[prefix] : SEAT_CONFIG_2026.KF[prefix]?.seats
+  if (!totalSeatsOrgan) return null
+  return valkretsMandate(votesByConstituency, config, areaCode, totalSeatsOrgan, threshold, Infinity, uppsamling)
 }
 
 // Slå in mandat i partiraderna (behåller andel/sortering).
