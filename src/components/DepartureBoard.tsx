@@ -15,6 +15,8 @@ import { VALTYP_LABEL, type Valtyp } from '@/lib/results'
 
 const NEUTRAL = '#64748b'
 const VISIBLE = 20 // hur många rader som visas (20 senaste inrapporterade per tavla)
+// Highlight: hur länge en matchande rad pulsar innan den lugnar sig till en kvarstående ram.
+const PULSE_MS = 10_000
 // Staggrad reveal: nya distrikt från ett poll-svar rullar in ETT PAR åt gången (i st f alla på en
 // gång) så tavlan känns som en levande avgångstavla trots 45–90 s-pollning. Adaptiv chunk → en
 // burst rullar in på ≤ ~2 s oavsett storlek (MAX_DRIP_TICKS × REVEAL_MS), ingen lagg mot verkligheten.
@@ -37,8 +39,29 @@ const fmtTime = (iso: string | null): string => { const m = /[T ](\d{2}:\d{2})/.
 // 50/25/25-fördelning av höjden mellan de tre tavlorna i stället för jämn 33/33/33.
 // Mobilens "Senaste"-flik skickar aldrig in denna → förblir jämn (se MobileApp.tsx).
 export function DepartureBoard({ valtyp, onRowSelect, fill, fullWidth, emphasized }: { valtyp: Valtyp; onRowSelect?: () => void; fill?: boolean; fullWidth?: boolean; emphasized?: boolean }) {
-  const { subscribeChanges, storesRef, partyRef, distriktNamnRef, totalByValtyp, setSelectedArea, setValtyp, revision, snapshotVersion, areaIndexRef, kommuner, regioner, valkretsListRef, ensureValtypLoaded } = useResults()
+  const {
+    subscribeChanges, storesRef, partyRef, distriktNamnRef, totalByValtyp, setSelectedArea, setValtyp, revision,
+    snapshotVersion, areaIndexRef, kommuner, regioner, valkretsListRef, ensureValtypLoaded,
+    valtyp: activeValtyp, selectedArea,
+  } = useResults()
   const [rows, setRows] = useState<Row[]>([])
+
+  // Highlight-mål: den AKTIVA valtypen + valt område (kan skilja sig från denna tavlas
+  // `valtyp`, se pathOf nedan). En ref hålls uppdaterad så subscribeChanges-callbacken
+  // (satt upp en gång per [valtyp, snapshotVersion], se effekten längre ner) alltid läser
+  // FÄRSKA värden utan att behöva riva upp hela prenumerationen vid varje områdesbyte.
+  const activeAreaRef = useRef({ activeValtyp, selectedArea })
+  useEffect(() => {
+    activeAreaRef.current = { activeValtyp, selectedArea }
+  }, [activeValtyp, selectedArea])
+
+  // Highlight-state: `pulsing` = matchade just nu (pulserar PULSE_MS), `ringed` = har
+  // matchat minst en gång (kvarstående ram, superset av pulsing). Session-/mount-lokalt —
+  // ingen persistens; en rad som rullar ut ur `rows` slutar synas oavsett innehåll här.
+  const [pulsing, setPulsing] = useState<Set<string>>(new Set())
+  const [ringed, setRinged] = useState<Set<string>>(new Set())
+  const pulseTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+  useEffect(() => () => { for (const t of pulseTimersRef.current.values()) clearTimeout(t) }, [])
 
   // Fas 3-trigger: en monterad tavla ber providern ladda SIN valtyps snapshot (idempotent).
   // Desktop monterar alla tre → alla tre laddas; mobil Senaste monterar alla tre först när
@@ -60,6 +83,28 @@ export function DepartureBoard({ valtyp, onRowSelect, fill, fullWidth, emphasize
   useEffect(() => {
     const store = storesRef.current[valtyp]
     const revealed = revealedRef.current
+    const changed = new Set<string>() // vd:er med en ändringsnotis i AKTUELL rAF-batch (highlight-kandidater)
+
+    // Markera vd som matchad: tänd pulsen (om) och lägg den i den kvarstående ramen (superset).
+    // Omstartar timern vid upprepade matchningar inom fönstret i stället för att stapla dem.
+    const markMatched = (vd: string) => {
+      setRinged((prev) => (prev.has(vd) ? prev : new Set(prev).add(vd)))
+      setPulsing((prev) => (prev.has(vd) ? prev : new Set(prev).add(vd)))
+      const existing = pulseTimersRef.current.get(vd)
+      if (existing) clearTimeout(existing)
+      pulseTimersRef.current.set(
+        vd,
+        setTimeout(() => {
+          setPulsing((prev) => {
+            if (!prev.has(vd)) return prev
+            const next = new Set(prev)
+            next.delete(vd)
+            return next
+          })
+          pulseTimersRef.current.delete(vd)
+        }, PULSE_MS),
+      )
+    }
     // Rader = top-VISIBLE av AVSLÖJADE distrikt, sorterade på rapporteringstid DESC (nyast överst).
     // ISO-tidsträngar sorterar kronologiskt → snabb strängjämförelse (localeCompare skulle spika
     // CPU:n på tusentals distrikt). Distrikt utan tid hamnar sist.
@@ -89,6 +134,19 @@ export function DepartureBoard({ valtyp, onRowSelect, fill, fullWidth, emphasize
       dripRef.current = q.length ? setTimeout(drip, REVEAL_MS) : null
     }
     const onChange = () => {
+      // Highlight: distrikt som fick en ändringsnotis i denna batch OCH ligger inom det
+      // område användaren just nu tittar på i AKTIV valtyp (denna tavlas valtyp kan skilja
+      // sig från aktiv, se pathOf). Ingen highlight på toppnivå (selectedArea.code == null)
+      // — annars skulle allt blinka. Gäller både nya rader och redan synliga som omräknas.
+      const { activeValtyp, selectedArea } = activeAreaRef.current
+      if (changed.size && valtyp === activeValtyp && selectedArea.code != null) {
+        for (const vd of changed) {
+          const chain = ancestorsOf(valtyp, { level: 'distrikt', code: vd }, areaIndexRef.current[valtyp])
+          if (chain.some((a) => a.level === selectedArea.level && a.code === selectedArea.code)) markMatched(vd)
+        }
+      }
+      changed.clear()
+
       // Ej-avslöjade distrikt → kö NYAST FÖRST så de rullar in överst. Inga nya (bara omräknad
       // andel/tid på redan visade) → räkna bara om raderna (färska siffror), ingen drip.
       const pending = [...store.districts()].filter((vd) => !revealed.has(vd))
@@ -101,7 +159,7 @@ export function DepartureBoard({ valtyp, onRowSelect, fill, fullWidth, emphasize
     // rAF-koalescera bursten av per-distrikt-notiser → en onChange/frame.
     const flush = () => { rafRef.current = null; onChange() }
     const scheduleFlush = () => { if (rafRef.current != null) return; rafRef.current = requestAnimationFrame(flush) }
-    const unsub = subscribeChanges((_vd, vt) => { if (vt === valtyp) scheduleFlush() })
+    const unsub = subscribeChanges((vd, vt) => { if (vt !== valtyp) return; changed.add(vd); scheduleFlush() })
 
     return () => {
       unsub()
@@ -177,7 +235,9 @@ export function DepartureBoard({ valtyp, onRowSelect, fill, fullWidth, emphasize
             return (
               <li
                 key={r.vd}
-                className="board-row cursor-pointer px-3 py-1.5 hover:bg-slate-800/50"
+                className={`board-row cursor-pointer px-3 py-1.5 hover:bg-slate-800/50 ${
+                  pulsing.has(r.vd) ? 'board-row-pulse' : ringed.has(r.vd) ? 'board-row-matched' : ''
+                }`}
                 style={{ borderLeft: `3px solid ${w?.farg ?? NEUTRAL}` }}
                 onClick={() => { setValtyp(valtyp); setSelectedArea({ level: 'distrikt', code: r.vd }); onRowSelect?.() }}
                 title={`${path} — visa i tabellen (${VALTYP_LABEL[valtyp]})`}
