@@ -2,14 +2,32 @@
 // Styr providerns delade `valtyp` → alla vyer (karta, panel, tavlor) följer med. På
 // desktop bor väljaren kvar som en overlay inne i kartan; på mobil lyfts den ut i den
 // persistenta toppchromen (så den nås från alla flikar, inte bara Karta-fliken).
-import { GROUP_LEVEL_LABEL, VALTYPER, VALTYP_LABEL } from '@/lib/results'
+import { GROUP_LEVEL_LABEL, VALTYPER, VALTYP_LABEL, type Valtyp } from '@/lib/results'
 import { useResults } from '@/components/ResultsProvider'
 
 // `showColorMode` lägger till Valdistrikt/Valkrets-Region-Kommun-läget i SAMMA ram —
 // bara på desktop (kartöverlägget); mobilens smala toppchrome (fill) har inte plats
 // och behåller bara valtyp-knapparna.
-export function ValtypSelector({ className = '', fill = false, showColorMode = false }: { className?: string; fill?: boolean; showColorMode?: boolean }) {
-  const { valtyp, setValtyp, colorMode, setColorMode } = useResults()
+//
+// `value`/`onChange` (valfria): override:ar den GLOBALA valtyp/setValtyp — används av
+// Dashboard-vyns rutor (varsin lokal valtyp, rör inte den globala). Utelämnas de (de två
+// BEFINTLIGA anropsplatserna gör det) är beteendet IDENTISKT mot innan denna prop fanns.
+export function ValtypSelector({
+  className = '',
+  fill = false,
+  showColorMode = false,
+  value,
+  onChange,
+}: {
+  className?: string
+  fill?: boolean
+  showColorMode?: boolean
+  value?: Valtyp
+  onChange?: (v: Valtyp) => void
+}) {
+  const { valtyp: globalValtyp, setValtyp: setGlobalValtyp, colorMode, setColorMode } = useResults()
+  const valtyp = value ?? globalValtyp
+  const setValtyp = onChange ?? setGlobalValtyp
   return (
     <div className={`flex overflow-hidden rounded-md border border-slate-700 bg-slate-900/90 text-sm shadow-lg ${fill ? 'w-full' : 'mx-auto w-fit'} ${className}`}>
       {VALTYPER.map((vt) => (

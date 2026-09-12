@@ -12,12 +12,13 @@ schema- eller mandatkod.
 
 ## Status
 
-Tidig fas. Repot är ännu bara dokumentation; ingen applikationskod finns.
-Faser, acceptanskriterier och infrastruktur-uppsättning (Supabase/Vercel) står i
+Live på [valvaka.tech](https://valvaka.tech), funktionellt komplett inför valet
+13 sep 2026 — se README.md för aktuell status och funktionslista. Faser,
+acceptanskriterier och infrastruktur-uppsättning (Supabase/Vercel) står i
 [docs/implementationsplan.md](./docs/implementationsplan.md); byggordningens
 motivering i docs/arkitektur.md §9.
 
-## Stack (planerad)
+## Stack
 
 - Frontend: React 18 + TypeScript + Vite + Tailwind + shadcn/ui, MapLibre GL JS.
 - Backend: Supabase edge functions (Deno), `pg_cron` + `pg_net`.
@@ -65,6 +66,11 @@ Dessa gäller ALL parsning av val.se-filer. Bryt inte mot dem:
   men datamodellens fältnamn följer doc:en (`valdistriktskod`, `partikod`, ...).
 - Skicka aldrig rå geometri (riks-zip är 27 MB) till klienten — tiles, alltid.
 - Nya beslut/underlag hör hemma i `docs/`.
+- Områdesvyns röster/mandat/valdeltagande-beräkning och områdesväljaren är redan
+  extraherade som delade byggstenar: `computeAreaView`/`areaFromSelectValue`
+  (`src/lib/`) samt `useAreaView`/`AreaSelect` (`src/components/`). Återanvänd
+  dessa i stället för att duplicera logiken en tredje gång (t.ex. i en framtida
+  Dashboard-vy).
 
 ## Git
 
