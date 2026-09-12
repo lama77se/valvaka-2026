@@ -16,6 +16,7 @@ import { applyComparison, buildRows, collapseForDisplay, districtsInArea, sparrF
 import { ancestorsOf } from '@/lib/hierarchy'
 import { defaultAreaFor, useResults } from '@/components/ResultsProvider'
 import { ValtypSelector } from '@/components/ValtypSelector'
+import { PlaceLabels } from '@/components/PlaceLabels'
 
 // Färg för distrikt som rapporterat men vars vinnarparti saknar märkesfärg
 // (lokalt parti utan hex i `party.color`). Orapporterade får null → UNREPORTED_FILL.
@@ -803,6 +804,12 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
   return (
     <div className="absolute inset-0">
       <div ref={containerRef} className="h-full w-full" />
+
+      {/* Ortnamn-overlay — se PlaceLabels.tsx. Renderas ovanpå kartan (senare i DOM-
+          ordningen än containerRef-diven, ingen z-index behövs) men UNDER de andra
+          overlayen nedan (banner/väljare/tooltip, renderade ännu senare) — pointer-
+          events: none, rör aldrig klick-/hover-hanteringen på distrikten. */}
+      <PlaceLabels map={mapRef.current} ready={mapReady} />
 
       {/* Provenance-banner: dataset.test → antingen GENERALREPETITIONENS testdata (source
           'genrep2026') eller mellanläget efter valnatts-cutover men innan Valmyndigheten
