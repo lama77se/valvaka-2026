@@ -109,7 +109,7 @@ export function viewToSearch(valtyp: Valtyp, area: Area, colorMode: ColorMode): 
   return `?val=${valtyp}${omrade}${farg}`
 }
 
-type NamedCode = { code: string; name: string }
+export type NamedCode = { code: string; name: string }
 type ChangeListener = (vd: string, valtyp: Valtyp) => void
 export type WinnerParty = { forkortning: string | null; farg: string | null }
 // Dataset-provenance (dataset_meta, EN rad) — vilken källa färgar kartan. test=true &
