@@ -30,10 +30,13 @@ const fmtTime = (iso: string | null): string => { const m = /[T ](\d{2}:\d{2})/.
 // onRowSelect (valfritt): körs EFTER att raden satt valtyp + område. Mobil skickar in
 // "byt till Resultat-fliken" så en tapp på tavlan visar distriktet i tabellen. Desktop
 // skickar inget → oförändrat beteende.
-// fill (desktop + mobil Senaste): tavlan är en flex-1-cell → listan fyller höjden och visar
+// fill (desktop + mobil Senaste): tavlan är en flex-cell → listan fyller höjden och visar
 // fler rader på högre skärmar (i stället för fast max-höjd).
 // fullWidth (mobil): tavlan tar hela skärmbredden i stället för den fasta --boards-w.
-export function DepartureBoard({ valtyp, onRowSelect, fill, fullWidth }: { valtyp: Valtyp; onRowSelect?: () => void; fill?: boolean; fullWidth?: boolean }) {
+// emphasized (desktop only): tavlan för vald valtyp får dubbla flex-grow (2 mot 1) →
+// 50/25/25-fördelning av höjden mellan de tre tavlorna i stället för jämn 33/33/33.
+// Mobilens "Senaste"-flik skickar aldrig in denna → förblir jämn (se MobileApp.tsx).
+export function DepartureBoard({ valtyp, onRowSelect, fill, fullWidth, emphasized }: { valtyp: Valtyp; onRowSelect?: () => void; fill?: boolean; fullWidth?: boolean; emphasized?: boolean }) {
   const { subscribeChanges, storesRef, partyRef, distriktNamnRef, totalByValtyp, setSelectedArea, setValtyp, revision, snapshotVersion, areaIndexRef, kommuner, regioner, valkretsListRef, ensureValtypLoaded } = useResults()
   const [rows, setRows] = useState<Row[]>([])
 
@@ -141,7 +144,7 @@ export function DepartureBoard({ valtyp, onRowSelect, fill, fullWidth }: { valty
       .join(' › ')
 
   return (
-    <div className={`pointer-events-auto ${fullWidth ? 'w-full' : 'w-[var(--boards-w)]'} overflow-hidden rounded-lg border border-slate-700 bg-slate-950/85 shadow-2xl backdrop-blur ${fill ? 'flex min-h-0 flex-1 flex-col' : ''}`}>
+    <div className={`pointer-events-auto ${fullWidth ? 'w-full' : 'w-[var(--boards-w)]'} overflow-hidden rounded-lg border border-slate-700 bg-slate-950/85 shadow-2xl backdrop-blur ${fill ? `flex min-h-0 ${emphasized ? 'flex-[2]' : 'flex-1'} flex-col transition-[flex-grow] duration-300` : ''}`}>
       <div className="flex items-center justify-between border-b border-slate-800 px-3 py-2">
         <div className="flex items-center gap-2">
           <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />

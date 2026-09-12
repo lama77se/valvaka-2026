@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Analytics } from '@vercel/analytics/react'
 import { DistrictMap } from '@/components/DistrictMap'
 import { ResultPanel } from '@/components/ResultPanel'
-import { ResultsProvider } from '@/components/ResultsProvider'
+import { ResultsProvider, useResults } from '@/components/ResultsProvider'
 import { DepartureBoard } from '@/components/DepartureBoard'
 import { PartyLegend } from '@/components/PartyLegend'
 import { MobileApp } from '@/components/mobile/MobileApp'
@@ -30,6 +30,7 @@ function useIsMobile() {
 // mot förr är att den lyfts ur App() till en egen komponent så mobil/desktop kan dela
 // EN ResultsProvider (snapshot laddas en gång, överlever rotation över brytpunkten).
 function DesktopApp() {
+  const { valtyp } = useResults()
   return (
     <main className="relative h-screen w-screen overflow-hidden bg-[#0b1020] text-slate-100">
         <DistrictMap />
@@ -71,10 +72,12 @@ function DesktopApp() {
 
           {/* Tre avgångstavlor — RD/RF/KF, alltid synliga. Fyller (flex-1) höjden under
               legenden ner till nederkanten → visar fler rader på högre skärmar, kompakta nära
-              brytpunkten. id:t används av kartans fitBounds för att reservera vänsterkolumnen. */}
+              brytpunkten. id:t används av kartans fitBounds för att reservera vänsterkolumnen.
+              Vald valtyp (ValtypSelector) vägs upp (emphasized → 50 %), övriga två delar
+              resten (25 % var) — bara på desktop, mobilens "Senaste"-flik förblir jämn. */}
           <div id="left-boards" className="flex min-h-0 flex-1 flex-col gap-2">
             {VALTYPER.map((vt) => (
-              <DepartureBoard key={vt} valtyp={vt} fill />
+              <DepartureBoard key={vt} valtyp={vt} fill emphasized={vt === valtyp} />
             ))}
           </div>
         </div>
