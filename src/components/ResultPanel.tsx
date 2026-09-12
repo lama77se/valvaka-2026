@@ -3,33 +3,17 @@
 // om områdesaggregatet när `revision` bumpas (strypt Realtime) och renderar
 // <ResultTable>. Områdesväljaren styr delad `selectedArea` (kartklick → drilldown).
 import { Fragment, useEffect, useMemo, useState } from 'react'
-import { VALTYP_LABEL, slutligTag, type Valtyp } from '@/lib/results'
-import {
-  applyComparison,
-  applyMandate,
-  buildRows,
-  collapseForDisplay,
-  comparisonFor,
-  computeMandate,
-  computeRdValkretsMandate,
-  computeRegionOrKommunValkretsMandate,
-  districtsInArea,
-  mergeVotes,
-  sparrFor,
-  uppsamlingForArea,
-  uppsamlingRowFor,
-  type Level,
-} from '@/lib/aggregate'
-import { RIKET, defaultAreaFor, useResults, type Area } from '@/components/ResultsProvider'
+import { VALTYP_LABEL, type Valtyp } from '@/lib/results'
+import { comparisonFor, mergeVotes, sparrFor, uppsamlingRowFor, type Level } from '@/lib/aggregate'
+import { RIKET, useResults } from '@/components/ResultsProvider'
 import { ResultTable } from '@/components/ResultTable'
 import { MandatBars } from '@/components/MandatBars'
-import { RIKET_BLOCKS, SPECTRUM } from '@/lib/soffa'
-import { REGION_STYRE_BLOCKS } from '@/lib/regionBlocks'
-import { KOMMUN_STYRE_BLOCKS } from '@/lib/kommunBlocks'
-import { SEAT_CONFIG_2026 } from '@/lib/seatConfig2026'
+import { SPECTRUM } from '@/lib/soffa'
 import { onDark } from '@/lib/colors'
 import { ancestorsOf, childGroupsOf, childLevelOf } from '@/lib/hierarchy'
 import { REPORTED_NEUTRAL, UNREPORTED_FILL } from '@/components/DistrictMap'
+import { useAreaView } from '@/components/useAreaView'
+import { AreaSelect } from '@/components/AreaSelect'
 
 const CHILD_LABEL: Record<string, string> = { valkrets: 'Valkretsar', region: 'Län', kommun: 'Kommuner', distrikt: 'Distrikt' }
 
@@ -37,28 +21,6 @@ const ELECTION: Record<Valtyp, string> = {
   RD: 'Riksdagsvalet',
   RF: 'Regionvalet',
   KF: 'Kommunvalet',
-}
-
-// Nivåer väljaren erbjuder per valtyp: den nativa nivån + geografisk nedbrytning
-// UNDER den (aldrig uppåt). RD: riket → VALKRETS (riksdagens nivå) → kommun; RF:
-// region → VALKRETS (regionens nivå — Stockholm delas tvärs kommuner) → distrikt;
-// KF bara kommun.
-const LEVELS: Record<Valtyp, ('riket' | 'valkrets' | 'region' | 'kommun')[]> = {
-  RD: ['riket', 'valkrets', 'kommun'],
-  RF: ['region', 'valkrets'],
-  KF: ['kommun'],
-}
-const PROMPT: Record<Valtyp, string> = { RD: '', RF: 'Välj region…', KF: 'Välj kommun…' }
-
-// Nivåer där mandat överhuvudtaget är ett meningsfullt tal (organets EGEN nivå + valkrets)
-// — OBEROENDE av om röster hunnit räknas än. RD:s "kommun" är bara en geografisk
-// nedbrytning (se LEVELS ovan), inte riksdagens organ-nivå, så den räknas INTE hit trots
-// att KF:s "kommun" gör det. val.se visar inte mandat under valkretsnivå heller (distrikt,
-// och för RD även kommun) — döljer Mandat-kolumnerna helt där i stället för tre "–"-kolumner.
-const MANDAT_LEVELS: Record<Valtyp, Level[]> = {
-  RD: ['riket', 'valkrets'],
-  RF: ['region', 'valkrets'],
-  KF: ['kommun', 'valkrets'],
 }
 
 // `compact` sätts av mobil-layouten: samma panel, men de mest breddkänsliga delarna
@@ -69,8 +31,6 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
     selectedArea,
     setSelectedArea,
     storesRef,
-    turnoutStoresRef,
-    metaRef,
     partyRef,
     allCodesRef,
     groupsRef,
@@ -81,19 +41,10 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
     valkretsar,
     areaIndexRef,
     distriktNamnRef,
-    district2022Ref,
     districtAndel2022Ref,
     ensureDistrictWinners2022,
     revision,
   } = useResults()
-
-  // Slutresultat-läge PER VALTYP ur result.status i storen (preliminärt → sluträknas · X %
-  // → slutgiltigt). Panelen renderas om på `revision` så andelen hålls färsk. Fasen visas
-  // som en egen badge (samma tone/etikett som kartvyns statustagg, `slutligTag`) i stället
-  // för att stå inbäddad i bar-texten — baren nedan är då entydigt EN sak: hur stor andel
-  // av VALT OMRÅDE som rapporterat in (skiljer sig från `prog`, som är per valtyp).
-  const prog = storesRef.current[valtyp].slutligProgress()
-  const statusTag = slutligTag(prog)
 
   // Undertexten är samtidigt progress-baren, så varje tecken kostar höjd: spricker den
   // till två rader blir baren dubbelt så hög. Mobilvarianten kortar ner den ("av" → "/",
@@ -113,139 +64,18 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
     return compact ? `${vd} % röstade` : `Valdeltagande ${vd} %`
   }
 
-  // De absoluta talen bakom valdeltagande-%:en (val.se visar dem själva: "Räknade röster" /
-  // "Röstberättigade") — hover-tooltip på samma etikett i stället för egen rad, för att inte
-  // tränga ut Parti/Röster-huvudet. rb=0 → ingen röstlängd inrapporterad än → ingen tooltip.
-  const turnoutDetail = (total: number, rb: number) => {
-    if (rb <= 0) return undefined
-    return `Räknade röster: ${total.toLocaleString('sv-SE')} · Röstberättigade: ${rb.toLocaleString('sv-SE')}`
-  }
-
-  // Tvåblocksvyn (MandatBars) — bara på valtypens högsta nivå: riksblocken för RD/riket,
-  // sittande styre-vs-opposition för RF/region resp. KF/kommun (samtliga 20 regioner och
-  // 290 kommuner finns i REGION_STYRE_BLOCKS/KOMMUN_STYRE_BLOCKS, se regionBlocks.ts/
-  // kommunBlocks.ts för källa/verifiering per post).
-  const blocks =
-    valtyp === 'RD' && selectedArea.level === 'riket'
-      ? RIKET_BLOCKS
-      : valtyp === 'RF' && selectedArea.level === 'region'
-        ? REGION_STYRE_BLOCKS[selectedArea.code ?? '']
-        : valtyp === 'KF' && selectedArea.level === 'kommun'
-          ? KOMMUN_STYRE_BLOCKS[selectedArea.code ?? '']
-          : undefined
-
+  // Röster/mandat/valdeltagande/blockvy för valt område — delad ren beräkning
+  // (src/lib/areaView.ts) via useAreaView, samma logik som förut men nu återanvänd
+  // av Dashboard-vyns rutor också.
+  const av = useAreaView(valtyp, selectedArea)
   const areaIndex = areaIndexRef.current[valtyp]
-  const showMandat = MANDAT_LEVELS[valtyp].includes(selectedArea.level)
 
-  const areaName =
-    selectedArea.level === 'riket'
-      ? 'Riket'
-      : selectedArea.level === 'distrikt'
-        ? (distriktNamnRef.current.get(selectedArea.code ?? '') ?? selectedArea.code ?? '')
-        : selectedArea.level === 'valkrets'
-          ? (valkretsar.find((v) => v.code === selectedArea.code)?.name ?? selectedArea.code ?? '')
-          : selectedArea.level === 'region'
-            ? (regioner.find((r) => r.code === selectedArea.code)?.name ?? selectedArea.code ?? '')
-            : (kommuner.find((k) => k.code === selectedArea.code)?.name ?? selectedArea.code ?? '')
-
-  const view = useMemo(() => {
-    void revision // beroende: räkna om vid ny snapshot / strypt Realtime-bump
-    const store = storesRef.current[valtyp]
-    const codes = districtsInArea(allCodesRef.current, selectedArea.level, selectedArea.code, valtyp, metaRef.current)
-    // Organ-nivåerna (KF-kommun/RF-region/RD-riket) väger in uppsamlingsrösterna i BÅDE
-    // röster/andel (här) och mandat (computeMandate) så den slutgiltiga presentationen
-    // matchar val.se. Övriga nivåer → uppsamlingForArea ger null → rent geografiskt.
-    const uppsamling = uppsamlingRef.current[valtyp]
-    const votes = mergeVotes(store.aggregate(codes), uppsamlingForArea(valtyp, selectedArea.level, selectedArea.code, uppsamling))
-    const mandate = computeMandate(valtyp, selectedArea.level, selectedArea.code, (c) => store.aggregate(c), groupsRef.current, uppsamling)
-    // Valkretsnivå (RD:s 29, samt RF/KF:s 11/17 delade organ): computeMandate ger null där
-    // (mandat är annars riks-/region-/kommunvitt) — fyll i den RIKTIGA slutgiltiga
-    // fördelningen i stället: fasta valkretsmandat PLUS utjämningsmandaten geografiskt
-    // PLACERADE (jämförelsetal per valkrets, se placeLevelingSeats i mandate.ts) — inte en
-    // "minst"-golvsiffra (12 sep, gäller nu alla tre valtyper). Samma "preliminärt tills
-    // färdigräknat"-status som riket/region/kommun redan har (statusTag nedan) gäller
-    // automatiskt även här, ingen extra markering behövs.
-    const valkretsMandate =
-      selectedArea.level !== 'valkrets' || !selectedArea.code
-        ? null
-        : valtyp === 'RD'
-          ? computeRdValkretsMandate(selectedArea.code, areaIndexRef.current.RD.vkToDistricts, (c) => store.aggregate(c), uppsamling)
-          : computeRegionOrKommunValkretsMandate(
-              valtyp,
-              valtyp === 'RF' ? selectedArea.code.slice(0, 2) : selectedArea.code.slice(0, 4),
-              selectedArea.code,
-              areaIndexRef.current[valtyp].vkToDistricts,
-              (c) => store.aggregate(c),
-              sparrFor(valtyp, 'valkrets', selectedArea.code),
-              uppsamling,
-            )
-    let areaResult = applyMandate(
-      buildRows(votes, partyRef.current, sparrFor(valtyp, selectedArea.level, selectedArea.code)),
-      mandate ?? (valkretsMandate && { seatsByParty: valkretsMandate.seatsByParty, totalMandat: valkretsMandate.totalSeats }),
-    )
-    const districtLeaf =
-      selectedArea.level === 'distrikt' && selectedArea.code
-        ? district2022Ref.current.get(`${valtyp}:${selectedArea.code}`) ?? null
-        : null
-    areaResult = applyComparison(areaResult, valtyp, selectedArea.level, selectedArea.code, comparisonRef.current, partyRef.current, districtLeaf)
-    const display = collapseForDisplay(areaResult)
-    const reported = codes.reduce((n, c) => n + (store.has(c) ? 1 : 0), 0)
-    const has2022 = areaResult.rows.some((r) => r.andel2022 != null)
-    // Valdeltagande för området: Σtotalt / Σröstberättigade över dess (reguljära) distrikt.
-    // null när nämnaren är 0 (inga rapporterade distrikt med röstlängd än) → visas ej.
-    const t = turnoutStoresRef.current[valtyp].aggregate(codes)
-    const turnout = t.rb > 0 ? (t.total / t.rb) * 100 : null
-    // Ogiltiga röster (val.se: Blanka / Ej anmälda partier / Övriga ogiltiga / Totalt) — bara
-    // när ALLA rapporterade distrikt i området har fälten (se TurnoutStore.aggregate). %:en är
-    // av samtliga AVGIVNA röster (t.total, inte bara giltiga partiröster — val.se:s egen nämnare).
-    const invalidVotes =
-      t.blanka != null && t.ejAnmalda != null && t.ovrigaOgiltiga != null
-        ? {
-            blanka: t.blanka,
-            ejAnmalda: t.ejAnmalda,
-            ovrigaOgiltiga: t.ovrigaOgiltiga,
-            totalt: t.blanka + t.ejAnmalda + t.ovrigaOgiltiga,
-            pctOfTotal: t.total > 0 ? ((t.blanka + t.ejAnmalda + t.ovrigaOgiltiga) / t.total) * 100 : null,
-          }
-        : null
-    return {
-      display,
-      giltiga: areaResult.giltiga,
-      totalMandat: areaResult.totalMandat,
-      totalMandat2022: areaResult.totalMandat2022,
-      has2022,
-      reported,
-      total: codes.length,
-      turnout,
-      turnoutTitle: turnoutDetail(t.total, t.rb),
-      invalidVotes,
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [valtyp, selectedArea, revision])
-
-  const pct = view.total > 0 ? Math.round((view.reported / view.total) * 100) : 0
-
-  // Regionväljaren (RF) ska bara lista regioner som FAKTISKT har ett regionval — Gotland
-  // saknar eget regionfullmäktige (kommunfullmäktige dubblar som region) och står därför
-  // inte i SEAT_CONFIG_2026.RF, men finns kvar i `regioner` (byggd ur `district.lan`,
-  // som är gemensam för alla valtyper) → utan detta filter ledde valet av Gotland till en
-  // permanent tom vy för RF.
-  const regionerRF = useMemo(() => regioner.filter((r) => r.code in SEAT_CONFIG_2026.RF), [regioner])
+  const pct = av.total > 0 ? Math.round((av.reported / av.total) * 100) : 0
 
   // Områdesnamn-uppslag för breadcrumb + barnlista.
   const regionName = useMemo(() => new Map(regioner.map((r) => [r.code, r.name])), [regioner])
   const kommunName = useMemo(() => new Map(kommuner.map((k) => [k.code, k.name])), [kommuner])
   const valkretsName = useMemo(() => new Map(valkretsar.map((v) => [v.code, v.name])), [valkretsar])
-
-  // Valkretsar i den PLATTA väljaren (bara RD/RF — se levels.includes('valkrets') nedan)
-  // sorteras om till den text som FAKTISKT visas: `valkretsar` självt är sorterat på bara
-  // valkretsens EGET namn (ResultsProvider.tsx), men RF:s rad skriver ut "Region · Valkrets"
-  // — sorterat på suffixet ser då slumpmässigt blandat ut (Jönköping mellan Halland och
-  // Kalmar). Sortera i stället på den riktiga visningstexten.
-  const valkretsarForSelect = useMemo(() => {
-    const label = (v: (typeof valkretsar)[number]) => (valtyp === 'RF' ? `${regionName.get(v.code.slice(0, 2)) ?? ''} · ${v.name}` : v.name)
-    return [...valkretsar].sort((a, b) => label(a).localeCompare(label(b), 'sv'))
-  }, [valkretsar, valtyp, regionName])
   const nameOf = (a: { level: string; code: string | null }): string =>
     a.level === 'riket'
       ? 'Riket'
@@ -399,16 +229,6 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
     return nameOf(a).localeCompare(nameOf(b), 'sv')
   })
   const uppRow = drill.uppsamlingRow // sena röster för organet → egen rad sist i nedbrytningen
-  const levels = LEVELS[valtyp]
-  const selectValue = isPrompt
-    ? ''
-    : selectedArea.level === 'riket'
-      ? 'riket'
-      : selectedArea.level === 'distrikt'
-        ? `d:${selectedArea.code}`
-        : selectedArea.level === 'valkrets'
-          ? `vk:${selectedArea.code}`
-          : `${selectedArea.level === 'region' ? 'r' : 'k'}:${selectedArea.code}`
 
   return (
     <div className="flex h-full flex-col gap-3 overflow-hidden">
@@ -416,64 +236,7 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
           resultatramen visar — speglar valtyp-väljaren högst upp. Områdesväljaren är valtyp-
           medveten: RD → Riket + nedbrytning; RF → region + kommun inom; KF → bara kommun. */}
       <div className="flex items-center gap-2">
-      <select
-        className="min-w-0 flex-1 rounded-md border border-slate-700 bg-slate-900/80 px-2 py-1.5 text-sm text-slate-100"
-        value={selectValue}
-        onChange={(e) => {
-          const v = e.target.value
-          if (v.startsWith('d:')) return // distrikt sätts via kartklick, inte listan
-          const next: Area =
-            v === ''
-              ? defaultAreaFor(valtyp)
-              : v === 'riket'
-                ? RIKET
-                : v.startsWith('vk:')
-                  ? { level: 'valkrets', code: v.slice(3) }
-                  : { level: v.startsWith('r:') ? 'region' : 'kommun', code: v.slice(2) }
-          setSelectedArea(next)
-        }}
-      >
-        {selectedArea.level === 'distrikt' && (
-          <option value={`d:${selectedArea.code}`}>Distrikt: {areaName}</option>
-        )}
-        {selectedArea.level === 'valkrets' && !levels.includes('valkrets') && (
-          // KF-valkrets når man via drill (kommun→valkrets), inte i den platta listan
-          // (~313 st, mest 1-per-kommun) → syntetisk nuvarande-option så select:en inte tappar värdet.
-          <option value={`vk:${selectedArea.code}`}>Valkrets: {areaName}</option>
-        )}
-        {levels.includes('riket') ? (
-          <option value="riket">Riket</option>
-        ) : (
-          <option value="">{PROMPT[valtyp]}</option>
-        )}
-        {/* Grupperna i hierarkiordning (förälder först): RF region → valkrets; RD valkrets →
-            kommun (ingen region). */}
-        {levels.includes('region') && (
-          <optgroup label="Region / län">
-            {regionerRF.map((r) => (
-              <option key={r.code} value={`r:${r.code}`}>{r.name}</option>
-            ))}
-          </optgroup>
-        )}
-        {levels.includes('valkrets') && (
-          <optgroup label="Valkrets">
-            {valkretsarForSelect.map((v) => (
-              // RF-valkretsnamn ("Nordväst") är region-lokala → prefixa med regionen i
-              // den platta listan; i breadcrumb/drill räcker namnet (regionen är förälder).
-              <option key={v.code} value={`vk:${v.code}`}>
-                {valtyp === 'RF' ? `${regionName.get(v.code.slice(0, 2)) ?? ''} · ${v.name}` : v.name}
-              </option>
-            ))}
-          </optgroup>
-        )}
-        {levels.includes('kommun') && (
-          <optgroup label="Kommun">
-            {kommuner.map((k) => (
-              <option key={k.code} value={`k:${k.code}`}>{k.name}</option>
-            ))}
-          </optgroup>
-        )}
-      </select>
+        <AreaSelect valtyp={valtyp} area={selectedArea} areaName={av.areaName} onChange={setSelectedArea} />
         <span
           className="shrink-0 select-none rounded-md border border-sky-500/40 bg-sky-500/10 px-2.5 py-1.5 text-sm font-semibold text-sky-200"
           title={ELECTION[valtyp]}
@@ -522,48 +285,48 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
                 <button type="button" onClick={() => setSelectedArea(RIKET)} className="underline hover:text-slate-300">
                   Riket
                 </button>{' '}
-                för mandatfördelning. Här visas bara röstandelen för {areaName}.
+                för mandatfördelning. Här visas bara röstandelen för {av.areaName}.
               </p>
             )}
-            {view.giltiga > 0 && (
+            {av.giltiga > 0 && (
               <div className="mb-3 border-b border-slate-800 pb-3">
                 <MandatBars
-                  shown={view.display.shown}
-                  ovriga={view.display.ovriga}
-                  totalMandat={view.totalMandat}
-                  giltiga={view.giltiga}
+                  shown={av.display.shown}
+                  ovriga={av.display.ovriga}
+                  totalMandat={av.totalMandat}
+                  giltiga={av.giltiga}
                   sparr={sparrFor(valtyp, selectedArea.level, selectedArea.code)}
                   reportPct={pct}
-                  blocks={blocks}
+                  blocks={av.blocks}
                   compact={compact}
                 />
               </div>
             )}
             <ResultTable
-              title={`${ELECTION[valtyp]} — ${areaName}`}
-              statusTag={statusTag}
-              subtitle={subtitle(view.reported, view.total, pct)}
-              turnoutLabel={turnoutLabel(view.turnout)}
-              turnoutTitle={view.turnoutTitle}
-              reportPct={view.total > 0 ? (view.reported / view.total) * 100 : 0}
-              display={view.display}
-              giltiga={view.giltiga}
-              invalidVotes={view.invalidVotes}
+              title={`${ELECTION[valtyp]} — ${av.areaName}`}
+              statusTag={av.statusTag}
+              subtitle={subtitle(av.reported, av.total, pct)}
+              turnoutLabel={turnoutLabel(av.turnout)}
+              turnoutTitle={av.turnoutTitle}
+              reportPct={av.total > 0 ? (av.reported / av.total) * 100 : 0}
+              display={av.display}
+              giltiga={av.giltiga}
+              invalidVotes={av.invalidVotes}
               sparr={sparrFor(valtyp, selectedArea.level, selectedArea.code)}
               showSparr={selectedArea.level !== 'distrikt'}
-              showMandat={showMandat}
-              totalMandat={view.totalMandat}
-              totalMandat2022={view.totalMandat2022}
+              showMandat={av.showMandat}
+              totalMandat={av.totalMandat}
+              totalMandat2022={av.totalMandat2022}
             />
-            {view.giltiga === 0 &&
-              (view.has2022 ? (
+            {av.giltiga === 0 &&
+              (av.has2022 ? (
                 <p className="mt-4 text-center text-xs text-slate-500">
                   Inga 2026-röster inrapporterade än — <span className="text-slate-400">2022</span>-kolumnerna visar
                   förra valets slutresultat.
                 </p>
               ) : (
                 <p className="mt-4 text-center text-xs text-slate-500">
-                  Inga resultat inrapporterade för {VALTYP_LABEL[valtyp].toLowerCase()} i {areaName} än.
+                  Inga resultat inrapporterade för {VALTYP_LABEL[valtyp].toLowerCase()} i {av.areaName} än.
                 </p>
               ))}
           </>
