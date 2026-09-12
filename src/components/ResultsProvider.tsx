@@ -196,12 +196,20 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
   // bara med, se GROUP_LEVEL_LABEL). Delbar precis som valtyp/område — default
   // ('distrikt') utelämnas ur URL:en, bara ?farg=grupp syns.
   const [colorMode, setColorMode] = useState<ColorMode>(() => readViewFromUrl().colorMode)
-  // Byt valtyp → nollställ området till den nya valtypens nativa default (ett
-  // kommun-val kan inte visa "Riket" osv). Ett valt DISTRIKT behålls dock — samma
-  // 8-siffriga kod gäller i alla tre valen, så man kan jämföra distriktets RD/RF/KF.
+  // Minns senast valda område PER valtyp (bara sessionen/fliken, ingen URL-påverkan) →
+  // ett byte fram och tillbaka (KF→RD→KF) återställer samma område i stället för att
+  // alltid landa på toppnivån. Uppdateras av effekten nedan, läses i setValtyp.
+  const lastAreaByValtyp = useRef<Partial<Record<Valtyp, Area>>>({})
+  useEffect(() => {
+    lastAreaByValtyp.current[valtyp] = selectedArea
+  }, [valtyp, selectedArea])
+  // Byt valtyp → återställ det senast valda området för den nya valtypen, annars dess
+  // nativa default (ett kommun-val kan inte visa "Riket" osv). Ett valt DISTRIKT behålls
+  // dock alltid — samma 8-siffriga kod gäller i alla tre valen, så man kan jämföra
+  // distriktets RD/RF/KF.
   const setValtyp = useCallback((v: Valtyp) => {
     setValtypState(v)
-    setSelectedArea((prev) => (prev.level === 'distrikt' ? prev : defaultAreaFor(v)))
+    setSelectedArea((prev) => (prev.level === 'distrikt' ? prev : (lastAreaByValtyp.current[v] ?? defaultAreaFor(v))))
   }, [])
   // Spegla vald vy i URL:en (delbar). replaceState → ingen historik-skräp; länken
   // pekar alltid på nuvarande valtyp + område.
