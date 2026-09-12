@@ -22,16 +22,54 @@
 // ingen ändring i befintlig klick-/hover-hantering.
 import { useEffect, useRef, useState } from 'react'
 import type * as maplibregl from 'maplibre-gl'
+import { SWEDEN_BOUNDS } from '@/lib/geometry'
 
 type Place = { name: string; lat: number; lon: number; tier: number; pop: number }
 
-// Zoom-tröskel per tier — satt empiriskt (samma princip som handover:en
-// föreslår: testa i browsern, dra åt vid behov). Default "hela Sverige"-vy
-// (SWEDEN_BOUNDS-fitBounds) landar på ~zoom 4.1 (desktop) — INGEN etikett ska
-// synas där (användaren känner redan till Sveriges form; etiketter först när
-// man zoomar in en bit). Tier 1 (de 15 största kommunerna) kommer in strax
-// därefter, vid zoom 5.
-const TIER_MIN_ZOOM: Record<number, number> = { 1: 5, 2: 6, 3: 7.5, 4: 9, 5: 10.5 }
+// Zoom-DELTA per tier, ovanpå en dynamiskt uträknad baslinje (se
+// computeBaselineZoom nedan) — INTE absoluta zoom-tal. Absoluta tal höll bara
+// för det fönster de kalibrerades mot: SWEDEN_BOUNDS-fitBounds's zoom beror på
+// containerns pixelstorlek (map.cameraForBounds), så en 4K-skärm kunde redan
+// från start ligga över ett hårdkodat tröskelvärde och visa etiketter direkt
+// vid "hela Sverige"-vyn — precis den vyn som ska vara helt etikettfri (se
+// bugrapport: städer syntes redan vid full utzoomning på en stor skärm).
+// Delta-värdena är satta empiriskt (samma princip som handover:en föreslår),
+// MEN gapet mellan tiers är medvetet OJÄMNT — det skalar efter hur många nya
+// orter respektive tier släpper in samtidigt (15/35/75/90/75 orter i tier
+// 1-5). Ett jämnt gap (t.ex. alltid +1.5) gav en ryckig upplevelse i Playwright-
+// mätningar kring Stockholm/Mälardalen: tier 2 (35 orter) och särskilt tier 3
+// (75 orter) dök upp som en enda stor klump (10→23 resp. 16→32 synliga
+// etiketter inom ETT 0,5-zoom-steg) eftersom hela tiern blir zoom-berättigad
+// på en gång. Tier 3:s gap är därför störst (1,8) — flest nya orter, mest
+// klumpningsrisk. Tier 4/5:s gap kan vara mindre trots fler/lika många orter
+// (90/75): på det djupet täcker vyn redan en mycket mindre yta, så bara en
+// bråkdel av tiern är någonsin synlig samtidigt (bekräftat empiriskt: inga
+// motsvarande klumpar där).
+const TIER_ZOOM_DELTA: Record<number, number> = { 1: 0.9, 2: 2.2, 3: 4.0, 4: 5.4, 5: 6.8 }
+
+// Räknar ut den zoom SWEDEN_BOUNDS-fitBounds skulle landa på för den AKTUELLA
+// containerstorleken, utan att flytta kartan (cameraForBounds muterar inget).
+// Speglar paddingen i DistrictMap.tsx:s runFit (samma DOM-selektorer: aside =
+// resultatpanelen, #left-boards = avgångstavlorna) så baslinjen är den FAKTISKA
+// "hela Sverige"-zoomen, inte en gissning. Ingen `aside` i DOM:en → mobilvy
+// (App.tsx renderar den bara på desktop) → mobilens egna, mindre padding.
+// top:150 (i stället för DistrictMap:s 110 utan testdatabanner) är medvetet
+// worst-case: en LÄGRE verklig padding ger en HÖGRE verklig baslinje-zoom, så
+// att alltid anta den större paddingen håller vår uträknade baslinje ≤ den
+// verkliga — annars kunde etiketter läcka in före den riktiga "hela
+// Sverige"-vyn i det vanliga fallet (ingen testdatabanner).
+function computeBaselineZoom(map: maplibregl.Map): number {
+  const aside = document.querySelector('aside') as HTMLElement | null
+  const pad = aside
+    ? {
+        top: 150,
+        right: aside.clientWidth + 24,
+        bottom: 48,
+        left: Math.round(document.getElementById('left-boards')?.getBoundingClientRect().right ?? 0) + 24,
+      }
+    : { top: 24, right: 24, bottom: 40, left: 24 }
+  return map.cameraForBounds(SWEDEN_BOUNDS, { padding: pad })?.zoom ?? 4
+}
 
 // Enkel gles kollisionskoll (INTE en fullständig kollisionsmotor): två SAMTIDIGT
 // synliga etiketter närmare varandra än detta (pixlar) → skippa den senare i
@@ -102,11 +140,16 @@ export function PlaceLabels({ map, ready }: { map: maplibregl.Map | null; ready:
     const update = () => {
       rafId = null
       const zoom = map.getZoom()
+      // Billig omräkning (ingen kartmutation) — fångar ändringar i panel-/
+      // tavelbredd (t.ex. valtyp-viktningen) mellan drag/zoom, inte bara vid
+      // fönster-resize.
+      const baseline = computeBaselineZoom(map)
       const w = container.clientWidth
       const h = container.clientHeight
       const placed: { x: number; y: number }[] = []
       for (const { place: p, el } of nodes) {
-        if (zoom < (TIER_MIN_ZOOM[p.tier] ?? Infinity)) {
+        const minZoom = baseline + (TIER_ZOOM_DELTA[p.tier] ?? Infinity)
+        if (zoom < minZoom) {
           el.style.display = 'none'
           continue
         }
