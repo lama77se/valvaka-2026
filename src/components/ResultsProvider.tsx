@@ -15,19 +15,23 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { supabase } from '@/lib/supabase'
 import { fetchSnapshotBlob } from '@/lib/snapshotBlob'
 import { ResultStore, TurnoutStore, VALTYPER, VALTYP_VK_COLUMN, type ColorMode, type Valtyp } from '@/lib/results'
-import { buildGroups, type AreaComparison, type AreaGroups, type Comparison2022, type DistrictMeta, type Level, type PartyMeta, type UppsamlingBuckets } from '@/lib/aggregate'
+import { buildGroups, type AreaComparison, type AreaGroups, type Comparison2022, type DistrictMeta, type PartyMeta, type UppsamlingBuckets } from '@/lib/aggregate'
 import type { PartyVotes } from '@/lib/mandate'
 import type { AreaIndex } from '@/lib/hierarchy'
 import { RIKET, defaultAreaFor, type Area, type NamedCode } from '@/lib/area'
+import { parseAreaParam, readDashboardFromUrl, dashboardToSearch, type ViewMode, type DashboardBox } from '@/lib/dashboardUrl'
 
 export { RIKET, defaultAreaFor, type Area, type NamedCode } from '@/lib/area'
+export type { ViewMode, DashboardBox } from '@/lib/dashboardUrl'
 
 // --- Delbara vy-URL:er ------------------------------------------------------------------
 // En vy = valtyp + markerat område. Kodas i query-strängen så en länk kan öppna en
 // specifik default-vy, t.ex. ?val=KF&omrade=kommun:1488 = "Kommunalvalet Trollhättan",
 // eller ?val=RD&omrade=valkrets:XX = "Riksdagsvalet i valkrets XX". Området kodas
 // "nivå:kod" (riket saknar kod; RF/KF-promptläget = default → utelämnas → ren länk).
-const AREA_LEVELS: Level[] = ['riket', 'region', 'kommun', 'valkrets', 'distrikt']
+// parseAreaParam/AREA_LEVELS ligger i src/lib/dashboardUrl.ts (supabase-fri modul,
+// delas med Dashboard-vyns readDashboardFromUrl/dashboardToSearch — se Task 2 i
+// PR 2-planen).
 
 // Poll-intervall: Realtime är BORTTAGET → resyncen (updated_at-delta) är PRIMÄR uppdateringsväg.
 // Jittrat 30–45 s (sänkt från 45–90 s inför valnatten 9 sep — lasttest på Large visade gott om
@@ -69,16 +73,6 @@ const OVERLAP_DELTA_MS = 10_000
 const minusMs = (iso: string, ms: number): string => {
   const t = Date.parse(iso)
   return Number.isFinite(t) ? new Date(Math.max(0, t - ms)).toISOString() : iso
-}
-
-function parseAreaParam(raw: string | null, valtyp: Valtyp): Area {
-  if (!raw) return defaultAreaFor(valtyp)
-  if (raw === 'riket') return RIKET
-  const i = raw.indexOf(':')
-  const level = (i === -1 ? raw : raw.slice(0, i)) as Level
-  const code = i === -1 ? null : raw.slice(i + 1)
-  if (!AREA_LEVELS.includes(level)) return defaultAreaFor(valtyp)
-  return { level, code: code || null }
 }
 
 export function readViewFromUrl(): { valtyp: Valtyp; area: Area; colorMode: ColorMode } {
@@ -124,6 +118,12 @@ export interface ResultsContextValue {
   // (inte DistrictMap-lokal) eftersom väljaren renderas i ValtypSelector.
   colorMode: ColorMode
   setColorMode: (m: ColorMode) => void
+  // Dashboard-vyns läge + fyra oberoende rutors state (helt separat från
+  // valtyp/selectedArea ovan — se Task 2 i PR 2-planen).
+  view: ViewMode
+  setView: (v: ViewMode) => void
+  dashboardBoxes: DashboardBox[]
+  setDashboardBox: (i: number, box: DashboardBox) => void
 
   // Stabila referens-refar (läses vid beräkning; useMemo nycklar på revision).
   storesRef: RefObject<Record<Valtyp, ResultStore>>
@@ -202,11 +202,24 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     setValtypState(v)
     setSelectedArea((prev) => (prev.level === 'distrikt' ? prev : (lastAreaByValtyp.current[v] ?? defaultAreaFor(v))))
   }, [])
+  // Dashboard-vyns läge + fyra-rutors-state. Helt separat från valtyp/selectedArea
+  // ovan (spec: "rör inte den globala selectedArea/valtyp") — en egen ruta väljer
+  // fritt sin egen valtyp+område, aldrig kopplad till kartlägets state.
+  const [view, setView] = useState<ViewMode>(() => readDashboardFromUrl().view)
+  const [dashboardBoxes, setDashboardBoxes] = useState<DashboardBox[]>(() => readDashboardFromUrl().boxes)
+  const setDashboardBox = useCallback((i: number, box: DashboardBox) => {
+    setDashboardBoxes((prev) => prev.map((b, idx) => (idx === i ? box : b)))
+  }, [])
   // Spegla vald vy i URL:en (delbar). replaceState → ingen historik-skräp; länken
-  // pekar alltid på nuvarande valtyp + område.
+  // pekar alltid på nuvarande valtyp + område (+ Dashboard-vyns läge/rutor, additivt).
   useEffect(() => {
-    window.history.replaceState(null, '', window.location.pathname + viewToSearch(valtyp, selectedArea, colorMode) + window.location.hash)
-  }, [valtyp, selectedArea, colorMode])
+    const base = viewToSearch(valtyp, selectedArea, colorMode) // '' or '?val=...'
+    const dash = dashboardToSearch(view, dashboardBoxes) // '' or 'vy=dashboard&p1=...'
+    // base starts with '?' (or is ''); dash has no leading punctuation (or is '').
+    // Combine correctly whichever combination is present:
+    const search = base ? (dash ? `${base}&${dash}` : base) : dash ? `?${dash}` : ''
+    window.history.replaceState(null, '', window.location.pathname + search + window.location.hash)
+  }, [valtyp, selectedArea, colorMode, view, dashboardBoxes])
   const [revision, setRevision] = useState(0)
   const [snapshotVersion, setSnapshotVersion] = useState(0)
   const [kommuner, setKommuner] = useState<NamedCode[]>([])
@@ -949,6 +962,10 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     setSelectedArea,
     colorMode,
     setColorMode,
+    view,
+    setView,
+    dashboardBoxes,
+    setDashboardBox,
     storesRef,
     partyRef,
     metaRef,
