@@ -5,12 +5,14 @@
 //   • områdesrad — visar valt område + snabb återställning till valtypens toppnivå;
 //     tapp öppnar Resultat-fliken (där drill-down-listan bor). Full väljare = fas 2.
 //   • kompakt rapporteringsstatus (X av Y · %) + live-indikator.
+import { useEffect, useRef, useState } from 'react'
 import { useResults, defaultAreaFor } from '@/components/ResultsProvider'
 import { ValtypSelector } from '@/components/ValtypSelector'
 import { TestdataBanner } from '@/components/TestdataBanner'
 import { InfoButton } from '@/components/InfoButton'
 import { ReportingStatus } from '@/components/ReportingStatus'
 import { GROUP_LEVEL_LABEL, VALTYP_LABEL } from '@/lib/results'
+import { partyLegendList } from '@/lib/soffa'
 
 // Kartfärgläget (se ColorMode/ValtypSelector showColorMode) på mobil: samma två lägen
 // som desktop-ramen, men ingen plats för två extra knappar i den smala fill-raden →
@@ -38,6 +40,99 @@ function ColorModeToggle() {
   )
 }
 
+// Kartfärgläge-METRIKEN (Största parti / Block / Parti-intensitet, se ColorScheme i
+// lib/results) på mobil: samma tre lägen som desktopens ColorSchemeSelector + PartyLegend-
+// klicken, men ingen plats för en egen pill-rad OCH en hel legend-ruta i den smala
+// toppchromen → en enda ikon-knapp som öppnar en liten popover med samma tre val, och
+// (bara i "Parti") en kompakt partirad att trycka på. Highlightas när något annat än
+// "Största parti" är aktivt — samma "märk-att-något-är-påslaget"-princip som
+// ColorModeToggle ovan.
+function MobileColorSchemeButton() {
+  const { valtyp, colorScheme, setColorScheme, selectedParty, setSelectedParty, partyRef, snapshotVersion } = useResults()
+  void snapshotVersion // rendera om partilistan när partifärgerna laddats
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const active = colorScheme !== 'largest'
+  const showBlock = valtyp === 'RD'
+  const parties = partyLegendList(partyRef.current)
+
+  // Stäng vid klick utanför — annars fastnar popovern öppen och täcker kartan.
+  useEffect(() => {
+    if (!open) return
+    const onPointerDown = (e: PointerEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => document.removeEventListener('pointerdown', onPointerDown)
+  }, [open])
+
+  return (
+    <div ref={rootRef} className="relative shrink-0">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-label="Färgläge"
+        title="Kartfärgläge: störst parti, block eller partiintensitet"
+        className={`flex shrink-0 items-center justify-center rounded-md border p-2 ${
+          active ? 'border-sky-500 bg-sky-500/20 text-sky-300' : 'border-slate-700 bg-slate-900/90 text-slate-300'
+        }`}
+      >
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 3a9 9 0 0 0 0 18c1.5 0 2-1 2-2 0-.6-.3-1-.6-1.4-.3-.4-.4-.7-.4-1.1 0-.8.7-1.5 1.5-1.5H16a3 3 0 0 0 3-3c0-4.4-3.6-9-7-9Z" />
+        </svg>
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-20 mt-1 w-60 rounded-md border border-slate-700 bg-slate-900/95 p-2 shadow-xl backdrop-blur">
+          <div className="flex overflow-hidden rounded-md border border-slate-700 text-xs">
+            <button
+              type="button"
+              onClick={() => { setColorScheme('largest'); setOpen(false) }}
+              className={`flex-1 px-2 py-1.5 font-medium ${colorScheme === 'largest' ? 'bg-sky-500 text-white' : 'text-slate-300'}`}
+            >
+              Störst parti
+            </button>
+            {showBlock && (
+              <button
+                type="button"
+                onClick={() => { setColorScheme('block'); setOpen(false) }}
+                className={`flex-1 border-l border-slate-700 px-2 py-1.5 font-medium ${colorScheme === 'block' ? 'bg-sky-500 text-white' : 'text-slate-300'}`}
+              >
+                Block
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setColorScheme('party')}
+              className={`flex-1 border-l border-slate-700 px-2 py-1.5 font-medium ${colorScheme === 'party' ? 'bg-sky-500 text-white' : 'text-slate-300'}`}
+            >
+              Parti
+            </button>
+          </div>
+          {colorScheme === 'party' && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {parties.map((p) => (
+                <button
+                  key={p.forkortning}
+                  type="button"
+                  onClick={() => { setSelectedParty(p.forkortning); setOpen(false) }}
+                  title={p.beteckning ?? p.forkortning!}
+                  className={`flex h-7 w-7 items-center justify-center rounded text-[10px] font-semibold text-white ${
+                    selectedParty === p.forkortning ? 'ring-2 ring-offset-1 ring-offset-slate-900 ring-sky-400' : ''
+                  }`}
+                  style={{ backgroundColor: p.farg! }}
+                >
+                  {p.forkortning}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // Områdesnamn (samma härledning som panelens breadcrumb-rubrik). RF/KF-default (code=null)
 // = "välj"-läge → visa en uppmaning i stället för ett namn.
 function useAreaName(): string {
@@ -60,13 +155,19 @@ export function MobileChrome({ onOpenArea }: { onOpenArea: () => void }) {
 
   return (
     <header
-      className="shrink-0 border-b border-slate-800 bg-slate-950/95 backdrop-blur"
+      // relative z-20: `<main>` (MobileApp.tsx) är `position: relative` → utan en egen
+      // positionering skulle headern (icke-positionerad) alltid måla UNDER `<main>` och
+      // dess WebGL-kanvas, DOM-ordning till trots (positionerade element bildar ett eget
+      // lager som målas ovanpå icke-positionerat innehåll). Upptäckt av
+      // MobileColorSchemeButton:s popover, som annars fångades av kartans hit-testning.
+      className="relative z-20 shrink-0 border-b border-slate-800 bg-slate-950/95 backdrop-blur"
       style={{ paddingTop: 'env(safe-area-inset-top)' }}
     >
       {dataset?.test && <TestdataBanner genrep={dataset.source === 'genrep2026'} />}
       <div className="flex items-center gap-1.5 px-3 pt-2">
         <ValtypSelector fill />
         <ColorModeToggle />
+        <MobileColorSchemeButton />
         <InfoButton />
       </div>
       <div className="flex items-center gap-2 px-3 py-2">

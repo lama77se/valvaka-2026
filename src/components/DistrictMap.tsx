@@ -11,11 +11,13 @@ import {
   SWEDEN_BOUNDS,
   VALKRETS_RD_BOUNDARIES_URL,
 } from '@/lib/geometry'
-import { GROUP_LEVEL_LABEL, VALTYPER, VALTYP_LABEL, slutligTag, type ColorMode, type DistrictOutcome, type Valtyp } from '@/lib/results'
+import { GROUP_LEVEL_LABEL, VALTYPER, VALTYP_LABEL, slutligTag, type ColorMode, type ColorScheme, type DistrictOutcome, type Valtyp } from '@/lib/results'
+import { RIKET_BLOCKS } from '@/lib/soffa'
 import { applyComparison, buildRows, collapseForDisplay, districtsInArea, sparrFor, type Level } from '@/lib/aggregate'
 import { ancestorsOf } from '@/lib/hierarchy'
 import { defaultAreaFor, useResults } from '@/components/ResultsProvider'
 import { ValtypSelector } from '@/components/ValtypSelector'
+import { ColorSchemeSelector } from '@/components/ColorSchemeSelector'
 import { PlaceLabels } from '@/components/PlaceLabels'
 
 // Färg för distrikt som rapporterat men vars vinnarparti saknar märkesfärg
@@ -23,6 +25,26 @@ import { PlaceLabels } from '@/components/PlaceLabels'
 // Exporterade så partilegenden speglar exakt samma färger (en sanningskälla).
 export const REPORTED_NEUTRAL = '#64748b'
 export const UNREPORTED_FILL = '#334155'
+
+// Kartfärgläge 'block' (RD-only, se ColorScheme/RIKET_BLOCKS): block A (V+S+MP+C) röd,
+// block B (L+KD+M+SD) blå — Lars beslut (handover). Kulörerna är MEDVETET inte S:s eller
+// M:s egna brandfärger (partyRef-hex) — annars kunde en användare läsa blockfärgen som
+// "det här distriktets vinnare är S" resp. "M" i vanligt läge; blocken ska läsas som en
+// egen, distinkt kategori. Exporterade så en ev. blocklegend kan spegla exakt samma hex.
+export const BLOCK_COLOR_A = '#e11d48' // röd (rose-600) — inte S:s '#dc2626'-liknande ton
+export const BLOCK_COLOR_B = '#2563eb' // blå (blue-600) — inte M:s '#1e40af'-liknande ton
+// Baskulör vid 0 % i colorScheme 'party' — mörk, nära bakgrunden (INTE vit, se handover:
+// "matchar mörka temat"). Egen konstant (skild från UNREPORTED_FILL, '#334155'): 0 %-
+// rapporterat MEN 0 röster på just det valda partiet ska ändå skilja sig visuellt från
+// "inget rapporterat alls" — se applyDistrict/buildPartyFillColorExpr.
+export const PARTY_INTENSITY_BASE = '#0f172a'
+
+interface BlockOutcome {
+  winner: 'a' | 'b' | null
+  share: number
+  margin: number
+  total: number
+}
 
 const hhmmss = () => new Date().toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 
@@ -63,6 +85,8 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
     selectedArea,
     setSelectedArea,
     colorMode,
+    colorScheme,
+    selectedParty,
     storesRef,
     partyRef,
     metaRef,
@@ -122,10 +146,20 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
   const sourceReadyRef = useRef(false)
   const activeValtypRef = useRef<Valtyp>(valtyp) // speglar `valtyp` för closures
   const colorModeRef = useRef<ColorMode>(colorMode) // speglar `colorMode` för closures
+  // Kartfärgläge-METRIK (se ColorScheme) — speglar samma sätt som colorModeRef.
+  const colorSchemeRef = useRef<ColorScheme>(colorScheme)
+  const selectedPartyRef = useRef<string | null>(selectedParty)
   // 'grupp'-läget cachar gruppens (valkrets/region/kommun) sammanlagda vinnare per
   // distrikt — räknas om i scheduleFlush, inte per requestApply (en ändring i EN
   // distrikt kan byta hela gruppens vinnare, alla dess syskon måste då om-målas).
   const groupWinnersRef = useRef<Map<string, DistrictOutcome> | null>(null)
+  // Samma sak för colorScheme 'block' — egen cache (annan form: block a/b, inte parti).
+  const groupBlockWinnersRef = useRef<Map<string, BlockOutcome> | null>(null)
+  // colorScheme 'party': delad per REPAINT-CYKEL (inte per distrikt) — se
+  // recomputePartyShares. Skalan är DYNAMISK (mot max-distriktet denna cykel), så varje
+  // distrikts intensitet beror på ALLA andras andelar, inte bara sin egen.
+  const partyShareRef = useRef<Map<string, { share: number; total: number }>>(new Map())
+  const partyMaxRef = useRef(0)
   // Bro mellan recolorActive (definierad utanför 'load') och updateBoundaryVisibility
   // (definierad inuti 'load', kräver att lagren finns) — satt en gång vid 'load'.
   const updateBoundaryVisibilityRef = useRef<(() => void) | null>(null)
@@ -280,6 +314,35 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
       }
       return { winner, share: total > 0 ? top / total : 0, margin: total > 0 ? (top - Math.max(second, 0)) / total : 0, total }
     }
+    // Kartfärgläge 'block' (RD-only): samma form som outcomeFromVotes, men summerar
+    // röster per BLOCK (RIKET_BLOCKS, join-nyckel FORKORTNING — inte partikod, se
+    // MandatBars.blockSum som gör samma översättning) i stället för per parti.
+    // RIKET_BLOCKS.a/b.parties är alltid explicita listor (aldrig 'rest', till skillnad
+    // från region-/kommunstyre-blocken i soffa.ts) — cast:as en gång utanför loopen.
+    const blockAParties = RIKET_BLOCKS.a.parties as string[]
+    const blockBParties = RIKET_BLOCKS.b.parties as string[]
+    const outcomeForBlocks = (votes: Record<string, number>): BlockOutcome => {
+      let a = 0, b = 0, total = 0
+      for (const [pk, v] of Object.entries(votes)) {
+        total += v
+        const fork = partyRef.current.get(pk)?.forkortning
+        if (fork && blockAParties.includes(fork)) a += v
+        else if (fork && blockBParties.includes(fork)) b += v
+      }
+      const winner: BlockOutcome['winner'] = a === b ? null : a > b ? 'a' : 'b'
+      const top = Math.max(a, b)
+      const second = Math.min(a, b)
+      return { winner, share: total > 0 ? top / total : 0, margin: total > 0 ? (top - second) / total : 0, total }
+    }
+    // Kartfärgläge 'party': ETT partis (forkortning) andel av det totala röstetalet.
+    const partyShareFromVotes = (votes: Record<string, number>, forkortning: string): { share: number; total: number } => {
+      let total = 0, target = 0
+      for (const [pk, v] of Object.entries(votes)) {
+        total += v
+        if (partyRef.current.get(pk)?.forkortning === forkortning) target += v
+      }
+      return { share: total > 0 ? target / total : 0, total }
+    }
     // Grupperingsindexet (distrikt-lista per grupp) för en valtyp — redan förberäknat
     // (areaIndexRef.RD.vkToDistricts för valkrets; groupsRef.byLan/byKommun — samma
     // index som mandaträkningen — för region/kommun). Delas av computeGroupWinners
@@ -297,6 +360,27 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
       for (const districts of groupDistrictMapFor(vt).values()) {
         const outcome = outcomeFromVotes(store.aggregate(districts))
         for (const vd of districts) result.set(vd, outcome)
+      }
+      return result
+    }
+    // Samma sak för colorScheme 'block' (RD-only) — se outcomeForBlocks ovan.
+    const computeGroupBlockWinners = (vt: Valtyp): Map<string, BlockOutcome> => {
+      const store = storesRef.current[vt]
+      const result = new Map<string, BlockOutcome>()
+      for (const districts of groupDistrictMapFor(vt).values()) {
+        const outcome = outcomeForBlocks(store.aggregate(districts))
+        for (const vd of districts) result.set(vd, outcome)
+      }
+      return result
+    }
+    // Samma sak för colorScheme 'party' — röstandel för VALT parti per grupp i stället
+    // för per distrikt (granularitets-togglen gäller alla tre metrikerna, se ColorScheme).
+    const computeGroupPartyShares = (vt: Valtyp, forkortning: string): Map<string, { share: number; total: number }> => {
+      const store = storesRef.current[vt]
+      const result = new Map<string, { share: number; total: number }>()
+      for (const districts of groupDistrictMapFor(vt).values()) {
+        const s = partyShareFromVotes(store.aggregate(districts), forkortning)
+        for (const vd of districts) result.set(vd, s)
       }
       return result
     }
@@ -326,6 +410,26 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
     // --- Applicera ett distrikts resultat FÖR DEN AKTIVA VALTYPEN --------------
     const applyDistrict = (vd: string) => {
       if (removed) return
+      const scheme = colorSchemeRef.current
+      if (scheme === 'party' && selectedPartyRef.current) {
+        // Se recomputePartyShares — partyShareRef/partyMaxRef räknas om för HELA
+        // repaint-cykeln innan applyDistrict anropas (dynamisk skala, se ColorScheme).
+        const s = partyShareRef.current.get(vd)
+        const total = s?.total ?? 0
+        const max = partyMaxRef.current
+        const intensity = total > 0 && max > 0 ? Math.min(1, s!.share / max) : 0
+        map.setFeatureState({ source: 'districts', id: vd }, { reported: total > 0, partyIntensity: total > 0 ? intensity : null, margin: 0 })
+        return
+      }
+      if (scheme === 'block') {
+        const o =
+          colorModeRef.current === 'grupp'
+            ? (groupBlockWinnersRef.current?.get(vd) ?? { winner: null, share: 0, margin: 0, total: 0 })
+            : outcomeForBlocks(storesRef.current[activeValtypRef.current].aggregate([vd]))
+        const color = o.winner === 'a' ? BLOCK_COLOR_A : o.winner === 'b' ? BLOCK_COLOR_B : null
+        map.setFeatureState({ source: 'districts', id: vd }, { reported: o.total > 0, color: o.total > 0 ? color : null, margin: o.margin })
+        return
+      }
       const o =
         colorModeRef.current === 'grupp'
           ? (groupWinnersRef.current?.get(vd) ?? EMPTY_OUTCOME)
@@ -339,16 +443,42 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
       )
     }
 
+    // colorScheme 'party': körs en gång PER REPAINT-CYKEL (inte per distrikt, till
+    // skillnad från block/largest) — skalan är DYNAMISK mot max-distriktet just nu
+    // (handover: "partiandelar går sällan över ~40-50 % ens i starka fästen; fast
+    // skala 0–100 % skulle göra kartan blek"), så EN ändring i valfritt distrikt kan
+    // ändra vilket distrikt som är "max" och därmed alla andras normaliserade intensitet.
+    const recomputePartyShares = () => {
+      const party = selectedPartyRef.current
+      if (!party) return
+      const vt = activeValtypRef.current
+      const store = storesRef.current[vt]
+      const shares =
+        colorModeRef.current === 'grupp'
+          ? computeGroupPartyShares(vt, party)
+          : new Map([...store.districts()].map((vd) => [vd, partyShareFromVotes(store.aggregate([vd]), party)]))
+      let max = 0
+      for (const s of shares.values()) if (s.total > 0 && s.share > max) max = s.share
+      partyShareRef.current = shares
+      partyMaxRef.current = max
+    }
+
     // rAF-koalescerad repaint (many events/tick → one paint), ingen fördröjande timer.
     const scheduleFlush = () => {
       if (rafRef.current != null || removed) return
       rafRef.current = requestAnimationFrame(() => {
         rafRef.current = null
         if (removed) return
-        if (colorModeRef.current === 'grupp' && pendingRef.current.size > 0) {
+        if (colorSchemeRef.current === 'party' && selectedPartyRef.current && pendingRef.current.size > 0) {
+          // Samma skäl som 'grupp'-grenen nedan: en ändring var som helst kan ändra
+          // den dynamiska maxskalan → måla om ALLA, inte bara pendingRef-posterna.
+          recomputePartyShares()
+          for (const vt of VALTYPER) for (const vd of storesRef.current[vt].districts()) applyDistrict(vd)
+        } else if (colorModeRef.current === 'grupp' && pendingRef.current.size > 0) {
           // En ändring i ETT distrikt kan byta hela gruppens vinnare → måla om ALLA
           // (samma unions-iteration som recolorActive), inte bara pendingRef-posterna.
-          groupWinnersRef.current = computeGroupWinners(activeValtypRef.current)
+          if (colorSchemeRef.current === 'block') groupBlockWinnersRef.current = computeGroupBlockWinners(activeValtypRef.current)
+          else groupWinnersRef.current = computeGroupWinners(activeValtypRef.current)
           for (const vt of VALTYPER) for (const vd of storesRef.current[vt].districts()) applyDistrict(vd)
         } else {
           for (const vd of pendingRef.current) applyDistrict(vd)
@@ -364,12 +494,68 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
       pendingRef.current.add(vd)
       if (sourceReadyRef.current) scheduleFlush()
     }
+    // fill-color-uttrycket för colorScheme 'largest'/'block' (BÅDA delar samma
+    // pipeline — bara VAD applyDistrict skriver till feature-state 'color' skiljer,
+    // se ovan). Extraherad konstant: samma uttryck sätts både vid addLayer (nedan)
+    // och när man växlar TILLBAKA hit från 'party' (som byter hela uttrycket, se
+    // applyFillColorExpression) — en sanningskälla i stället för två literaler.
+    // any: MapLibres exakta expression-typ (DataDrivenPropertyValueSpecification, från
+    // @maplibre/maplibre-gl-style-spec) exporteras inte av maplibre-gl:s egna .d.ts —
+    // samma pragmatiska cast som resten av style-uttrycken i denna fil implicit fick via
+    // kontextuell typning inline (addLayer-literalen), tills de extraherades hit.
+    const DEFAULT_FILL_COLOR_EXPR: any = [
+      'case',
+      ['boolean', ['feature-state', 'hover'], false],
+      '#38bdf8',
+      // Utanför valt område (fokusläge) → dämpad grå, oavsett resultatfärg (men syns).
+      ['boolean', ['feature-state', 'dimmed'], false],
+      '#475569',
+      ['coalesce', ['feature-state', 'color'], UNREPORTED_FILL],
+    ]
+    // colorScheme 'party': EGET fill-color-uttrygg (inte bara ett annat feature-state-
+    // värde på samma uttryck som ovan) — en sekventiell choropleth (interpolate) mot
+    // det valda partiets EGNA färg, läser 'partyIntensity' (redan normaliserad 0..1 mot
+    // den dynamiska maxskalan, se recomputePartyShares/applyDistrict) i stället för
+    // 'color'. 'reported'-grenen behövs EXPLICIT här (till skillnad från ovan, där
+    // coalesce räcker) — annars skulle ett orapporterat distrikt (ingen feature-state
+    // alls) tolkas som "intensitet 0" (PARTY_INTENSITY_BASE) och se identiskt ut som
+    // "rapporterat, 0 röster på det valda partiet" — två helt olika saker.
+    const buildPartyFillColorExpr = (partyColor: string): any => [
+      'case',
+      ['boolean', ['feature-state', 'hover'], false],
+      '#38bdf8',
+      ['boolean', ['feature-state', 'dimmed'], false],
+      '#475569',
+      ['!', ['boolean', ['feature-state', 'reported'], false]],
+      UNREPORTED_FILL,
+      ['interpolate', ['linear'], ['coalesce', ['feature-state', 'partyIntensity'], 0], 0, PARTY_INTENSITY_BASE, 1, partyColor],
+    ]
+    // Växlar fill-color-UTTRYCKET (inte bara feature-state-värden) mellan default
+    // (largest/block) och party-intensity-varianten — anropas vid varje recolorActive,
+    // dvs vid mount, valtyp-/colorMode-/colorScheme-/selectedParty-byte. Partiets FÄRG
+    // slås upp via forkortning (stabil över valtyper, se selectedPartyRef-kommentaren).
+    const applyFillColorExpression = () => {
+      if (colorSchemeRef.current === 'party' && selectedPartyRef.current) {
+        let partyColor: string | null = null
+        for (const meta of partyRef.current.values()) {
+          if (meta.forkortning === selectedPartyRef.current && meta.farg) {
+            partyColor = meta.farg
+            break
+          }
+        }
+        map.setPaintProperty('district-fill', 'fill-color', buildPartyFillColorExpr(partyColor ?? REPORTED_NEUTRAL))
+      } else {
+        map.setPaintProperty('district-fill', 'fill-color', DEFAULT_FILL_COLOR_EXPR)
+      }
+    }
+
     // Färga om ALLA distrikt som har resultat i NÅGON valtyp, från aktiv valtyp.
     // Måste iterera unionen — annars behåller distrikt som fanns i förra valtypen
     // men saknas i den nya sin gamla färg (feature-state-fällan vid växling).
     const recolorActive = () => {
       updateBoundaryVisibilityRef.current?.()
       if (!sourceReadyRef.current || removed) return
+      applyFillColorExpression()
       for (const vt of VALTYPER)
         for (const vd of storesRef.current[vt].districts()) pendingRef.current.add(vd)
       scheduleFlush()
@@ -388,15 +574,7 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
         type: 'fill',
         source: 'districts',
         paint: {
-          'fill-color': [
-            'case',
-            ['boolean', ['feature-state', 'hover'], false],
-            '#38bdf8',
-            // Utanför valt område (fokusläge) → dämpad grå, oavsett resultatfärg (men syns).
-            ['boolean', ['feature-state', 'dimmed'], false],
-            '#475569',
-            ['coalesce', ['feature-state', 'color'], UNREPORTED_FILL],
-          ],
+          'fill-color': DEFAULT_FILL_COLOR_EXPR,
           'fill-opacity': [
             'case',
             ['boolean', ['feature-state', 'hover'], false],
@@ -614,6 +792,15 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
     colorModeRef.current = colorMode
     recolorRef.current?.()
   }, [colorMode])
+
+  // Kartfärgläge-METRIK-växling (Största parti ⇄ Block ⇄ Parti-intensitet) — samma väg
+  // som ovan. recolorActive() sköter BÅDE fill-color-uttrycks-swappen (applyFillColor-
+  // Expression, vid behov för 'party') och den faktiska ompaintningen i ett svep.
+  useEffect(() => {
+    colorSchemeRef.current = colorScheme
+    selectedPartyRef.current = selectedParty
+    recolorRef.current?.()
+  }, [colorScheme, selectedParty])
 
   // Ladda distrikt-bboxarna en gång (samma mönster som comparison-2022.json).
   useEffect(() => {
@@ -866,6 +1053,7 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
           </button>
         )}
         <ValtypSelector showColorMode />
+        <ColorSchemeSelector />
         {total > 0 && (
           <div className="pointer-events-none mx-auto flex w-fit items-center gap-2 whitespace-nowrap rounded-md border border-slate-700 bg-slate-900/90 px-4 py-1.5 text-sm text-slate-100 shadow-lg">
             <span
