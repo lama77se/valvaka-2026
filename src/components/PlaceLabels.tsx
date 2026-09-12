@@ -26,9 +26,12 @@ import type * as maplibregl from 'maplibre-gl'
 type Place = { name: string; lat: number; lon: number; tier: number; pop: number }
 
 // Zoom-tröskel per tier — satt empiriskt (samma princip som handover:en
-// föreslår: testa i browsern, dra åt vid behov). Tier 1 syns alltid, även vid
-// "hela Sverige"-utzoomning (~zoom 4-5, se SWEDEN_BOUNDS-fitBounds).
-const TIER_MIN_ZOOM: Record<number, number> = { 1: 0, 2: 5.5, 3: 7, 4: 8.5, 5: 10 }
+// föreslår: testa i browsern, dra åt vid behov). Default "hela Sverige"-vy
+// (SWEDEN_BOUNDS-fitBounds) landar på ~zoom 4.1 (desktop) — INGEN etikett ska
+// synas där (användaren känner redan till Sveriges form; etiketter först när
+// man zoomar in en bit). Tier 1 (de 15 största kommunerna) kommer in strax
+// därefter, vid zoom 5.
+const TIER_MIN_ZOOM: Record<number, number> = { 1: 5, 2: 6, 3: 7.5, 4: 9, 5: 10.5 }
 
 // Enkel gles kollisionskoll (INTE en fullständig kollisionsmotor): två SAMTIDIGT
 // synliga etiketter närmare varandra än detta (pixlar) → skippa den senare i
