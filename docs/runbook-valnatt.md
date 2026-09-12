@@ -125,10 +125,11 @@ testdata hela natten**. Därför MÅSTE DB:n rensas innan skarpt flödar (steg N
   första varvet)** → Kommun fullt ~10:26 → **313/313 kl 10:26:54 = 7,2 min**; blobbar 15 s gamla och
   = DB; ingen CPU-död (max 694 ms/isolat). **Det här är nattens förväntade tidslinje efter N3:
   riks-RD inom en minut, allt inom ~7 min** (~33 KF-filer per 30 s-varv).
-- [ ] **🔺 Skala till Large I GOD TID + lasttesta på Large (inte i sista minuten).** Compute-resize
-  ger en kort omstart/nedtid → byt **dagen innan eller tidig eftermiddag 13 sep**, aldrig ~19:55.
-  Kör sedan lasttestet på Large och **läs CPU i Supabase-dashboarden** (klient-väggtid mäter INTE
-  server-CPU). Sedan **Realtime togs bort (1 sep)** är den kvarvarande lasten **mount-snapshot-herden**
+- [x] **🔺 Skala till Large + lasttesta på Large — GJORT 12 sep** (Lars bekräftat: compute satt till
+  Large, `npm run loadtest:poll` kört och godkänt). Detaljer nedan kvar som bakgrund/acceptanskriterium
+  (compute-resize ger en kort omstart/nedtid, därför i god tid — inte ~19:55 — men det steget är alltså
+  redan avklarat). Läs CPU i Supabase-dashboarden vid en eventuell omkörning (klient-väggtid mäter
+  INTE server-CPU). Sedan **Realtime togs bort (1 sep)** är den kvarvarande lasten **mount-snapshot-herden**
   — många samtidiga fulla snapshot-läsningar vid poll-close (~20:00) + delta-pollning var 30–45 s —
   INTE Realtime-fan-out. **Verktyget är `npm run loadtest:poll`** (speglar dagens klient: blob-mount
   + delta-poll). ⚠️ `loadtest-clients/-heavy/-valnatt` är Realtime-era — `loadtest-valnatt.mjs`
