@@ -14,7 +14,7 @@ export function TestdataBanner({ genrep }: { genrep: boolean }) {
       {genrep ? (
         <span>Generalrep · <span className="font-bold">testdata</span> — inte skarpa valresultat</span>
       ) : (
-        <span><span className="font-bold">Väntar på valnatten</span> — inga resultat än</span>
+        <span><span className="font-bold">Väntar på valnatten</span> — inga resultat inrapporterade än</span>
       )}
     </div>
   )
