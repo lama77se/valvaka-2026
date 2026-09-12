@@ -158,9 +158,13 @@ async function processFile(url: string, districtSet: Set<string>, partySet: Set<
       const kommunkod = typeof vd.kommunkod === 'string' ? vd.kommunkod : null
       const lankod = typeof vd.lankod === 'string' ? vd.lankod : null
       if (typeof kod !== 'string' || !kommunkod || !lankod) continue
+      // Sena röster löses ofta till sin RIKTIGA valkrets (kretskod) — 2022-facit visade RD
+      // 314/314 uppsamlingsdistrikt lösta, RF/KF bara ibland. Null = olöst → väger bara in i
+      // organets spärr/mål (client aggregate.ts UppsamlingBuckets), placeras aldrig geografiskt.
+      const kretskod = typeof vd.kretskod === 'string' ? vd.kretskod : null
       for (const p of partier) {
         if (!partySet.has(p.partikod)) continue
-        upp.push({ valtyp, kod, kommunkod, lankod, partikod: p.partikod, roster: p.antalRoster, status })
+        upp.push({ valtyp, kod, kommunkod, lankod, kretskod, partikod: p.partikod, roster: p.antalRoster, status })
       }
       continue
     }

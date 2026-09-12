@@ -32,7 +32,7 @@ import {
   computeMandate,
   computeRdValkretsMandate,
   computeRegionOrKommunValkretsMandate,
-  type UppsamlingVotes,
+  type UppsamlingBuckets,
 } from '../src/lib/aggregate.ts'
 import { SEAT_CONFIG_2026 } from '../src/lib/seatConfig2026.ts'
 import type { PartyVotes } from '../src/lib/mandate.ts'
@@ -63,6 +63,7 @@ interface RostVd {
   valdistriktstyp?: string
   kommunkod?: string
   lankod?: string
+  kretskod?: string
   rostfordelning?: { rosterPaverkaMandat?: { partiRoster?: { partikod: string; antalRoster: number }[] } }
 }
 interface RostFile {
@@ -93,18 +94,24 @@ async function fetchOrgan(rel: string): Promise<{ rost: RostFile; mandat: Mandat
   return { rost: JSON.parse(dec.decode(unz[rostName])), mandat: JSON.parse(dec.decode(unz[mandatName])) }
 }
 
-// Geografiskt röstindex + uppsamlings-organhinkar ur en organfil — samma routing som
-// ingest/klienten (se verify-uppsamling.ts, oförändrat härifrån).
+// Geografiskt röstindex + uppsamlings-hinkar ur en organfil — samma routing som ingest/
+// klienten (se verify-uppsamling.ts): organ-hink PLUS kretskod-attribuerad valkrets-hink
+// när Valmyndigheten löst den (se aggregate.ts UppsamlingBuckets, tillagt 12 sep).
 function build(rost: RostFile) {
   const geoByVd = new Map<string, PartyVotes>()
-  const upp: UppsamlingVotes = new Map()
+  const upp: UppsamlingBuckets = { byOrgan: new Map(), byValkrets: new Map(), unresolvedByOrgan: new Map() }
   const codes: string[] = []
+  const add = (m: Map<string, PartyVotes>, key: string, pr: { partikod: string; antalRoster: number }[]) => {
+    const bucket = m.get(key) ?? m.set(key, {}).get(key)!
+    for (const p of pr) bucket[p.partikod] = (bucket[p.partikod] ?? 0) + p.antalRoster
+  }
   for (const vd of rost.valdistrikt ?? []) {
     const pr = vd.rostfordelning?.rosterPaverkaMandat?.partiRoster ?? []
     if (vd.valdistriktstyp === 'uppsamlingsdistrikt') {
-      const k = rost.valtyp === 'RD' ? '' : rost.valtyp === 'RF' ? vd.lankod! : vd.kommunkod!
-      const bucket = upp.get(k) ?? upp.set(k, {}).get(k)!
-      for (const p of pr) bucket[p.partikod] = (bucket[p.partikod] ?? 0) + p.antalRoster
+      const organKey = rost.valtyp === 'RD' ? '' : rost.valtyp === 'RF' ? vd.lankod! : vd.kommunkod!
+      add(upp.byOrgan, organKey, pr)
+      if (vd.kretskod) add(upp.byValkrets, vd.kretskod, pr)
+      else add(upp.unresolvedByOrgan, organKey, pr)
     } else {
       const v: PartyVotes = {}
       for (const p of pr) v[p.partikod] = (v[p.partikod] ?? 0) + p.antalRoster
@@ -168,23 +175,20 @@ async function loadVkIndex() {
 // placerad utjämning — verifierad exakt mot 2022-facit (scripts/verify-mandate-leveling.ts,
 // 232/232). Jämförs därför mot filens FULLA antalMandat, inte bara antalFastaMandat.
 //
-// RF/KF: fortfarande bara FASTA mandat (computeFixedRegionOrKommunValkretsMandate) — den
-// placeringen är INTE byggd för RF/KF (dokumenterad, avsiktlig begränsning). Jämförs mot
-// antalFastaMandat, med filens fulla antalMandat loggat informativt (inte en assert) så
-// det FÖRVÄNTADE gapet syns tydligt i stället för att se ut som en falsk ❌.
-// Uppsamling skickas som ORGAN-VID bucket (upp.get(organKod)) — väger in i spärr/mål
-// (computeAssembly extraVotes) men placeras aldrig geografiskt här. Mindre precist än
-// scripts/verify-mandate-leveling-rfkf.ts (som läser filens EGEN kretskod och kan
-// attribuera VISS uppsamling till en specifik valkrets, se dess header) — den här
-// funktionens `aggregate`/vkIndex är byggd på `district`-tabellen (samma index klienten
-// använder), som bara känner till RIKTIGA valdistrikt, aldrig uppsamlingsdistrikt-koder.
+// RF/KF: sedan 12 sep också fasta+geografiskt placerad utjämning (samma som RD), jämförs
+// mot filens FULLA antalMandat. Uppsamling: den LÖSTA delen (kretskod känd, `upp.byValkrets`)
+// läggs i sin valkrets av computeRdValkretsMandate/computeRegionOrKommunValkretsMandate
+// själva (aggregate.ts) — den här funktionen skickar bara med hela `upp`-objektet, precis
+// som live-koden gör. Verifierat mot 2022-facit (scripts/verify-mandate-leveling-rfkf.ts +
+// -rd-uppsamling.ts) att detta ger exakt match; denna körning bekräftar samma sak mot den
+// LEVANDE 2026-filen.
 function testValkretsar(
   valtyp: Valtyp,
   organKod: string,
   mandat: MandatFile,
   vkIndex: Record<Valtyp, Map<string, string[]>>,
   aggregate: (cs: Iterable<string>) => PartyVotes,
-  uppsamling: UppsamlingVotes,
+  uppsamling: UppsamlingBuckets,
 ) {
   const list = mandat.valomrade.valkretsLista
   if (!list || list.length === 0) return // odelat valområde — ingen egen valkrets-nivå (som väntat)
@@ -199,7 +203,7 @@ function testValkretsar(
     const facitTotal = Object.fromEntries(facitParti.map((p) => [p.partikod, p.antalMandat ?? 0]))
     const ours =
       valtyp === 'RD'
-        ? computeRdValkretsMandate(vk.kod, vkIndex.RD, aggregate)
+        ? computeRdValkretsMandate(vk.kod, vkIndex.RD, aggregate, uppsamling)
         : computeRegionOrKommunValkretsMandate(
             valtyp,
             organKod,
@@ -207,7 +211,7 @@ function testValkretsar(
             vkIndex[valtyp],
             aggregate,
             valtyp === 'KF' ? (SEAT_CONFIG_2026.KF[organKod]?.threshold ?? 0.02) : 0.03,
-            uppsamling.get(organKod),
+            uppsamling,
           )
     const label = `${valtyp} ${vk.namnValkrets} (${vk.kod})`
     if (!ours) { log(false, `${label}: vår beräkning gav null (saknas i SEAT_CONFIG_2026?)`); continue }

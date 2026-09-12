@@ -17,6 +17,7 @@ import {
   mergeVotes,
   sparrFor,
   uppsamlingForArea,
+  uppsamlingRowFor,
   type Level,
 } from '@/lib/aggregate'
 import { RIKET, defaultAreaFor, useResults, type Area } from '@/components/ResultsProvider'
@@ -168,7 +169,7 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
       selectedArea.level !== 'valkrets' || !selectedArea.code
         ? null
         : valtyp === 'RD'
-          ? computeRdValkretsMandate(selectedArea.code, areaIndexRef.current.RD.vkToDistricts, (c) => store.aggregate(c))
+          ? computeRdValkretsMandate(selectedArea.code, areaIndexRef.current.RD.vkToDistricts, (c) => store.aggregate(c), uppsamling)
           : computeRegionOrKommunValkretsMandate(
               valtyp,
               valtyp === 'RF' ? selectedArea.code.slice(0, 2) : selectedArea.code.slice(0, 4),
@@ -176,7 +177,7 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
               areaIndexRef.current[valtyp].vkToDistricts,
               (c) => store.aggregate(c),
               sparrFor(valtyp, 'valkrets', selectedArea.code),
-              uppsamling?.get(valtyp === 'RF' ? selectedArea.code.slice(0, 2) : selectedArea.code.slice(0, 4)),
+              uppsamling,
             )
     let areaResult = applyMandate(
       buildRows(votes, partyRef.current, sparrFor(valtyp, selectedArea.level, selectedArea.code)),
@@ -306,8 +307,19 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
       return out
     }
 
+    // childLevel ur de FAKTISKA grupperna (inte den statiska kedjan) — en enkommuns-
+    // RD-valkrets kollapsar kommun-nivån → barnen är distrikt, inte kommuner. Beräknad
+    // FÖRE `items` (i stället för efter, som tidigare) — behövs redan där för att veta om
+    // ett barns EGEN rad ska väga in sin lösta uppsamling (bara valkrets-barn kan, se nedan).
+    const childLevel = (groups[0]?.level ?? childLevelOf(valtyp, selectedArea.level)) as ReturnType<typeof childLevelOf>
+    const uppsamling = uppsamlingRef.current[valtyp]
     const items = groups.map((g) => {
-      const votes = store.aggregate(g.districts)
+      // Valkrets-barn: väg in DEN valkretsens LÖSTA uppsamling (kretskod känd) i barnets
+      // egen totalrad — samma nesting som val.se gör (fast här i valkretsens totalsumma,
+      // inte som en egen distriktsrad — vi har ingen geometri att hänga en sådan på, se
+      // Q7/PR). Den OLÖSTA resten (eller hela hinken om barnen INTE är valkretsar) visas i
+      // stället i `uppsamlingRow` nedan.
+      const votes = mergeVotes(store.aggregate(g.districts), g.level === 'valkrets' ? uppsamling.byValkrets.get(g.code) : null)
       let total = 0
       for (const v of Object.values(votes)) total += v
       const a26: Record<string, number> = {} // förkortning → andel 2026 (0..1)
@@ -325,16 +337,12 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
       const leadFarg = leadFork ? forkFarg.get(leadFork) ?? REPORTED_NEUTRAL : reported > 0 ? REPORTED_NEUTRAL : UNREPORTED_FILL
       return { level: g.level, code: g.code, reported, total: g.districts.length, live, a26, a22, leadFarg }
     })
-    // childLevel ur de FAKTISKA grupperna (inte den statiska kedjan) — en enkommuns-
-    // RD-valkrets kollapsar kommun-nivån → barnen är distrikt, inte kommuner.
-    const childLevel = (groups[0]?.level ?? childLevelOf(valtyp, selectedArea.level)) as ReturnType<typeof childLevelOf>
     const anyLive = items.some((it) => it.live) // finns 2026-röster alls? annars visas 2022
-    // Uppsamlingsröster för DETTA organ (RD→riket, RF→region, KF→kommun) → en egen rad längst ner
-    // i nedbrytningen. uppsamlingForArea returnerar hinken BARA på organnivån (null på djupare
-    // nivåer), så raden dyker upp bara där de sena rösterna hör hemma och är invägda i organtotalen
-    // → barnen + uppsamlingen reconcilerar mot totalen (annars en tyst glugg). Andel per parti som
+    // Uppsamlingsröster som INTE redan nestades i ett valkrets-barns egen rad ovan → en
+    // EGEN rad längst ner i nedbrytningen (organets olösta rest när barnen är valkretsar;
+    // annars, som förut, hela hinken — se uppsamlingRowFor). Andel per parti som
     // barnraderna, plus total röster. Icke-geografisk, icke-klickbar.
-    const uppBucket = uppsamlingForArea(valtyp, selectedArea.level, selectedArea.code, uppsamlingRef.current[valtyp])
+    const uppBucket = uppsamlingRowFor(valtyp, selectedArea.level, selectedArea.code, uppsamling, childLevel)
     let uppsamlingRow: { total: number; andel: Record<string, number> } | null = null
     if (uppBucket) {
       let total = 0
