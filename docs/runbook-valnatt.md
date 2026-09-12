@@ -3,6 +3,14 @@
 Exakt vad som ska göras: **inför**, **på**, och **efter** valnatten (sluträkningen). Öppna
 detta dokument på natten. Bakgrund/detaljer: [resultat-ingest-genrep.md](./resultat-ingest-genrep.md).
 
+> **Status 12 sep** (verifierat samma dag): val2026-switchen är redan **permanent mergad i `main`**
+> (inte en draft-PR som väntar på natten) och cronen (`ingest-result-genrep`, 30 s-kadens) står
+> **aktiv** hela tiden fram till natten — den ska INTE pausas/återaktiveras som ett natt-steg. Det
+> gamla N0→N3-flödet nedan (pausa → rensa → byt → återaktivera) beskrev en verklighet där växlingen
+> genrep→val2026 skedde LIVE på natten; den risken finns inte längre. **Enda kvarvarande steget är
+> N1 (rensa DB:n)** — redan kört en gång 11 sep, körs annars en sista gång strax innan 20:00 om ny
+> testdata hunnit strömma in. Se den nedtonade N0/N2/N3-texten för historik/bakgrund.
+
 ## Systemet i ett svep
 
 | Del | Vad | Var |
@@ -12,9 +20,9 @@ detta dokument på natten. Bakgrund/detaljer: [resultat-ingest-genrep.md](./resu
 | **Lokalt skript** | `npm run ingest:slutlig` — **alla slutliga** filer (`/s/`): riks-RD + alla 21 RF + alla ~290 KF | din dator, **mån–fre** (Länsstyrelsen börjar måndag) |
 | **Frontend** | valvaka.tech, auto-deploy från `main` | Vercel |
 
-**Datakällan byts med EN konstant, `RESULT_BASE_DEFAULT`, på TVÅ ställen (lockstep):**
-`supabase/functions/ingest-result/index.ts` **och** `scripts/ingest-slutlig.mjs`.
-`genrep2026` (test, nu) → `val2026` (skarpt, ~13 sep).
+**Datakällan styrs av EN konstant, `RESULT_BASE_DEFAULT`, på TVÅ ställen (lockstep):**
+`supabase/functions/ingest-result/index.ts` **och** `scripts/ingest-slutlig.mjs`. Pekar redan
+permanent på `val2026` (bytt från `genrep2026`, PR #39/#121) — ingen växling kvar att göra på natten.
 
 ---
 
@@ -25,19 +33,25 @@ triggrarna (`result_no_status_downgrade`, `turnout_no_status_downgrade`) **block
 val2026-**preliminära** upserterna (samma PK) → **kartan/valdeltagandet skulle frysa på genrep-
 testdata hela natten**. Därför MÅSTE DB:n rensas innan skarpt flödar (steg N1 nedan).
 
-**Och: cronen måste vara PAUSAD när du rensar (N0).** `genrep2026` svarar fortfarande (5 sep: 313
-`/p/`-filer + 311 `/s/`). Rensar du med cronen igång och edge fortfarande på genrep, ser edge inom
-30 s alla genrep-filer som nya och fyller DB:n med testdata igen — inkl. `slutlig`-rader — *innan*
-val2026-deployen hunnit landa via CI. Ordningen är därför **N0 pausa → N1 rensa → N2 byt + verifiera
-→ N3 aktivera**.
+> **Uppdaterat 12 sep:** stycket nedan (kursivt) beskrev en genrep→val2026-växling som skulle ske
+> LIVE på natten (därav pausa-cron-kravet). `RESULT_BASE_DEFAULT` pekar redan permanent på `val2026`
+> i `main` (PR #39/#121, sedan tidigare) — det finns alltså inget "cronen ser fortfarande genrep"-
+> race att skydda mot längre. **Cronen kan stå aktiv genom hela rensningen.** Behållet som historik/
+> bakgrund ifall mönstret (en live datakälle-växling) skulle behöva göras om i någon annan form.
+>
+> *Och: cronen måste vara PAUSAD när du rensar (N0). `genrep2026` svarar fortfarande (5 sep: 313
+> `/p/`-filer + 311 `/s/`). Rensar du med cronen igång och edge fortfarande på genrep, ser edge inom
+> 30 s alla genrep-filer som nya och fyller DB:n med testdata igen — inkl. `slutlig`-rader — innan
+> val2026-deployen hunnit landa via CI. Ordningen var därför N0 pausa → N1 rensa → N2 byt + verifiera
+> → N3 aktivera.*
 
 ---
 
 ## Inför valnatten (dagarna innan)
 
-- [x] **val2026-switchen förberedd** som draft-PR `chore/valnatt-switch-val2026` (byter
-  `RESULT_BASE_DEFAULT` → `…/val2026` i BÅDA filerna). Merga den INTE än — un-draft:a + merga på
-  natten (N2), CI deployar edge automatiskt (undvik att skriva kod live).
+- [x] **val2026-switchen redan permanent mergad** (`RESULT_BASE_DEFAULT` → `…/val2026` i BÅDA
+  filerna, PR #39, bekräftat i README #121) — inte längre en draft-PR som väntar på natten. Inget
+  N2-merge-steg kvar att göra på natten; se statusrutan högst upp.
 - [x] **Cron-kadensen är redan 30 s** (migration `20260827120000_tighten_cron.sql`, applicerad i
   förväg via `db-migrate.yml`) — gäller redan genrep-simmarna och carry:ar in i valnatten, inget
   natt-steg. Manuell backning vid behov:
@@ -52,8 +66,9 @@ val2026-deployen hunnit landa via CI. Ordningen är därför **N0 pausa → N1 r
      börjar först måndag, se "Efter valnatten" nedan):
      `curl -s https://resultat.val.se/resultatfiler/val2026/index.md5 | grep -c '/p/.*_\(RD\|RF\|KF\)\.zip'`
      och samma med `/s/`.
-  2. **Live-rök: en riktig fil ska ingesta + måla kartan.** Efter N2-bytet, gör en manuell POST
-     (se *Verifiering* nedan) → svaret ska ge `changed>0`/`upserted>0` och ett distrikt tändas.
+  2. **Live-rök: en riktig fil ska ingesta + måla kartan.** Gör en manuell POST (se *Verifiering*
+     nedan, växlingen är redan permanent så inget separat "efter bytet"-läge att vänta på) → svaret
+     ska ge `changed>0`/`upserted>0` och ett distrikt tändas.
   - **Om `/p/`-count = 0 men filer finns:** sökvägskonventionen har flyttat. Filnamnen bär `preliminar`
     /`slutlig` explicit (`..._preliminar_0114_KF.zip`) — använd det som oberoende diskriminator och
     hotfix: byt manifest-filtret i `ingest-result` från `.includes('/p/')` till
@@ -122,32 +137,45 @@ val2026-deployen hunnit landa via CI. Ordningen är därför **N0 pausa → N1 r
   från 100 % CPU till ~20 %, 300 flikar pollar med p95 < 160 ms på Small. Large behålls som marginal.
   Acceptans på Large: `npm run loadtest:poll -- --steps 100,300 --hold 120` från en maskin med bra länk;
   godkänt = CPU-topp under herd < 40 % och delta p95 < 300 ms. Se valnatt-lastkapacitet.md.
-- [ ] **Låt genrep-demon stå** tills nära natten — den visar att allt fungerar.
+- [x] **Cronen står redan aktiv, permanent pekad på val2026** (verifierat 12 sep: `ingest-result-genrep`
+  `active=true`, 30 s-kadens) — inte en genrep-demo som ska stå kvar och sen bytas ut. Se statusrutan
+  högst upp. `val2026`-manifestet svarar 200 men med 0 st `/p/`/`/s/`-filer just nu (väntat, dagen innan).
 
 ---
 
 ## På valnatten (sön 13 sep, strax innan resultaten öppnar ~20:00)
+
+> **Förenklat 12 sep** — se statusrutan högst upp i dokumentet. Datakälle-växlingen (gamla N2) är
+> redan permanent, och utan den behövs varken paus (gamla N0) eller återaktivering (gamla N3) av
+> cronen: den ska stå `active=true` genom hela natten. **Enda kvarvarande steget är N1 (rensa).**
+> Den ursprungliga N0→N3-sekvensen finns kvar hopfälld nedan som historik.
+
+**N1. Rensa ev. kvarbliven testdata (KRITISKT — se fallgropen ovan):**
+```bash
+npm run results:reset -- --ingest-state
+node --env-file=.env.local scripts/db-status.mjs   # result/uppsamling/turnout ska visa 0 rader, 0 slutlig
+```
+Rensar `result` + `uppsamling_result` + `turnout` (+ `ingest_state` för en helt ren omingest), **tar
+bort snapshot-blobbarna** (`snapshots/RD|RF|KF.json` — annars seedar nya flikar gammal data från
+CDN:en) och sätter **`dataset_meta.source='reset'`** → redan öppna flikar laddar om sig själva inom
+~1,5 min (klientens generationsvakt). Skriptet verifierar 0 rader och exit:ar 1 vid minsta fel. Appen
+visar nu "inga 2026-röster än" (bara 2022-kolumner) tills skarpt flödar — korrekt startläge. När
+första val2026-filen skriver `source='val2026'` laddar flikarna om en gång till (och bannern släcks).
+Kör sedan i SQL-editorn: `vacuum (analyze) result, turnout;` så planeraren har färsk statistik för
+tom→full-övergången. **Cronen behöver INTE pausas för detta** — den pollar redan bara `val2026`
+(0 filer just nu), ingen genrep-källa finns kvar att av misstag fylla på från.
+
+Redan kört en gång **11 sep** (bekräftat: 0 rader, `source='reset'`) — kör igen strax innan 20:00 om
+DB:n hunnit fyllas på med något (t.ex. en ny testkörning) mellan nu och då.
+
+<details>
+<summary>Historik: den ursprungliga N0→N3-sekvensen (innan växlingen blev permanent)</summary>
 
 **N0. Pausa cronen (FÖRE resetten — annars fyller edge DB:n med genrep igen inom 30 s):**
 ```sql
 select cron.alter_job((select jobid from cron.job where jobname='ingest-result-genrep'), active => false);
 select jobname, active, schedule from cron.job;   -- ingest-result-genrep ska visa active = f
 ```
-
-**N1. Rensa genrep-datan (KRITISKT — se fallgropen ovan):**
-```bash
-npm run results:reset -- --ingest-state
-node --env-file=.env.local scripts/db-status.mjs   # result/uppsamling/turnout ska visa 0 rader, 0 slutlig
-```
-Rensar `result` + `uppsamling_result` + `turnout` (+ `ingest_state` för en helt ren omingest), **tar
-bort snapshot-blobbarna** (`snapshots/RD|RF|KF.json` — annars seedar nya flikar genrep-data från
-CDN:en) och sätter **`dataset_meta.source='reset'`** → flikar som redan är öppna (genrep-demon)
-laddar om sig själva inom ~1,5 min (klientens generationsvakt) i stället för att behålla genrep-
-färger. Skriptet verifierar 0 rader och exit:ar 1 vid minsta fel. Appen visar nu "inga 2026-röster
-än" (bara 2022-kolumner) tills skarpt flödar — korrekt startläge. När första val2026-filen skriver
-`source='val2026'` laddar flikarna om en gång till (och bannern släcks).
-Kör sedan i SQL-editorn: `vacuum (analyze) result, turnout;` så planeraren har färsk statistik för
-tom→full-övergången.
 
 **N2. Byt datakälla → `val2026` (un-draft:a + merga den förberedda switch-PR:en,
 `chore/valnatt-switch-val2026`):** deployar edge-funktionen (`deploy-functions.yml`).
@@ -169,6 +197,8 @@ test=false` → **testdata-bannern släcks automatiskt**.
 ```sql
 select cron.alter_job((select jobid from cron.job where jobname='ingest-result-genrep'), active => true);
 ```
+
+</details>
 
 **N4. Övervaka** (inget manuellt behövs sen — edge sköter preliminärt automatiskt):
 - **Kör vakthunden i en terminal hela natten** — den stämmer av val.se ↔ edge ↔ DB var 30 s:
