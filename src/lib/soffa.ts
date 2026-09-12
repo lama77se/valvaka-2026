@@ -1,9 +1,23 @@
+import type { PartyMeta } from './aggregate'
+
 // Politisk vänster→höger-ordning för riksdagspartierna; okända (lokala) sist.
 // Driver spektrumsorteringen av segmenten i MandatBars/resultatpanelen.
 export const SPECTRUM = ['V', 'S', 'MP', 'C', 'L', 'KD', 'M', 'SD']
 export const spectrumRank = (f: string | null): number => {
   const i = f ? SPECTRUM.indexOf(f) : -1
   return i === -1 ? SPECTRUM.length : i
+}
+
+// Riksdagspartiernas legend-lista (bara de med märkesfärg), i politisk ordning, dedupad
+// på förkortning (samma parti kan ha flera partikoder över valtyper) — DELAD mellan
+// PartyLegend (desktop) och MobileChrome:s färgläges-popover (mobil, se ColorScheme i
+// results.ts): båda behöver exakt samma lista/ordning för partiväljaren.
+export function partyLegendList(partyMap: Map<string, PartyMeta>): PartyMeta[] {
+  const parties = [...partyMap.values()]
+    .filter((p) => p.farg && p.forkortning)
+    .sort((a, b) => spectrumRank(a.forkortning) - spectrumRank(b.forkortning))
+  const seen = new Set<string>()
+  return parties.filter((p) => (seen.has(p.forkortning!) ? false : (seen.add(p.forkortning!), true)))
 }
 
 // Tvåblocksvyn i MandatBars (röstandel + mandat mot varandra, majoritetsmarkör) — samma

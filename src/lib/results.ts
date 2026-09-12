@@ -23,6 +23,14 @@ export const VALTYP_LABEL: Record<Valtyp, string> = {
 // HIERARCHY-toppen per valtyp, se hierarchy.ts). Delad state (inte bara DistrictMap-
 // lokal) eftersom väljaren bor i ValtypSelector, som även renderas i mobilchromen.
 export type ColorMode = 'distrikt' | 'grupp'
+
+// Kartfärgläge (METRIK) — ORTOGONAL mot ColorMode ovan (som bara styr geografisk
+// aggregeringsnivå; gäller alla tre metrikerna här). 'largest' (default) = idag: störst
+// parti per distrikt/grupp. 'block' = RIKET_BLOCKS-blocksumma i stället för per-parti
+// (BARA RD — RF/KF:s styre-mot-opposition är ett annat begrepp, erbjuds inte här; se
+// soffa.ts). 'party' = vald partis röstandel som en choropleth-intensitet, alla tre
+// valtyper. Delad state (inte bara DistrictMap-lokal), samma skäl som ColorMode.
+export type ColorScheme = 'largest' | 'block' | 'party'
 export const GROUP_LEVEL_LABEL: Record<Valtyp, string> = {
   RD: 'Valkrets',
   RF: 'Region',

@@ -14,7 +14,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { supabase } from '@/lib/supabase'
 import { fetchSnapshotBlob } from '@/lib/snapshotBlob'
-import { ResultStore, TurnoutStore, VALTYPER, VALTYP_VK_COLUMN, type ColorMode, type Valtyp } from '@/lib/results'
+import { ResultStore, TurnoutStore, VALTYPER, VALTYP_VK_COLUMN, type ColorMode, type ColorScheme, type Valtyp } from '@/lib/results'
 import { buildGroups, type AreaComparison, type AreaGroups, type Comparison2022, type DistrictMeta, type PartyMeta, type UppsamlingBuckets } from '@/lib/aggregate'
 import type { PartyVotes } from '@/lib/mandate'
 import type { AreaIndex } from '@/lib/hierarchy'
@@ -119,6 +119,13 @@ export interface ResultsContextValue {
   // (inte DistrictMap-lokal) eftersom väljaren renderas i ValtypSelector.
   colorMode: ColorMode
   setColorMode: (m: ColorMode) => void
+  // Kartfärgläge-METRIK (se ColorScheme i lib/results): default 'largest' (dagens
+  // beteende, störst parti). 'block' bara giltigt för RD. 'party' + selectedParty
+  // (forkortning) styr choropleth-intensiteten.
+  colorScheme: ColorScheme
+  setColorScheme: (s: ColorScheme) => void
+  selectedParty: string | null
+  setSelectedParty: (p: string | null) => void
   // Dashboard-vyns läge + fyra oberoende rutors state (helt separat från
   // valtyp/selectedArea ovan — se Task 2 i PR 2-planen).
   view: ViewMode
@@ -188,6 +195,19 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
   // bara med, se GROUP_LEVEL_LABEL). Delbar precis som valtyp/område — default
   // ('distrikt') utelämnas ur URL:en, bara ?farg=grupp syns.
   const [colorMode, setColorMode] = useState<ColorMode>(() => readViewFromUrl().colorMode)
+  // Kartfärgläge-METRIK (se ColorScheme i lib/results) — global, ORTOGONAL mot colorMode
+  // ovan (som bara styr aggregeringsnivå). 'block' gäller BARA RD (se soffa.ts/RIKET_BLOCKS
+  // — RF/KF:s styre-mot-opposition är ett annat begrepp, erbjuds inte som kartläge här) →
+  // byter man valtyp till RF/KF med block valt, faller vyn automatiskt tillbaka till
+  // 'largest' (effekten nedan). Ingen URL-persistens (litet, sessionslokalt tillägg).
+  const [colorScheme, setColorScheme] = useState<ColorScheme>('largest')
+  // Valt parti (FORKORTNING, inte partikod — stabil identitet över RD/RF/KF eftersom
+  // partikoder skiljer per valtyp, se PartyMeta) för colorScheme 'party'. null = inget
+  // valt än.
+  const [selectedParty, setSelectedParty] = useState<string | null>(null)
+  useEffect(() => {
+    if (colorScheme === 'block' && valtyp !== 'RD') setColorScheme('largest')
+  }, [valtyp, colorScheme])
   // Minns senast valda område PER valtyp (bara sessionen/fliken, ingen URL-påverkan) →
   // ett byte fram och tillbaka (KF→RD→KF) återställer samma område i stället för att
   // alltid landa på toppnivån. Uppdateras av effekten nedan, läses i setValtyp.
@@ -963,6 +983,10 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     setSelectedArea,
     colorMode,
     setColorMode,
+    colorScheme,
+    setColorScheme,
+    selectedParty,
+    setSelectedParty,
     view,
     setView,
     dashboardBoxes,
