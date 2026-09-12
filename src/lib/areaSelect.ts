@@ -1,6 +1,6 @@
 // Områdesväljarens rena logik — vilka nivåer/prompt-text varje valtyp erbjuder, och
-// hur ett <select>-värde mappas till ett Area. Extraherad ur ResultPanel.tsx:46-51,
-// 422-433 (oförändrad logik, bara flyttad) så AreaSelect.tsx (Dashboard-vyns egna
+// hur ett <select>-värde mappas till ett Area. Extraherad ur ResultPanel.tsx
+// (pre-refaktor, oförändrad logik, bara flyttad) så AreaSelect.tsx (Dashboard-vyns egna
 // väljarinstanser) och ResultPanel själv kan dela EN källa i stället för att driva
 // isär. Se docs/superpowers/specs/2026-09-12-dashboard-vy-design.md.
 import { defaultAreaFor, RIKET, type Area } from '@/lib/area'
@@ -19,7 +19,7 @@ export const PROMPT: Record<Valtyp, string> = { RD: '', RF: 'Välj region…', K
 
 // Mappar <select>:ens value-attribut (t.ex. "vk:29", "k:1488", "r:01", "riket", "")
 // till ett Area. `null` = distrikt-värde ("d:...") — distrikt sätts via kartklick,
-// inte listan, samma tidiga return som ResultPanel.tsx:424 gjorde inline.
+// inte listan, samma tidiga return som ResultPanel.tsx gjorde inline (pre-refaktor).
 export function areaFromSelectValue(valtyp: Valtyp, raw: string): Area | null {
   if (raw.startsWith('d:')) return null
   if (raw === '') return defaultAreaFor(valtyp)

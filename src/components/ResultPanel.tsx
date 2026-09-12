@@ -70,7 +70,7 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
   const av = useAreaView(valtyp, selectedArea)
   const areaIndex = areaIndexRef.current[valtyp]
 
-  const pct = av.total > 0 ? Math.round((av.reported / av.total) * 100) : 0
+  const pct = av.pct
 
   // Områdesnamn-uppslag för breadcrumb + barnlista.
   const regionName = useMemo(() => new Map(regioner.map((r) => [r.code, r.name])), [regioner])
@@ -219,12 +219,12 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
     if (sortCol) {
       // Saknar raden ett 2026-tal för kolumnen (orapporterat/inget parti) → sist,
       // oavsett riktning (annars hoppar orapporterade rader överst i stigande läge).
-      const av = a.live ? a.a26[sortCol.fork] : undefined
-      const bv = b.live ? b.a26[sortCol.fork] : undefined
-      if (av == null && bv == null) return nameOf(a).localeCompare(nameOf(b), 'sv')
-      if (av == null) return 1
-      if (bv == null) return -1
-      if (av !== bv) return sortCol.dir === 'desc' ? bv - av : av - bv
+      const aVal = a.live ? a.a26[sortCol.fork] : undefined
+      const bVal = b.live ? b.a26[sortCol.fork] : undefined
+      if (aVal == null && bVal == null) return nameOf(a).localeCompare(nameOf(b), 'sv')
+      if (aVal == null) return 1
+      if (bVal == null) return -1
+      if (aVal !== bVal) return sortCol.dir === 'desc' ? bVal - aVal : aVal - bVal
     }
     return nameOf(a).localeCompare(nameOf(b), 'sv')
   })

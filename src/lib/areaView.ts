@@ -1,6 +1,6 @@
 // Ren beräkningslogik för "toppen" av ett områdes resultatvy — röster, mandat,
-// valdeltagande, ogiltiga röster, blockvy. Extraherad ur ResultPanel.tsx (view-
-// useMemo:en, rad 90-149 + 151-226 i original) för att delas mellan den globala
+// valdeltagande, ogiltiga röster, blockvy. Extraherad ur ResultPanel.tsx:s
+// view-useMemo (pre-refaktor) för att delas mellan den globala
 // resultatpanelen och Dashboard-vyns fyra oberoende rutor. Ingen React här —
 // parametriserad rent på valtyp+område+data, testbar isolerat (se
 // scripts/verify-area-view.ts). Se docs/superpowers/specs/2026-09-12-dashboard-vy-design.md.
@@ -30,13 +30,14 @@ import { RIKET_BLOCKS, type BlockConfig } from './soffa'
 import { REGION_STYRE_BLOCKS } from './regionBlocks'
 import { KOMMUN_STYRE_BLOCKS } from './kommunBlocks'
 import type { AreaIndex } from './hierarchy'
-import type { Area } from './area'
-import type { NamedCode } from '@/components/ResultsProvider'
+import type { Area, NamedCode } from './area'
 
-// Nivåer där mandat överhuvudtaget är ett meningsfullt tal (organets EGEN nivå +
-// valkrets) — OBEROENDE av om röster hunnit räknas än. RD:s "kommun" är bara en
-// geografisk nedbrytning (se areaSelect.ts LEVELS), inte riksdagens organ-nivå.
-// Flyttad hit oförändrad ur ResultPanel.tsx:58-62.
+// Nivåer där mandat överhuvudtaget är ett meningsfullt tal (organets EGEN nivå + valkrets)
+// — OBEROENDE av om röster hunnit räknas än. RD:s "kommun" är bara en geografisk
+// nedbrytning (se LEVELS i areaSelect.ts), inte riksdagens organ-nivå, så den räknas INTE
+// hit trots att KF:s "kommun" gör det. val.se visar inte mandat under valkretsnivå heller
+// (distrikt, och för RD även kommun) — döljer Mandat-kolumnerna helt där i stället för tre
+// "–"-kolumner.
 const MANDAT_LEVELS: Record<Valtyp, Level[]> = {
   RD: ['riket', 'valkrets'],
   RF: ['region', 'valkrets'],
@@ -89,8 +90,17 @@ export interface AreaViewResult {
 export function computeAreaView(p: AreaViewParams): AreaViewResult {
   const { valtyp, area, store, turnoutStore, allCodes, meta, party, groups, uppsamling, areaIndex, comparison, district2022, kommuner, regioner, valkretsar, distriktNamn } = p
 
+  // Slutresultat-läge PER VALTYP ur result.status i storen (preliminärt → sluträknas · X %
+  // → slutgiltigt). Panelen renderas om på `revision` så andelen hålls färsk. Fasen visas
+  // som en egen badge (samma tone/etikett som kartvyns statustagg, `slutligTag`) i stället
+  // för att stå inbäddad i bar-texten — baren nedan är då entydigt EN sak: hur stor andel
+  // av VALT OMRÅDE som rapporterat in (skiljer sig från `prog`, som är per valtyp).
   const statusTag = slutligTag(store.slutligProgress())
 
+  // Tvåblocksvyn (MandatBars) — bara på valtypens högsta nivå: riksblocken för RD/riket,
+  // sittande styre-vs-opposition för RF/region resp. KF/kommun (samtliga 20 regioner och
+  // 290 kommuner finns i REGION_STYRE_BLOCKS/KOMMUN_STYRE_BLOCKS, se regionBlocks.ts/
+  // kommunBlocks.ts för källa/verifiering per post).
   const blocks: BlockConfig | undefined =
     valtyp === 'RD' && area.level === 'riket'
       ? RIKET_BLOCKS
@@ -114,8 +124,18 @@ export function computeAreaView(p: AreaViewParams): AreaViewResult {
             : (kommuner.find((k) => k.code === area.code)?.name ?? area.code ?? '')
 
   const codes = districtsInArea(allCodes, area.level, area.code, valtyp, meta)
+  // Organ-nivåerna (KF-kommun/RF-region/RD-riket) väger in uppsamlingsrösterna i BÅDE
+  // röster/andel (här) och mandat (computeMandate) så den slutgiltiga presentationen
+  // matchar val.se. Övriga nivåer → uppsamlingForArea ger null → rent geografiskt.
   const votes = mergeVotes(store.aggregate(codes), uppsamlingForArea(valtyp, area.level, area.code, uppsamling))
   const mandate = computeMandate(valtyp, area.level, area.code, (c) => store.aggregate(c), groups, uppsamling)
+  // Valkretsnivå (RD:s 29, samt RF/KF:s 11/17 delade organ): computeMandate ger null där
+  // (mandat är annars riks-/region-/kommunvitt) — fyll i den RIKTIGA slutgiltiga
+  // fördelningen i stället: fasta valkretsmandat PLUS utjämningsmandaten geografiskt
+  // PLACERADE (jämförelsetal per valkrets, se placeLevelingSeats i mandate.ts) — inte en
+  // "minst"-golvsiffra (12 sep, gäller nu alla tre valtyper). Samma "preliminärt tills
+  // färdigräknat"-status som riket/region/kommun redan har (statusTag ovan) gäller
+  // automatiskt även här, ingen extra markering behövs.
   const valkretsMandate =
     area.level !== 'valkrets' || !area.code
       ? null
@@ -141,7 +161,12 @@ export function computeAreaView(p: AreaViewParams): AreaViewResult {
   const reported = codes.reduce((n, c) => n + (store.has(c) ? 1 : 0), 0)
   const has2022 = areaResult.rows.some((r) => r.andel2022 != null)
   const t = turnoutStore.aggregate(codes)
+  // Valdeltagande för området: Σtotalt / Σröstberättigade över dess (reguljära) distrikt.
+  // null när nämnaren är 0 (inga rapporterade distrikt med röstlängd än) → visas ej.
   const turnout = t.rb > 0 ? (t.total / t.rb) * 100 : null
+  // Ogiltiga röster (val.se: Blanka / Ej anmälda partier / Övriga ogiltiga / Totalt) — bara
+  // när ALLA rapporterade distrikt i området har fälten (se TurnoutStore.aggregate). %:en är
+  // av samtliga AVGIVNA röster (t.total, inte bara giltiga partiröster — val.se:s egen nämnare).
   const invalidVotes =
     t.blanka != null && t.ejAnmalda != null && t.ovrigaOgiltiga != null
       ? {
@@ -164,6 +189,9 @@ export function computeAreaView(p: AreaViewParams): AreaViewResult {
     reported,
     total,
     turnout,
+    // De absoluta talen bakom valdeltagande-%:en (val.se visar dem själva: "Räknade röster" /
+    // "Röstberättigade") — hover-tooltip på samma etikett i stället för egen rad, för att inte
+    // tränga ut Parti/Röster-huvudet. rb=0 → ingen röstlängd inrapporterad än → ingen tooltip.
     turnoutTitle: t.rb > 0 ? `Räknade röster: ${t.total.toLocaleString('sv-SE')} · Röstberättigade: ${t.rb.toLocaleString('sv-SE')}` : undefined,
     invalidVotes,
     blocks,

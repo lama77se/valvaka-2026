@@ -18,7 +18,7 @@ acceptanskriterier och infrastruktur-uppsättning (Supabase/Vercel) står i
 [docs/implementationsplan.md](./docs/implementationsplan.md); byggordningens
 motivering i docs/arkitektur.md §9.
 
-## Stack (planerad)
+## Stack
 
 - Frontend: React 18 + TypeScript + Vite + Tailwind + shadcn/ui, MapLibre GL JS.
 - Backend: Supabase edge functions (Deno), `pg_cron` + `pg_net`.

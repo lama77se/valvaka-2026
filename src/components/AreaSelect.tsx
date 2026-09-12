@@ -26,12 +26,18 @@ export function AreaSelect({
   const { kommuner, regioner, valkretsar } = useResults()
   const levels = LEVELS[valtyp]
 
-  // Regionväljaren (RF) ska bara lista regioner som FAKTISKT har ett regionval —
-  // Gotland saknar eget regionfullmäktige, se ResultPanel.tsx:228-232 (oförändrad logik).
+  // Regionväljaren (RF) ska bara lista regioner som FAKTISKT har ett regionval — Gotland
+  // saknar eget regionfullmäktige (kommunfullmäktige dubblar som region) och står därför
+  // inte i SEAT_CONFIG_2026.RF, men finns kvar i `regioner` (byggd ur `district.lan`,
+  // som är gemensam för alla valtyper) → utan detta filter ledde valet av Gotland till en
+  // permanent tom vy för RF.
   const regionerRF = useMemo(() => regioner.filter((r) => r.code in SEAT_CONFIG_2026.RF), [regioner])
   const regionName = useMemo(() => new Map(regioner.map((r) => [r.code, r.name])), [regioner])
-  // Sortering på den FAKTISKT visade texten (RF-raden skriver "Region · Valkrets"),
-  // se ResultPanel.tsx:240-248 (oförändrad logik).
+  // Valkretsar i den PLATTA väljaren (bara RD/RF — se levels.includes('valkrets') nedan)
+  // sorteras om till den text som FAKTISKT visas: `valkretsar` självt är sorterat på bara
+  // valkretsens EGET namn (ResultsProvider.tsx), men RF:s rad skriver ut "Region · Valkrets"
+  // — sorterat på suffixet ser då slumpmässigt blandat ut (Jönköping mellan Halland och
+  // Kalmar). Sortera i stället på den riktiga visningstexten.
   const valkretsarForSelect = useMemo(() => {
     const label = (v: (typeof valkretsar)[number]) => (valtyp === 'RF' ? `${regionName.get(v.code.slice(0, 2)) ?? ''} · ${v.name}` : v.name)
     return [...valkretsar].sort((a, b) => label(a).localeCompare(label(b), 'sv'))

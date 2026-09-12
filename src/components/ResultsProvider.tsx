@@ -18,9 +18,9 @@ import { ResultStore, TurnoutStore, VALTYPER, VALTYP_VK_COLUMN, type ColorMode, 
 import { buildGroups, type AreaComparison, type AreaGroups, type Comparison2022, type DistrictMeta, type Level, type PartyMeta, type UppsamlingBuckets } from '@/lib/aggregate'
 import type { PartyVotes } from '@/lib/mandate'
 import type { AreaIndex } from '@/lib/hierarchy'
-import { RIKET, defaultAreaFor, type Area } from '@/lib/area'
+import { RIKET, defaultAreaFor, type Area, type NamedCode } from '@/lib/area'
 
-export { RIKET, defaultAreaFor, type Area } from '@/lib/area'
+export { RIKET, defaultAreaFor, type Area, type NamedCode } from '@/lib/area'
 
 // --- Delbara vy-URL:er ------------------------------------------------------------------
 // En vy = valtyp + markerat område. Kodas i query-strängen så en länk kan öppna en
@@ -101,7 +101,6 @@ export function viewToSearch(valtyp: Valtyp, area: Area, colorMode: ColorMode): 
   return `?val=${valtyp}${omrade}${farg}`
 }
 
-export type NamedCode = { code: string; name: string }
 type ChangeListener = (vd: string, valtyp: Valtyp) => void
 export type WinnerParty = { forkortning: string | null; farg: string | null }
 // Dataset-provenance (dataset_meta, EN rad) — vilken källa färgar kartan. test=true &

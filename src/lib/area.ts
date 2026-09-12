@@ -6,6 +6,7 @@ import type { Valtyp } from './results'
 
 export type Area = { level: Level; code: string | null }
 export const RIKET: Area = { level: 'riket', code: null }
+export type NamedCode = { code: string; name: string }
 
 // Varje valtyp väljer ett organ på EN nativ nivå: RD ett riksorgan, RF 20 region-
 // fullmäktige, KF 290 kommunfullmäktige. Ovanför den nivån finns bara röstaggregat,
