@@ -3,1740 +3,2030 @@
     "name": "Borås",
     "lat": 57.721,
     "lon": 12.9401,
-    "tier": 1
+    "tier": 1,
+    "pop": 115238
   },
   {
     "name": "Göteborg",
     "lat": 57.7089,
     "lon": 11.9746,
-    "tier": 1
+    "tier": 1,
+    "pop": 613278
   },
   {
     "name": "Helsingborg",
     "lat": 56.0465,
     "lon": 12.6945,
-    "tier": 1
+    "tier": 1,
+    "pop": 152776
   },
   {
     "name": "Huddinge",
     "lat": 59.2378,
     "lon": 17.9819,
-    "tier": 1
+    "tier": 1,
+    "pop": 114686
   },
   {
     "name": "Jönköping",
     "lat": 57.7826,
     "lon": 14.1618,
-    "tier": 1
+    "tier": 1,
+    "pop": 148152
   },
   {
     "name": "Linköping",
     "lat": 58.4108,
     "lon": 15.6214,
-    "tier": 1
+    "tier": 1,
+    "pop": 168714
   },
   {
     "name": "Lund",
     "lat": 55.7047,
     "lon": 13.191,
-    "tier": 1
+    "tier": 1,
+    "pop": 132333
   },
   {
     "name": "Malmö",
     "lat": 55.605,
     "lon": 13.0038,
-    "tier": 1
+    "tier": 1,
+    "pop": 367924
   },
   {
     "name": "Nacka",
     "lat": 59.3106,
     "lon": 18.1636,
-    "tier": 1
+    "tier": 1,
+    "pop": 113730
   },
   {
     "name": "Norrköping",
     "lat": 58.5877,
     "lon": 16.1924,
-    "tier": 1
+    "tier": 1,
+    "pop": 144904
   },
   {
     "name": "Stockholm",
     "lat": 59.3293,
     "lon": 18.0686,
-    "tier": 1
+    "tier": 1,
+    "pop": 999239
   },
   {
     "name": "Umeå",
     "lat": 63.8258,
     "lon": 20.263,
-    "tier": 1
+    "tier": 1,
+    "pop": 135273
   },
   {
     "name": "Uppsala",
     "lat": 59.8586,
     "lon": 17.6389,
-    "tier": 1
+    "tier": 1,
+    "pop": 249726
   },
   {
     "name": "Västerås",
     "lat": 59.6099,
     "lon": 16.5448,
-    "tier": 1
+    "tier": 1,
+    "pop": 161240
   },
   {
     "name": "Örebro",
     "lat": 59.2753,
     "lon": 15.2134,
-    "tier": 1
+    "tier": 1,
+    "pop": 160687
   },
   {
     "name": "Borlänge",
     "lat": 60.4858,
     "lon": 15.4342,
-    "tier": 2
+    "tier": 2,
+    "pop": 51354
   },
   {
     "name": "Eskilstuna",
     "lat": 59.3717,
     "lon": 16.509,
-    "tier": 2
+    "tier": 2,
+    "pop": 106789
   },
   {
     "name": "Falun",
     "lat": 60.6065,
     "lon": 15.6355,
-    "tier": 2
+    "tier": 2,
+    "pop": 59974
   },
   {
     "name": "Gävle",
     "lat": 60.6749,
     "lon": 17.1413,
-    "tier": 2
+    "tier": 2,
+    "pop": 104108
   },
   {
     "name": "Halmstad",
     "lat": 56.6745,
     "lon": 12.857,
-    "tier": 2
+    "tier": 2,
+    "pop": 106315
   },
   {
     "name": "Handen",
     "lat": 59.1667,
     "lon": 18.1441,
-    "tier": 2
+    "tier": 2,
+    "pop": 101408
   },
   {
     "name": "Hässleholm",
     "lat": 56.1589,
     "lon": 13.7668,
-    "tier": 2
+    "tier": 2,
+    "pop": 51915
   },
   {
     "name": "Järfälla",
     "lat": 59.4197,
     "lon": 17.8378,
-    "tier": 2
+    "tier": 2,
+    "pop": 90180
   },
   {
     "name": "Kalmar",
     "lat": 56.6634,
     "lon": 16.3567,
-    "tier": 2
+    "tier": 2,
+    "pop": 73068
   },
   {
     "name": "Karlskrona",
     "lat": 56.1612,
     "lon": 15.5869,
-    "tier": 2
+    "tier": 2,
+    "pop": 66021
   },
   {
     "name": "Karlstad",
     "lat": 59.3793,
     "lon": 13.5036,
-    "tier": 2
+    "tier": 2,
+    "pop": 99007
   },
   {
     "name": "Kristianstad",
     "lat": 56.0294,
     "lon": 14.1567,
-    "tier": 2
+    "tier": 2,
+    "pop": 85908
   },
   {
     "name": "Kungsbacka",
     "lat": 57.4872,
     "lon": 12.0762,
-    "tier": 2
+    "tier": 2,
+    "pop": 86332
   },
   {
     "name": "Kungälv",
     "lat": 57.8709,
     "lon": 11.9772,
-    "tier": 2
+    "tier": 2,
+    "pop": 50496
   },
   {
     "name": "Luleå",
     "lat": 65.5848,
     "lon": 22.1567,
-    "tier": 2
+    "tier": 2,
+    "pop": 80304
   },
   {
     "name": "Märsta",
     "lat": 59.6222,
     "lon": 17.8494,
-    "tier": 2
+    "tier": 2,
+    "pop": 53365
   },
   {
     "name": "Mölndal",
     "lat": 57.656,
     "lon": 12.014,
-    "tier": 2
+    "tier": 2,
+    "pop": 72128
   },
   {
     "name": "Norrtälje",
     "lat": 59.7581,
     "lon": 18.7042,
-    "tier": 2
+    "tier": 2,
+    "pop": 66832
   },
   {
     "name": "Nyköping",
     "lat": 58.7526,
     "lon": 17.0079,
-    "tier": 2
+    "tier": 2,
+    "pop": 58310
   },
   {
     "name": "Skellefteå",
     "lat": 64.7507,
     "lon": 20.9528,
-    "tier": 2
+    "tier": 2,
+    "pop": 75405
   },
   {
     "name": "Skövde",
     "lat": 58.391,
     "lon": 13.8455,
-    "tier": 2
+    "tier": 2,
+    "pop": 58272
   },
   {
     "name": "Sollentuna",
     "lat": 59.4278,
     "lon": 17.9509,
-    "tier": 2
+    "tier": 2,
+    "pop": 78033
   },
   {
     "name": "Solna",
     "lat": 59.36,
     "lon": 18.0004,
-    "tier": 2
+    "tier": 2,
+    "pop": 86435
   },
   {
     "name": "Sundbyberg",
     "lat": 59.3608,
     "lon": 17.9714,
-    "tier": 2
+    "tier": 2,
+    "pop": 57000
   },
   {
     "name": "Sundsvall",
     "lat": 62.3908,
     "lon": 17.3069,
-    "tier": 2
+    "tier": 2,
+    "pop": 98962
   },
   {
     "name": "Södertälje",
     "lat": 59.1955,
     "lon": 17.6253,
-    "tier": 2
+    "tier": 2,
+    "pop": 102772
   },
   {
     "name": "Trollhättan",
     "lat": 58.2837,
     "lon": 12.2886,
-    "tier": 2
+    "tier": 2,
+    "pop": 59265
   },
   {
     "name": "Tumba",
     "lat": 59.1997,
     "lon": 17.8258,
-    "tier": 2
+    "tier": 2,
+    "pop": 96750
   },
   {
     "name": "Täby",
     "lat": 59.4439,
     "lon": 18.0687,
-    "tier": 2
+    "tier": 2,
+    "pop": 78514
   },
   {
     "name": "Uddevalla",
     "lat": 58.3498,
     "lon": 11.9424,
-    "tier": 2
+    "tier": 2,
+    "pop": 56744
   },
   {
     "name": "Varberg",
     "lat": 57.1057,
     "lon": 12.2502,
-    "tier": 2
+    "tier": 2,
+    "pop": 69460
   },
   {
     "name": "Visby",
     "lat": 57.6349,
     "lon": 18.2948,
-    "tier": 2
+    "tier": 2,
+    "pop": 60852
   },
   {
     "name": "Växjö",
     "lat": 56.8777,
     "lon": 14.8091,
-    "tier": 2
+    "tier": 2,
+    "pop": 98940
   },
   {
     "name": "Örnsköldsvik",
     "lat": 63.2909,
     "lon": 18.7153,
-    "tier": 2
+    "tier": 2,
+    "pop": 55338
   },
   {
     "name": "Östersund",
     "lat": 63.1792,
     "lon": 14.6357,
-    "tier": 2
+    "tier": 2,
+    "pop": 64963
   },
   {
     "name": "Alingsås",
     "lat": 57.9301,
     "lon": 12.5333,
-    "tier": 3
+    "tier": 3,
+    "pop": 42861
   },
   {
     "name": "Alvesta",
     "lat": 56.9012,
     "lon": 14.5526,
-    "tier": 3
+    "tier": 3,
+    "pop": 19687
   },
   {
     "name": "Arlöv",
     "lat": 55.6294,
     "lon": 13.0733,
-    "tier": 3
+    "tier": 3,
+    "pop": 20444
   },
   {
     "name": "Arvika",
     "lat": 59.6555,
     "lon": 12.5936,
-    "tier": 3
+    "tier": 3,
+    "pop": 25408
   },
   {
     "name": "Avesta",
     "lat": 60.1456,
     "lon": 16.1697,
-    "tier": 3
+    "tier": 3,
+    "pop": 22366
   },
   {
     "name": "Boden",
     "lat": 65.8256,
     "lon": 21.6892,
-    "tier": 3
+    "tier": 3,
+    "pop": 28624
   },
   {
     "name": "Bollnäs",
     "lat": 61.3486,
     "lon": 16.3908,
-    "tier": 3
+    "tier": 3,
+    "pop": 26018
   },
   {
     "name": "Bålsta",
     "lat": 59.5714,
     "lon": 17.5257,
-    "tier": 3
+    "tier": 3,
+    "pop": 23252
   },
   {
     "name": "Djursholm",
     "lat": 59.3972,
     "lon": 18.0875,
-    "tier": 3
+    "tier": 3,
+    "pop": 32500
   },
   {
     "name": "Ekerö",
     "lat": 59.2894,
     "lon": 17.818,
-    "tier": 3
+    "tier": 3,
+    "pop": 29062
   },
   {
     "name": "Enköping",
     "lat": 59.6362,
     "lon": 17.0776,
-    "tier": 3
+    "tier": 3,
+    "pop": 48804
   },
   {
     "name": "Eslöv",
     "lat": 55.8378,
     "lon": 13.3037,
-    "tier": 3
+    "tier": 3,
+    "pop": 35126
   },
   {
     "name": "Falkenberg",
     "lat": 56.9051,
     "lon": 12.4913,
-    "tier": 3
+    "tier": 3,
+    "pop": 47321
   },
   {
     "name": "Falköping",
     "lat": 58.1756,
     "lon": 13.5514,
-    "tier": 3
+    "tier": 3,
+    "pop": 32794
   },
   {
     "name": "Finspång",
     "lat": 58.7078,
     "lon": 15.7772,
-    "tier": 3
+    "tier": 3,
+    "pop": 21502
   },
   {
     "name": "Gislaved",
     "lat": 57.3011,
     "lon": 13.5375,
-    "tier": 3
+    "tier": 3,
+    "pop": 28641
   },
   {
     "name": "Gustavsberg",
     "lat": 59.3283,
     "lon": 18.3872,
-    "tier": 3
+    "tier": 3,
+    "pop": 46601
   },
   {
     "name": "Hudiksvall",
     "lat": 61.728,
     "lon": 17.1052,
-    "tier": 3
+    "tier": 3,
+    "pop": 37341
   },
   {
     "name": "Härnösand",
     "lat": 62.634,
     "lon": 17.9385,
-    "tier": 3
+    "tier": 3,
+    "pop": 24348
   },
   {
     "name": "Höganäs",
     "lat": 56.2022,
     "lon": 12.5561,
-    "tier": 3
+    "tier": 3,
+    "pop": 28489
   },
   {
     "name": "Karlshamn",
     "lat": 56.1706,
     "lon": 14.8607,
-    "tier": 3
+    "tier": 3,
+    "pop": 31642
   },
   {
     "name": "Karlskoga",
     "lat": 59.3267,
     "lon": 14.5233,
-    "tier": 3
+    "tier": 3,
+    "pop": 30128
   },
   {
     "name": "Katrineholm",
     "lat": 58.9982,
     "lon": 16.2126,
-    "tier": 3
+    "tier": 3,
+    "pop": 33984
   },
   {
     "name": "Kinna",
     "lat": 57.4986,
     "lon": 12.6989,
-    "tier": 3
+    "tier": 3,
+    "pop": 35134
   },
   {
     "name": "Kiruna",
     "lat": 67.8558,
     "lon": 20.2253,
-    "tier": 3
+    "tier": 3,
+    "pop": 22402
   },
   {
     "name": "Knivsta",
     "lat": 59.7264,
     "lon": 17.7939,
-    "tier": 3
+    "tier": 3,
+    "pop": 21733
   },
   {
     "name": "Kristinehamn",
     "lat": 59.3103,
     "lon": 14.1071,
-    "tier": 3
+    "tier": 3,
+    "pop": 23590
   },
   {
     "name": "Kumla",
     "lat": 59.1263,
     "lon": 15.1381,
-    "tier": 3
+    "tier": 3,
+    "pop": 22665
   },
   {
     "name": "Kungsängen",
     "lat": 59.4794,
     "lon": 17.7554,
-    "tier": 3
+    "tier": 3,
+    "pop": 33333
   },
   {
     "name": "Kävlinge",
     "lat": 55.7942,
     "lon": 13.1147,
-    "tier": 3
+    "tier": 3,
+    "pop": 32655
   },
   {
     "name": "Köping",
     "lat": 59.5126,
     "lon": 15.9914,
-    "tier": 3
+    "tier": 3,
+    "pop": 25610
   },
   {
     "name": "Laholm",
     "lat": 56.5045,
     "lon": 13.0329,
-    "tier": 3
+    "tier": 3,
+    "pop": 26565
   },
   {
     "name": "Landskrona",
     "lat": 55.8708,
     "lon": 12.8305,
-    "tier": 3
+    "tier": 3,
+    "pop": 47571
   },
   {
     "name": "Lerum",
     "lat": 57.7702,
     "lon": 12.2694,
-    "tier": 3
+    "tier": 3,
+    "pop": 43752
   },
   {
     "name": "Lidingö",
     "lat": 59.3672,
     "lon": 18.1362,
-    "tier": 3
+    "tier": 3,
+    "pop": 48369
   },
   {
     "name": "Lidköping",
     "lat": 58.5045,
     "lon": 13.1577,
-    "tier": 3
+    "tier": 3,
+    "pop": 40359
   },
   {
     "name": "Lindesberg",
     "lat": 59.5904,
     "lon": 15.1932,
-    "tier": 3
+    "tier": 3,
+    "pop": 23014
   },
   {
     "name": "Ljungby",
     "lat": 56.8319,
     "lon": 13.9403,
-    "tier": 3
+    "tier": 3,
+    "pop": 28132
   },
   {
     "name": "Lomma",
     "lat": 55.6739,
     "lon": 13.0708,
-    "tier": 3
+    "tier": 3,
+    "pop": 24677
   },
   {
     "name": "Ludvika",
     "lat": 60.1497,
     "lon": 15.1836,
-    "tier": 3
+    "tier": 3,
+    "pop": 26812
   },
   {
     "name": "Mariestad",
     "lat": 58.7093,
     "lon": 13.8236,
-    "tier": 3
+    "tier": 3,
+    "pop": 24421
   },
   {
     "name": "Mjölby",
     "lat": 58.3225,
     "lon": 15.1281,
-    "tier": 3
+    "tier": 3,
+    "pop": 28823
   },
   {
     "name": "Mora",
     "lat": 61.0031,
     "lon": 14.5442,
-    "tier": 3
+    "tier": 3,
+    "pop": 20419
   },
   {
     "name": "Motala",
     "lat": 58.5369,
     "lon": 15.0367,
-    "tier": 3
+    "tier": 3,
+    "pop": 43131
   },
   {
     "name": "Mölnlycke",
     "lat": 57.6597,
     "lon": 12.1131,
-    "tier": 3
+    "tier": 3,
+    "pop": 40011
   },
   {
     "name": "Nybro",
     "lat": 56.7439,
     "lon": 15.9053,
-    "tier": 3
+    "tier": 3,
+    "pop": 19803
   },
   {
     "name": "Nynäshamn",
     "lat": 58.9022,
     "lon": 17.9506,
-    "tier": 3
+    "tier": 3,
+    "pop": 30610
   },
   {
     "name": "Nässjö",
     "lat": 57.6541,
     "lon": 14.6913,
-    "tier": 3
+    "tier": 3,
+    "pop": 31474
   },
   {
     "name": "Nödinge",
     "lat": 57.9004,
     "lon": 12.0937,
-    "tier": 3
+    "tier": 3,
+    "pop": 32620
   },
   {
     "name": "Oskarshamn",
     "lat": 57.2653,
     "lon": 16.4487,
-    "tier": 3
+    "tier": 3,
+    "pop": 26762
   },
   {
     "name": "Partille",
     "lat": 57.7395,
     "lon": 12.1064,
-    "tier": 3
+    "tier": 3,
+    "pop": 41164
   },
   {
     "name": "Piteå",
     "lat": 65.3172,
     "lon": 21.4794,
-    "tier": 3
+    "tier": 3,
+    "pop": 42184
   },
   {
     "name": "Ronneby",
     "lat": 56.2103,
     "lon": 15.2761,
-    "tier": 3
+    "tier": 3,
+    "pop": 28708
   },
   {
     "name": "Sala",
     "lat": 59.9256,
     "lon": 16.6089,
-    "tier": 3
+    "tier": 3,
+    "pop": 22600
   },
   {
     "name": "Sandviken",
     "lat": 60.6167,
     "lon": 16.7761,
-    "tier": 3
+    "tier": 3,
+    "pop": 38033
   },
   {
     "name": "Staffanstorp",
     "lat": 55.6414,
     "lon": 13.2081,
-    "tier": 3
+    "tier": 3,
+    "pop": 27482
   },
   {
     "name": "Stenungsund",
     "lat": 58.07,
     "lon": 11.8236,
-    "tier": 3
+    "tier": 3,
+    "pop": 27854
   },
   {
     "name": "Strängnäs",
     "lat": 59.3778,
     "lon": 17.0303,
-    "tier": 3
+    "tier": 3,
+    "pop": 39387
   },
   {
     "name": "Svedala",
     "lat": 55.5089,
     "lon": 13.2358,
-    "tier": 3
+    "tier": 3,
+    "pop": 23714
   },
   {
     "name": "Söderhamn",
     "lat": 61.3033,
     "lon": 17.0578,
-    "tier": 3
+    "tier": 3,
+    "pop": 24163
   },
   {
     "name": "Tierp",
     "lat": 60.3475,
     "lon": 17.5137,
-    "tier": 3
+    "tier": 3,
+    "pop": 21028
   },
   {
     "name": "Trelleborg",
     "lat": 55.3753,
     "lon": 13.1568,
-    "tier": 3
+    "tier": 3,
+    "pop": 47405
   },
   {
     "name": "Tyresö",
     "lat": 59.2436,
     "lon": 18.2286,
-    "tier": 3
+    "tier": 3,
+    "pop": 49645
   },
   {
     "name": "Ulricehamn",
     "lat": 57.7911,
     "lon": 13.4172,
-    "tier": 3
+    "tier": 3,
+    "pop": 24954
   },
   {
     "name": "Upplands Väsby",
     "lat": 59.5188,
     "lon": 17.9128,
-    "tier": 3
+    "tier": 3,
+    "pop": 50495
   },
   {
     "name": "Vallentuna",
     "lat": 59.5343,
     "lon": 18.0808,
-    "tier": 3
+    "tier": 3,
+    "pop": 35361
   },
   {
     "name": "Vellinge",
     "lat": 55.4669,
     "lon": 13.0175,
-    "tier": 3
+    "tier": 3,
+    "pop": 37833
   },
   {
     "name": "Vetlanda",
     "lat": 57.4275,
     "lon": 15.0725,
-    "tier": 3
+    "tier": 3,
+    "pop": 27313
   },
   {
     "name": "Vänersborg",
     "lat": 58.38,
     "lon": 12.3228,
-    "tier": 3
+    "tier": 3,
+    "pop": 40078
   },
   {
     "name": "Värnamo",
     "lat": 57.1856,
     "lon": 14.04,
-    "tier": 3
+    "tier": 3,
+    "pop": 34534
   },
   {
     "name": "Västervik",
     "lat": 57.7595,
     "lon": 16.6386,
-    "tier": 3
+    "tier": 3,
+    "pop": 36269
   },
   {
     "name": "Ystad",
     "lat": 55.4295,
     "lon": 13.8204,
-    "tier": 3
+    "tier": 3,
+    "pop": 32188
   },
   {
     "name": "Åkersberga",
     "lat": 59.4797,
     "lon": 18.2942,
-    "tier": 3
+    "tier": 3,
+    "pop": 49943
   },
   {
     "name": "Ängelholm",
     "lat": 56.2428,
     "lon": 12.8624,
-    "tier": 3
+    "tier": 3,
+    "pop": 45159
   },
   {
     "name": "Östhammar",
     "lat": 60.2589,
     "lon": 18.3611,
-    "tier": 3
+    "tier": 3,
+    "pop": 22181
   },
   {
     "name": "Arboga",
     "lat": 59.3936,
     "lon": 15.8402,
-    "tier": 4
+    "tier": 4,
+    "pop": 13929
   },
   {
     "name": "Askersund",
     "lat": 58.8867,
     "lon": 14.9204,
-    "tier": 4
+    "tier": 4,
+    "pop": 11382
   },
   {
     "name": "Bjuv",
     "lat": 56.0794,
     "lon": 12.9186,
-    "tier": 4
+    "tier": 4,
+    "pop": 16052
   },
   {
     "name": "Borgholm",
     "lat": 56.884,
     "lon": 16.694,
-    "tier": 4
+    "tier": 4,
+    "pop": 10626
   },
   {
     "name": "Broby",
     "lat": 56.2572,
     "lon": 14.0765,
-    "tier": 4
+    "tier": 4,
+    "pop": 13718
   },
   {
     "name": "Bromölla",
     "lat": 56.0789,
     "lon": 14.4729,
-    "tier": 4
+    "tier": 4,
+    "pop": 12497
   },
   {
     "name": "Båstad",
     "lat": 56.4273,
     "lon": 12.8554,
-    "tier": 4
+    "tier": 4,
+    "pop": 16046
   },
   {
     "name": "Djurås",
     "lat": 60.5551,
     "lon": 15.1106,
-    "tier": 4
+    "tier": 4,
+    "pop": 10307
   },
   {
     "name": "Edsbyn",
     "lat": 61.3834,
     "lon": 15.8139,
-    "tier": 4
+    "tier": 4,
+    "pop": 11272
   },
   {
     "name": "Eksjö",
     "lat": 57.6664,
     "lon": 14.9691,
-    "tier": 4
+    "tier": 4,
+    "pop": 17660
   },
   {
     "name": "Fagersta",
     "lat": 59.9989,
     "lon": 15.7972,
-    "tier": 4
+    "tier": 4,
+    "pop": 12915
   },
   {
     "name": "Flen",
     "lat": 59.0604,
     "lon": 16.5916,
-    "tier": 4
+    "tier": 4,
+    "pop": 15095
   },
   {
     "name": "Forshaga",
     "lat": 59.5306,
     "lon": 13.485,
-    "tier": 4
+    "tier": 4,
+    "pop": 11439
   },
   {
     "name": "Gnesta",
     "lat": 59.0472,
     "lon": 17.3046,
-    "tier": 4
+    "tier": 4,
+    "pop": 11343
   },
   {
     "name": "Gällivare",
     "lat": 67.1367,
     "lon": 20.6572,
-    "tier": 4
+    "tier": 4,
+    "pop": 17135
   },
   {
     "name": "Götene",
     "lat": 58.5222,
     "lon": 13.4539,
-    "tier": 4
+    "tier": 4,
+    "pop": 13223
   },
   {
     "name": "Habo",
     "lat": 57.9042,
     "lon": 14.0855,
-    "tier": 4
+    "tier": 4,
+    "pop": 13511
   },
   {
     "name": "Hagfors",
     "lat": 60.0327,
     "lon": 13.6936,
-    "tier": 4
+    "tier": 4,
+    "pop": 11324
   },
   {
     "name": "Hallsberg",
     "lat": 59.0741,
     "lon": 15.0659,
-    "tier": 4
+    "tier": 4,
+    "pop": 16082
   },
   {
     "name": "Hallstahammar",
     "lat": 59.6142,
     "lon": 16.2286,
-    "tier": 4
+    "tier": 4,
+    "pop": 16600
   },
   {
     "name": "Heby",
     "lat": 59.943,
     "lon": 16.8553,
-    "tier": 4
+    "tier": 4,
+    "pop": 14275
   },
   {
     "name": "Hedemora",
     "lat": 60.2809,
     "lon": 15.9809,
-    "tier": 4
+    "tier": 4,
+    "pop": 15025
   },
   {
     "name": "Henån",
     "lat": 58.2351,
     "lon": 11.669,
-    "tier": 4
+    "tier": 4,
+    "pop": 15363
   },
   {
     "name": "Hultsfred",
     "lat": 57.4943,
     "lon": 15.8411,
-    "tier": 4
+    "tier": 4,
+    "pop": 13484
   },
   {
     "name": "Hyltebruk",
     "lat": 57.0034,
     "lon": 13.2395,
-    "tier": 4
+    "tier": 4,
+    "pop": 10094
   },
   {
     "name": "Hörby",
     "lat": 55.8468,
     "lon": 13.6623,
-    "tier": 4
+    "tier": 4,
+    "pop": 15559
   },
   {
     "name": "Höör",
     "lat": 55.9333,
     "lon": 13.5397,
-    "tier": 4
+    "tier": 4,
+    "pop": 17680
   },
   {
     "name": "Järpen",
     "lat": 63.3535,
     "lon": 13.4475,
-    "tier": 4
+    "tier": 4,
+    "pop": 12770
   },
   {
     "name": "Kalix",
     "lat": 65.8582,
     "lon": 23.1478,
-    "tier": 4
+    "tier": 4,
+    "pop": 15252
   },
   {
     "name": "Kil",
     "lat": 59.521,
     "lon": 13.2962,
-    "tier": 4
+    "tier": 4,
+    "pop": 12024
   },
   {
     "name": "Kisa",
     "lat": 57.9856,
     "lon": 15.6317,
-    "tier": 4
+    "tier": 4,
+    "pop": 9924
   },
   {
     "name": "Klippan",
     "lat": 56.1354,
     "lon": 13.1545,
-    "tier": 4
+    "tier": 4,
+    "pop": 17713
   },
   {
     "name": "Kramfors",
     "lat": 62.9215,
     "lon": 17.7723,
-    "tier": 4
+    "tier": 4,
+    "pop": 17390
   },
   {
     "name": "Krokom",
     "lat": 63.3305,
     "lon": 14.4482,
-    "tier": 4
+    "tier": 4,
+    "pop": 15795
   },
   {
     "name": "Leksand",
     "lat": 60.7319,
     "lon": 15.0304,
-    "tier": 4
+    "tier": 4,
+    "pop": 16167
   },
   {
     "name": "Lilla Edet",
     "lat": 58.132,
     "lon": 12.1345,
-    "tier": 4
+    "tier": 4,
+    "pop": 14398
   },
   {
     "name": "Ljusdal",
     "lat": 61.8306,
     "lon": 16.0712,
-    "tier": 4
+    "tier": 4,
+    "pop": 18377
   },
   {
     "name": "Lycksele",
     "lat": 64.5916,
     "lon": 18.669,
-    "tier": 4
+    "tier": 4,
+    "pop": 12159
   },
   {
     "name": "Lysekil",
     "lat": 58.2817,
     "lon": 11.4521,
-    "tier": 4
+    "tier": 4,
+    "pop": 13796
   },
   {
     "name": "Malung",
     "lat": 60.6765,
     "lon": 13.6968,
-    "tier": 4
+    "tier": 4,
+    "pop": 10192
   },
   {
     "name": "Munkedal",
     "lat": 58.4769,
     "lon": 11.6779,
-    "tier": 4
+    "tier": 4,
+    "pop": 10272
   },
   {
     "name": "Mönsterås",
     "lat": 57.0398,
     "lon": 16.4487,
-    "tier": 4
+    "tier": 4,
+    "pop": 12978
   },
   {
     "name": "Mörbylånga",
     "lat": 56.5191,
     "lon": 16.387,
-    "tier": 4
+    "tier": 4,
+    "pop": 16306
   },
   {
     "name": "Nora",
     "lat": 59.5132,
     "lon": 15.0299,
-    "tier": 4
+    "tier": 4,
+    "pop": 10603
   },
   {
     "name": "Nykvarn",
     "lat": 59.1717,
     "lon": 17.442,
-    "tier": 4
+    "tier": 4,
+    "pop": 12384
   },
   {
     "name": "Olofström",
     "lat": 56.2773,
     "lon": 14.5299,
-    "tier": 4
+    "tier": 4,
+    "pop": 12844
   },
   {
     "name": "Osby",
     "lat": 56.3796,
     "lon": 13.9974,
-    "tier": 4
+    "tier": 4,
+    "pop": 12861
   },
   {
     "name": "Oxelösund",
     "lat": 58.6739,
     "lon": 17.1058,
-    "tier": 4
+    "tier": 4,
+    "pop": 11962
   },
   {
     "name": "Rättvik",
     "lat": 60.8691,
     "lon": 15.1078,
-    "tier": 4
+    "tier": 4,
+    "pop": 10978
   },
   {
     "name": "Salem",
     "lat": 59.1936,
     "lon": 17.7494,
-    "tier": 4
+    "tier": 4,
+    "pop": 17370
   },
   {
     "name": "Simrishamn",
     "lat": 55.5495,
     "lon": 14.335,
-    "tier": 4
+    "tier": 4,
+    "pop": 18779
   },
   {
     "name": "Sjöbo",
     "lat": 55.6313,
     "lon": 13.6853,
-    "tier": 4
+    "tier": 4,
+    "pop": 19397
   },
   {
     "name": "Skara",
     "lat": 58.3833,
     "lon": 13.4333,
-    "tier": 4
+    "tier": 4,
+    "pop": 18753
   },
   {
     "name": "Skoghall",
     "lat": 59.3178,
     "lon": 13.4964,
-    "tier": 4
+    "tier": 4,
+    "pop": 16932
   },
   {
     "name": "Skurup",
     "lat": 55.4893,
     "lon": 13.503,
-    "tier": 4
+    "tier": 4,
+    "pop": 17139
   },
   {
     "name": "Skärhamn",
     "lat": 57.9807,
     "lon": 11.5604,
-    "tier": 4
+    "tier": 4,
+    "pop": 16003
   },
   {
     "name": "Smedjebacken",
     "lat": 60.1466,
     "lon": 15.3788,
-    "tier": 4
+    "tier": 4,
+    "pop": 10758
   },
   {
     "name": "Sollefteå",
     "lat": 63.1692,
     "lon": 17.2676,
-    "tier": 4
+    "tier": 4,
+    "pop": 18138
   },
   {
     "name": "Strömstad",
     "lat": 58.9465,
     "lon": 11.1965,
-    "tier": 4
+    "tier": 4,
+    "pop": 13557
   },
   {
     "name": "Strömsund",
     "lat": 63.8541,
     "lon": 15.5789,
-    "tier": 4
+    "tier": 4,
+    "pop": 10904
   },
   {
     "name": "Sunne",
     "lat": 59.84,
     "lon": 13.1427,
-    "tier": 4
+    "tier": 4,
+    "pop": 13354
   },
   {
     "name": "Svalöv",
     "lat": 55.9157,
     "lon": 13.1037,
-    "tier": 4
+    "tier": 4,
+    "pop": 14474
   },
   {
     "name": "Sveg",
     "lat": 62.0351,
     "lon": 14.3641,
-    "tier": 4
+    "tier": 4,
+    "pop": 10117
   },
   {
     "name": "Svenljunga",
     "lat": 57.4959,
     "lon": 13.1079,
-    "tier": 4
+    "tier": 4,
+    "pop": 10616
   },
   {
     "name": "Säffle",
     "lat": 59.1323,
     "lon": 12.9169,
-    "tier": 4
+    "tier": 4,
+    "pop": 14756
   },
   {
     "name": "Säter",
     "lat": 60.3374,
     "lon": 15.7405,
-    "tier": 4
+    "tier": 4,
+    "pop": 12222
   },
   {
     "name": "Sävsjö",
     "lat": 57.3948,
     "lon": 14.664,
-    "tier": 4
+    "tier": 4,
+    "pop": 11531
   },
   {
     "name": "Söderköping",
     "lat": 58.4775,
     "lon": 16.3315,
-    "tier": 4
+    "tier": 4,
+    "pop": 14741
   },
   {
     "name": "Sölvesborg",
     "lat": 56.0476,
     "lon": 14.5562,
-    "tier": 4
+    "tier": 4,
+    "pop": 17405
   },
   {
     "name": "Tanumshede",
     "lat": 58.7195,
     "lon": 11.3295,
-    "tier": 4
+    "tier": 4,
+    "pop": 12677
   },
   {
     "name": "Tibro",
     "lat": 58.4173,
     "lon": 14.157,
-    "tier": 4
+    "tier": 4,
+    "pop": 11326
   },
   {
     "name": "Tidaholm",
     "lat": 58.1789,
     "lon": 13.9587,
-    "tier": 4
+    "tier": 4,
+    "pop": 12736
   },
   {
     "name": "Timrå",
     "lat": 62.4867,
     "lon": 17.3222,
-    "tier": 4
+    "tier": 4,
+    "pop": 17465
   },
   {
     "name": "Tingsryd",
     "lat": 56.5271,
     "lon": 14.9723,
-    "tier": 4
+    "tier": 4,
+    "pop": 11896
   },
   {
     "name": "Tomelilla",
     "lat": 55.551,
     "lon": 13.9483,
-    "tier": 4
+    "tier": 4,
+    "pop": 13669
   },
   {
     "name": "Torsby",
     "lat": 60.1365,
     "lon": 13.0133,
-    "tier": 4
+    "tier": 4,
+    "pop": 11278
   },
   {
     "name": "Tranemo",
     "lat": 57.4892,
     "lon": 13.3478,
-    "tier": 4
+    "tier": 4,
+    "pop": 11873
   },
   {
     "name": "Tranås",
     "lat": 58.0378,
     "lon": 14.9797,
-    "tier": 4
+    "tier": 4,
+    "pop": 18555
   },
   {
     "name": "Trosa",
     "lat": 58.8971,
     "lon": 17.5557,
-    "tier": 4
+    "tier": 4,
+    "pop": 14900
   },
   {
     "name": "Vaggeryd",
     "lat": 57.4971,
     "lon": 14.1357,
-    "tier": 4
+    "tier": 4,
+    "pop": 14943
   },
   {
     "name": "Vara",
     "lat": 58.2623,
     "lon": 12.9622,
-    "tier": 4
+    "tier": 4,
+    "pop": 16011
   },
   {
     "name": "Vaxholm",
     "lat": 59.4085,
     "lon": 18.3179,
-    "tier": 4
+    "tier": 4,
+    "pop": 11636
   },
   {
     "name": "Vimmerby",
     "lat": 57.6672,
     "lon": 15.8524,
-    "tier": 4
+    "tier": 4,
+    "pop": 15327
   },
   {
     "name": "Vårgårda",
     "lat": 58.0358,
     "lon": 12.8094,
-    "tier": 4
+    "tier": 4,
+    "pop": 12472
   },
   {
     "name": "Åmål",
     "lat": 59.0516,
     "lon": 12.6963,
-    "tier": 4
+    "tier": 4,
+    "pop": 11679
   },
   {
     "name": "Åstorp",
     "lat": 56.1339,
     "lon": 12.9469,
-    "tier": 4
+    "tier": 4,
+    "pop": 16491
   },
   {
     "name": "Åtvidaberg",
     "lat": 58.1993,
     "lon": 15.9955,
-    "tier": 4
+    "tier": 4,
+    "pop": 11490
   },
   {
     "name": "Älmhult",
     "lat": 56.5514,
     "lon": 14.1361,
-    "tier": 4
+    "tier": 4,
+    "pop": 17579
   },
   {
     "name": "Öckerö",
     "lat": 57.7,
     "lon": 11.65,
-    "tier": 4
+    "tier": 4,
+    "pop": 12863
   },
   {
     "name": "Örkelljunga",
     "lat": 56.2855,
     "lon": 13.2942,
-    "tier": 4
+    "tier": 4,
+    "pop": 10293
   },
   {
     "name": "Aneby",
     "lat": 57.8416,
     "lon": 14.8085,
-    "tier": 5
+    "tier": 5,
+    "pop": 6851
   },
   {
     "name": "Arjeplog",
     "lat": 66.0469,
     "lon": 17.8531,
-    "tier": 5
+    "tier": 5,
+    "pop": 2570
   },
   {
     "name": "Arvidsjaur",
     "lat": 65.5915,
     "lon": 19.1793,
-    "tier": 5
+    "tier": 5,
+    "pop": 6026
   },
   {
     "name": "Bengtsfors",
     "lat": 59.0308,
     "lon": 12.2161,
-    "tier": 5
+    "tier": 5,
+    "pop": 8955
   },
   {
     "name": "Bergsjö",
     "lat": 61.9813,
     "lon": 17.061,
-    "tier": 5
+    "tier": 5,
+    "pop": 9284
   },
   {
     "name": "Bjurholm",
     "lat": 63.9293,
     "lon": 19.2197,
-    "tier": 5
+    "tier": 5,
+    "pop": 2327
   },
   {
     "name": "Bollebygd",
     "lat": 57.6739,
     "lon": 12.5635,
-    "tier": 5
+    "tier": 5,
+    "pop": 9784
   },
   {
     "name": "Boxholm",
     "lat": 58.1931,
     "lon": 15.0465,
-    "tier": 5
+    "tier": 5,
+    "pop": 5451
   },
   {
     "name": "Bräcke",
     "lat": 62.7493,
     "lon": 15.4188,
-    "tier": 5
+    "tier": 5,
+    "pop": 5950
   },
   {
     "name": "Charlottenberg",
     "lat": 59.8825,
     "lon": 12.3045,
-    "tier": 5
+    "tier": 5,
+    "pop": 8289
   },
   {
     "name": "Degerfors",
     "lat": 59.2384,
     "lon": 14.4274,
-    "tier": 5
+    "tier": 5,
+    "pop": 9237
   },
   {
     "name": "Dorotea",
     "lat": 64.2634,
     "lon": 16.4055,
-    "tier": 5
+    "tier": 5,
+    "pop": 2241
   },
   {
     "name": "Ed",
     "lat": 58.9115,
     "lon": 11.9392,
-    "tier": 5
+    "tier": 5,
+    "pop": 4571
   },
   {
     "name": "Emmaboda",
     "lat": 56.6278,
     "lon": 15.5508,
-    "tier": 5
+    "tier": 5,
+    "pop": 8807
   },
   {
     "name": "Filipstad",
     "lat": 59.706,
     "lon": 14.1611,
-    "tier": 5
+    "tier": 5,
+    "pop": 9625
   },
   {
     "name": "Fjugesta",
     "lat": 59.1757,
     "lon": 14.8717,
-    "tier": 5
+    "tier": 5,
+    "pop": 8608
   },
   {
     "name": "Färgelanda",
     "lat": 58.5705,
     "lon": 11.9941,
-    "tier": 5
+    "tier": 5,
+    "pop": 6288
   },
   {
     "name": "Gnosjö",
     "lat": 57.3525,
     "lon": 13.7395,
-    "tier": 5
+    "tier": 5,
+    "pop": 9010
   },
   {
     "name": "Grums",
     "lat": 59.3531,
     "lon": 13.1095,
-    "tier": 5
+    "tier": 5,
+    "pop": 8854
   },
   {
     "name": "Grästorp",
     "lat": 58.3322,
     "lon": 12.6808,
-    "tier": 5
+    "tier": 5,
+    "pop": 5602
   },
   {
     "name": "Hammarstrand",
     "lat": 63.1084,
     "lon": 16.3194,
-    "tier": 5
+    "tier": 5,
+    "pop": 5152
   },
   {
     "name": "Haparanda",
     "lat": 65.8542,
     "lon": 24.1041,
-    "tier": 5
+    "tier": 5,
+    "pop": 9027
   },
   {
     "name": "Herrljunga",
     "lat": 58.0803,
     "lon": 13.0351,
-    "tier": 5
+    "tier": 5,
+    "pop": 9509
   },
   {
     "name": "Hjo",
     "lat": 58.303,
     "lon": 14.2762,
-    "tier": 5
+    "tier": 5,
+    "pop": 9322
   },
   {
     "name": "Hofors",
     "lat": 60.5435,
     "lon": 16.2948,
-    "tier": 5
+    "tier": 5,
+    "pop": 9138
   },
   {
     "name": "Hova",
     "lat": 58.8522,
     "lon": 14.2172,
-    "tier": 5
+    "tier": 5,
+    "pop": 4949
   },
   {
     "name": "Hällefors",
     "lat": 59.783,
     "lon": 14.5167,
-    "tier": 5
+    "tier": 5,
+    "pop": 6269
   },
   {
     "name": "Högsby",
     "lat": 57.1698,
     "lon": 16.023,
-    "tier": 5
+    "tier": 5,
+    "pop": 5134
   },
   {
     "name": "Jokkmokk",
     "lat": 66.6061,
     "lon": 19.8334,
-    "tier": 5
+    "tier": 5,
+    "pop": 4695
   },
   {
     "name": "Karlsborg",
     "lat": 58.5406,
     "lon": 14.5071,
-    "tier": 5
+    "tier": 5,
+    "pop": 7047
   },
   {
     "name": "Kopparberg",
     "lat": 59.867,
     "lon": 14.9838,
-    "tier": 5
+    "tier": 5,
+    "pop": 4290
   },
   {
     "name": "Kungshamn",
     "lat": 58.367,
     "lon": 11.25,
-    "tier": 5
+    "tier": 5,
+    "pop": 9036
   },
   {
     "name": "Kungsör",
     "lat": 59.4217,
     "lon": 16.1087,
-    "tier": 5
+    "tier": 5,
+    "pop": 8550
   },
   {
     "name": "Laxå",
     "lat": 58.9819,
     "lon": 14.6215,
-    "tier": 5
+    "tier": 5,
+    "pop": 5397
   },
   {
     "name": "Lessebo",
     "lat": 56.7528,
     "lon": 15.2692,
-    "tier": 5
+    "tier": 5,
+    "pop": 8115
   },
   {
     "name": "Malå",
     "lat": 65.1855,
     "lon": 18.7369,
-    "tier": 5
+    "tier": 5,
+    "pop": 2902
   },
   {
     "name": "Markaryd",
     "lat": 56.4637,
     "lon": 13.5913,
-    "tier": 5
+    "tier": 5,
+    "pop": 9862
   },
   {
     "name": "Mellerud",
     "lat": 58.6988,
     "lon": 12.4588,
-    "tier": 5
+    "tier": 5,
+    "pop": 9038
   },
   {
     "name": "Mullsjö",
     "lat": 57.9151,
     "lon": 13.8771,
-    "tier": 5
+    "tier": 5,
+    "pop": 7546
   },
   {
     "name": "Munkfors",
     "lat": 59.8327,
     "lon": 13.5406,
-    "tier": 5
+    "tier": 5,
+    "pop": 3637
   },
   {
     "name": "Norberg",
     "lat": 60.0826,
     "lon": 15.9474,
-    "tier": 5
+    "tier": 5,
+    "pop": 5351
   },
   {
     "name": "Nordmaling",
     "lat": 63.5709,
     "lon": 19.5016,
-    "tier": 5
+    "tier": 5,
+    "pop": 6905
   },
   {
     "name": "Norsjö",
     "lat": 64.9153,
     "lon": 19.481,
-    "tier": 5
+    "tier": 5,
+    "pop": 3811
   },
   {
     "name": "Nossebro",
     "lat": 58.1884,
     "lon": 12.7227,
-    "tier": 5
+    "tier": 5,
+    "pop": 5559
   },
   {
     "name": "Ockelbo",
     "lat": 60.8985,
     "lon": 16.718,
-    "tier": 5
+    "tier": 5,
+    "pop": 5715
   },
   {
     "name": "Orsa",
     "lat": 61.0996,
     "lon": 14.6503,
-    "tier": 5
+    "tier": 5,
+    "pop": 6902
   },
   {
     "name": "Pajala",
     "lat": 67.2144,
     "lon": 23.3712,
-    "tier": 5
+    "tier": 5,
+    "pop": 5706
   },
   {
     "name": "Perstorp",
     "lat": 56.136,
     "lon": 13.397,
-    "tier": 5
+    "tier": 5,
+    "pop": 7115
   },
   {
     "name": "Robertsfors",
     "lat": 64.1924,
     "lon": 20.8509,
-    "tier": 5
+    "tier": 5,
+    "pop": 6595
   },
   {
     "name": "Skinnskatteberg",
     "lat": 59.8249,
     "lon": 15.6937,
-    "tier": 5
+    "tier": 5,
+    "pop": 4234
   },
   {
     "name": "Skutskär",
     "lat": 60.6313,
     "lon": 17.3764,
-    "tier": 5
+    "tier": 5,
+    "pop": 9573
   },
   {
     "name": "Sorsele",
     "lat": 65.5326,
     "lon": 17.5416,
-    "tier": 5
+    "tier": 5,
+    "pop": 2362
   },
   {
     "name": "Storfors",
     "lat": 59.5374,
     "lon": 14.2749,
-    "tier": 5
+    "tier": 5,
+    "pop": 3777
   },
   {
     "name": "Storuman",
     "lat": 65.0994,
     "lon": 17.1196,
-    "tier": 5
+    "tier": 5,
+    "pop": 5543
   },
   {
     "name": "Surahammar",
     "lat": 59.7055,
     "lon": 16.2231,
-    "tier": 5
+    "tier": 5,
+    "pop": 9733
   },
   {
     "name": "Svenstavik",
     "lat": 62.7654,
     "lon": 14.4292,
-    "tier": 5
+    "tier": 5,
+    "pop": 7085
   },
   {
     "name": "Torsås",
     "lat": 56.4087,
     "lon": 16.0022,
-    "tier": 5
+    "tier": 5,
+    "pop": 6919
   },
   {
     "name": "Töreboda",
     "lat": 58.7067,
     "lon": 14.1322,
-    "tier": 5
+    "tier": 5,
+    "pop": 9093
   },
   {
     "name": "Vadstena",
     "lat": 58.4461,
     "lon": 14.8943,
-    "tier": 5
+    "tier": 5,
+    "pop": 7484
   },
   {
     "name": "Valdemarsvik",
     "lat": 58.206,
     "lon": 16.5901,
-    "tier": 5
+    "tier": 5,
+    "pop": 7526
   },
   {
     "name": "Vansbro",
     "lat": 60.5119,
     "lon": 14.222,
-    "tier": 5
+    "tier": 5,
+    "pop": 6741
   },
   {
     "name": "Vilhelmina",
     "lat": 64.6235,
     "lon": 16.6591,
-    "tier": 5
+    "tier": 5,
+    "pop": 6172
   },
   {
     "name": "Vindeln",
     "lat": 64.1998,
     "lon": 19.7271,
-    "tier": 5
+    "tier": 5,
+    "pop": 5421
   },
   {
     "name": "Vingåker",
     "lat": 59.0496,
     "lon": 15.8787,
-    "tier": 5
+    "tier": 5,
+    "pop": 8666
   },
   {
     "name": "Vännäs",
     "lat": 63.9053,
     "lon": 19.7415,
-    "tier": 5
+    "tier": 5,
+    "pop": 9225
   },
   {
     "name": "Ånge",
     "lat": 62.5232,
     "lon": 15.6099,
-    "tier": 5
+    "tier": 5,
+    "pop": 9000
   },
   {
     "name": "Årjäng",
     "lat": 59.3838,
     "lon": 12.1343,
-    "tier": 5
+    "tier": 5,
+    "pop": 9734
   },
   {
     "name": "Åseda",
     "lat": 57.1665,
     "lon": 15.3485,
-    "tier": 5
+    "tier": 5,
+    "pop": 8911
   },
   {
     "name": "Åsele",
     "lat": 64.1608,
     "lon": 17.3419,
-    "tier": 5
+    "tier": 5,
+    "pop": 2683
   },
   {
     "name": "Älvdalen",
     "lat": 61.2237,
     "lon": 14.0451,
-    "tier": 5
+    "tier": 5,
+    "pop": 6831
   },
   {
     "name": "Älvsbyn",
     "lat": 65.6792,
     "lon": 21.0101,
-    "tier": 5
+    "tier": 5,
+    "pop": 7815
   },
   {
     "name": "Ödeshög",
     "lat": 58.2304,
     "lon": 14.6561,
-    "tier": 5
+    "tier": 5,
+    "pop": 5221
   },
   {
     "name": "Österbymo",
     "lat": 57.8262,
     "lon": 15.2814,
-    "tier": 5
+    "tier": 5,
+    "pop": 3619
   },
   {
     "name": "Överkalix",
     "lat": 66.3189,
     "lon": 22.8428,
-    "tier": 5
+    "tier": 5,
+    "pop": 3183
   },
   {
     "name": "Övertorneå",
     "lat": 66.3856,
     "lon": 23.6241,
-    "tier": 5
+    "tier": 5,
+    "pop": 3995
   }
 ]
