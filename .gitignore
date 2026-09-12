@@ -69,3 +69,6 @@ coverage/
 
 # Deno lockfile (byprodukt av `deno check` på edge functions)
 deno.lock
+
+# Git worktrees (superpowers:using-git-worktrees — isolerad arbetsyta per feature-plan)
+.worktrees/
