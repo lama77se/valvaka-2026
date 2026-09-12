@@ -8,7 +8,7 @@
 // manuellt, INTE i CI (bygg/lint-grinden räcker för PR). Feeden byts/försvinner efter valet;
 // testet är en engångsgrind för just den här funktionen. Kör:  npm run verify:uppsamling
 import { unzipSync } from 'fflate'
-import { buildGroups, computeMandate, uppsamlingForArea, type UppsamlingVotes } from '../src/lib/aggregate.ts'
+import { buildGroups, computeMandate, uppsamlingForArea, type UppsamlingBuckets } from '../src/lib/aggregate.ts'
 import type { PartyVotes } from '../src/lib/mandate.ts'
 import type { Level, Valtyp } from '../src/lib/results.ts'
 
@@ -19,6 +19,7 @@ interface RostVd {
   valdistriktstyp?: string
   kommunkod?: string
   lankod?: string
+  kretskod?: string
   rostfordelning?: { rosterPaverkaMandat?: { partiRoster?: { partikod: string; antalRoster: number }[] } }
 }
 interface RostFile {
@@ -45,20 +46,26 @@ async function fetchOrgan(rel: string): Promise<{ rost: RostFile; mandat: Mandat
   return { rost: JSON.parse(dec.decode(unz[rostName])), mandat: JSON.parse(dec.decode(unz[mandatName])) }
 }
 
-// Bygg geografiskt röstindex + uppsamlings-organhinkar ur en organfil (samma routing
-// som ingest + klient: uppsamling per EXPLICIT lankod/kommunkod, RD → riket-hink '').
+// Bygg geografiskt röstindex + uppsamlings-hinkar ur en organfil (samma routing som ingest
+// + klient: organ-hink per EXPLICIT lankod/kommunkod (RD → riket-hink ''), PLUS kretskod-
+// attribuerad valkrets-hink när Valmyndigheten löst den — se aggregate.ts UppsamlingBuckets).
 function build(rost: RostFile) {
   const geoByVd = new Map<string, PartyVotes>()
-  const upp: UppsamlingVotes = new Map()
+  const upp: UppsamlingBuckets = { byOrgan: new Map(), byValkrets: new Map(), unresolvedByOrgan: new Map() }
   const codes: string[] = []
   const uppCodes: string[] = []
+  const add = (m: Map<string, PartyVotes>, key: string, pr: { partikod: string; antalRoster: number }[]) => {
+    const bucket = m.get(key) ?? m.set(key, {}).get(key)!
+    for (const p of pr) bucket[p.partikod] = (bucket[p.partikod] ?? 0) + p.antalRoster
+  }
   for (const vd of rost.valdistrikt ?? []) {
     const pr = vd.rostfordelning?.rosterPaverkaMandat?.partiRoster ?? []
     if (vd.valdistriktstyp === 'uppsamlingsdistrikt') {
       uppCodes.push(vd.valdistriktskod)
-      const key = rost.valtyp === 'RD' ? '' : rost.valtyp === 'RF' ? vd.lankod! : vd.kommunkod!
-      const bucket = upp.get(key) ?? upp.set(key, {}).get(key)!
-      for (const p of pr) bucket[p.partikod] = (bucket[p.partikod] ?? 0) + p.antalRoster
+      const organKey = rost.valtyp === 'RD' ? '' : rost.valtyp === 'RF' ? vd.lankod! : vd.kommunkod!
+      add(upp.byOrgan, organKey, pr)
+      if (vd.kretskod) add(upp.byValkrets, vd.kretskod, pr)
+      else add(upp.unresolvedByOrgan, organKey, pr)
     } else {
       const v: PartyVotes = {}
       for (const p of pr) v[p.partikod] = (v[p.partikod] ?? 0) + p.antalRoster
@@ -101,7 +108,7 @@ async function testOrgan(rel: string, valtyp: Valtyp, level: Level) {
   // röstsummor som står bredvid (synlig inkonsekvens). computeMandate mergar internt, så
   // detta är den enda otestade nya transformen.
   const sumVotes = (v: PartyVotes | null) => (v ? Object.values(v).reduce((a, b) => a + b, 0) : 0)
-  const fileUppTotal = [...upp.values()].reduce((a, b) => a + Object.values(b).reduce((x, y) => x + y, 0), 0)
+  const fileUppTotal = [...upp.byOrgan.values()].reduce((a, b) => a + Object.values(b).reduce((x, y) => x + y, 0), 0)
   const disp = uppsamlingForArea(valtyp, level, areaCode, upp)
   log(disp != null && sumVotes(disp) === fileUppTotal, `${label}: uppsamlingForArea ger organets uppsamling (${sumVotes(disp)} av ${fileUppTotal} röster)`)
 

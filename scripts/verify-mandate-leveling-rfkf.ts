@@ -31,7 +31,8 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import XLSX from 'xlsx'
 import { unzipSync } from 'fflate'
-import { computeAssembly, placeLevelingSeats, type ConstituencyVotes, type PartyVotes } from '../src/lib/mandate.ts'
+import { valkretsMandate } from '../src/lib/aggregate.ts'
+import type { ConstituencyVotes, PartyVotes } from '../src/lib/mandate.ts'
 
 const DIR = 'data/raw/mandat2022'
 const t = (v: unknown) => String(v ?? '').trim()
@@ -125,31 +126,30 @@ function testOrgan(valtyp: 'RF' | 'KF', organKod: string, zipPath: string, fasta
     fixedSeatsByConstituency[vk.kod] = fasta
   }
 
-  const result = computeAssembly(
-    votesByConstituency,
-    {
-      totalSeats: fastaInfo.total,
-      firstDivisor: 1.2,
-      nationalThreshold: 0.03, // RF/KF-spärr — de delade organen har alltid 3 % (kommun: lag sen 2018)
-      constituencyThreshold: Infinity, // ingen 12 %-regel för RF/KF
-      fixedSeatsByConstituency,
-      fullyLevels: true, // Vallag 14 kap. — inget överskott, totalen ÄR nationalTarget
-    },
-    uppsamlingVotes, // väger in i spärr/mål (steg A/C) — aldrig i en specifik valkrets (steg B)
-  )
-  const placed = placeLevelingSeats(votesByConstituency, result.fixedByConstituencyParty, result.levelingByParty)
-
+  // Kör DEN FAKTISKT SKEPPADE kärnan (aggregate.ts valkretsMandate — samma funktion som
+  // computeRegionOrKommunValkretsMandate anropar live) en gång PER valkrets, med 2022 års
+  // historiska fasta-mandat-config i stället för 2026:s SEAT_CONFIG. `votesByConstituency`
+  // byggdes redan ovan med kretskod-attribuerad uppsamling inbakad (buildVotes: "kolla
+  // kretskod FÖRST, oavsett valdistriktstyp") — motsvarar precis vad den skeppade koden gör
+  // (aggregate() + mergeVotes(byValkrets.get(vk))) innan valkretsMandate anropas.
   for (const vk of vkList) {
     const facitParti = vk.mandatfordelning?.partiLista
     if (!facitParti) { log(false, `${valtyp} ${organKod}/${vk.namnValkrets}: filen saknar mandatfordelning`); continue }
-    const fixedHere = result.fixedByConstituencyParty[vk.kod] ?? {}
-    const placedHere = placed[vk.kod] ?? {}
+    const ours = valkretsMandate(
+      votesByConstituency,
+      fixedSeatsByConstituency,
+      vk.kod,
+      fastaInfo.total,
+      0.03, // RF/KF-spärr — de delade organen har alltid 3 % (kommun: lag sen 2018)
+      Infinity, // ingen 12 %-regel för RF/KF
+      uppsamlingVotes, // OLÖST rest — väger in i spärr/mål (steg A/C), aldrig i en specifik valkrets
+    )
     for (const p of facitParti) {
       checkedPairs++
-      const ours = (fixedHere[p.partikod] ?? 0) + (placedHere[p.partikod] ?? 0)
-      if (ours !== p.antalMandat) {
+      const gotSeats = ours?.seatsByParty[p.partikod] ?? 0
+      if (gotSeats !== p.antalMandat) {
         ok = false
-        console.log(`FEL ${valtyp} ${organKod}/${vk.namnValkrets}/${p.partikod}: ${ours} (facit ${p.antalMandat})`)
+        console.log(`FEL ${valtyp} ${organKod}/${vk.namnValkrets}/${p.partikod}: ${gotSeats} (facit ${p.antalMandat})`)
       }
     }
   }

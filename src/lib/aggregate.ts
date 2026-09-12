@@ -182,9 +182,24 @@ export function buildGroups(allCodes: string[]): AreaGroups {
 
 // --- Uppsamlingsröster (sena röster, onsdagsräkningen) -------------------------
 // Vägs in i ORGAN-aggregaten (KF-kommun, RF-region, RD-riket) så slutgiltiga totaler
-// matchar val.se. Nyckeln är organ-koden: RD → '' (riket, EN hink), RF → lankod
-// (2 siffror), KF → kommunkod (4 siffror). Håller distrikt/valkrets/karta geografiska.
-export type UppsamlingVotes = Map<string, PartyVotes>
+// matchar val.se. Uppsamlingsdistrikt saknar geometri/FK (kort kod, se ingest) men har
+// ofta ändå en `kretskod` — Valmyndigheten löser sena röster till sin RIKTIGA valkrets
+// när hemvisten är känd (bekräftat 12 sep mot 2022-facit: RD 314/314 uppsamlingsdistrikt
+// i slutlig-filen hade kretskod, KF/RF ibland — Ronneby ja, Uppsala nej). Utan detta gav
+// LIVE-koden (som alltid klumpade ALLT organ-vitt) 5/166 fel RD-(valkrets,parti)-par mot
+// facit; MED kretskod-attribuering 166/166 exakt (scratchpad-verifiering, se PR).
+//   • byOrgan: ALLA sena röster för organet (lösta+olösta) — organets EGEN headline-total
+//     (computeMandate/uppsamlingForArea på organnivå) ska ALLTID vara den fulla summan,
+//     oavsett om enskilda röster hunnit resolvas till en valkrets eller inte.
+//   • byValkrets: bara de LÖSTA (kretskod känd) — läggs direkt till DEN valkretsens egna
+//     röster (både headline-totalen där OCH steg B/fasta-mandat-underlaget).
+//   • unresolvedByOrgan: bara de OLÖSTA — väger in i organets spärr/mål (steg A/C,
+//     extraVotes till computeAssembly) men kan aldrig placeras i en specifik valkrets.
+export interface UppsamlingBuckets {
+  byOrgan: Map<string, PartyVotes>
+  byValkrets: Map<string, PartyVotes>
+  unresolvedByOrgan: Map<string, PartyVotes>
+}
 
 // Slå ihop bas-röster med ev. extra (uppsamling). Utan extra → oförändrad bas
 // (referenslika return är OK — callers muterar aldrig). Default-fallet gör hela
@@ -196,21 +211,50 @@ export function mergeVotes(base: PartyVotes, extra?: PartyVotes | null): PartyVo
   return out
 }
 
-// Extra uppsamlingsröster att lägga till DISPLAY-aggregatet (röster/andel i panelen).
-// Endast de tre valbara organ-nivåerna har en total som ska matcha val.se; övriga
-// nivåer (valkrets/distrikt) förblir rent geografiska (barnen summerar då inte till
+// Uppsamlingsröster för DEN VALDA ytans EGEN headline-total (röster/andel/mandat). Organ-
+// nivåerna (KF-kommun/RF-region/RD-riket) får ALLTID den fulla organ-hinken (lösta+olösta —
+// måste matcha val.se:s officiella totaler oavsett resolutionsstatus). Valkretsnivån får bara
+// den delen som FAKTISKT är löst till just DEN valkretsen (kretskod) — övriga nivåer
+// (kommun-under-valkrets/distrikt) förblir rent geografiska (barnen summerar då inte till
 // föräldern — medvetet, se docs).
 export function uppsamlingForArea(
   valtyp: Valtyp,
   level: Level,
   areaCode: string | null,
-  uppsamling: UppsamlingVotes | null | undefined,
+  uppsamling: UppsamlingBuckets | null | undefined,
 ): PartyVotes | null {
   if (!uppsamling) return null
-  if (valtyp === 'RD' && level === 'riket') return uppsamling.get('') ?? null
-  if (valtyp === 'RF' && level === 'region' && areaCode) return uppsamling.get(areaCode) ?? null
-  if (valtyp === 'KF' && level === 'kommun' && areaCode) return uppsamling.get(areaCode) ?? null
+  if (valtyp === 'RD' && level === 'riket') return uppsamling.byOrgan.get('') ?? null
+  if (valtyp === 'RF' && level === 'region' && areaCode) return uppsamling.byOrgan.get(areaCode) ?? null
+  if (valtyp === 'KF' && level === 'kommun' && areaCode) return uppsamling.byOrgan.get(areaCode) ?? null
+  if (level === 'valkrets' && areaCode) return uppsamling.byValkrets.get(areaCode) ?? null
   return null
+}
+
+// Uppsamlingsröster att visa som EGEN "Uppsamling"-bottenrad i "Bryt ner"-tabellen (val.se
+// visar den som sin egen (icke-geometriska) distrikts-rad nested i rätt valkrets/kommun —
+// vi kan inte skapa en påhittad distrikt-rad utan geometri, men FÅR samma effekt genom att
+// nesta beloppet i rätt barns egen totalrad i stället, se `uppsamlingForArea` ovan). Denna
+// bottenrad ska då INTE dubbelräkna det som redan nestades i barnen:
+//   • Organnivå MED valkrets-barn: bara den OLÖSTA resten (den lösta delen sitter redan i
+//     respektive valkrets-barns egen rad).
+//   • Organnivå UTAN valkrets-barn (barnen är distrikt, eller prompt-lägets kommun/region-
+//     lista): hela hinken, precis som innan — ingen nesting sker där.
+//   • Valkretsnivå (dess EGNA kommun-/distriktsbarn kan aldrig gå djupare geografiskt): hela
+//     den lösta hinken för just DEN valkretsen.
+export function uppsamlingRowFor(
+  valtyp: Valtyp,
+  level: Level,
+  areaCode: string | null,
+  uppsamling: UppsamlingBuckets | null | undefined,
+  childLevel: Level | null,
+): PartyVotes | null {
+  if (!uppsamling) return null
+  if (level === 'valkrets' && areaCode) return uppsamling.byValkrets.get(areaCode) ?? null
+  const organKey =
+    valtyp === 'RD' && level === 'riket' ? '' : (valtyp === 'RF' && level === 'region') || (valtyp === 'KF' && level === 'kommun') ? areaCode : null
+  if (organKey == null) return null
+  return (childLevel === 'valkrets' ? uppsamling.unresolvedByOrgan.get(organKey) : uppsamling.byOrgan.get(organKey)) ?? null
 }
 
 // Proportionell mandatfördelning (jämkad uddatalsmetod 1,2) bland partier ≥ spärr.
@@ -234,17 +278,18 @@ export function computeMandate(
   areaCode: string | null,
   aggregate: (codes: Iterable<string>) => PartyVotes,
   groups: AreaGroups,
-  uppsamling?: UppsamlingVotes | null, // undefined → NO-OP (2022-facit-testerna oförändrade)
+  uppsamling?: UppsamlingBuckets | null, // undefined → NO-OP (2022-facit-testerna oförändrade)
 ): MandateResult | null {
   const acc: Record<string, number> = {}
   const add = (seats: Record<string, number>) => {
     for (const [p, s] of Object.entries(seats)) acc[p] = (acc[p] ?? 0) + s
   }
   const emptyIfNone = (codes: string[] | undefined) => codes ?? []
-  // Röster för EN församling = geografiskt aggregat + församlingens uppsamlingsröster
-  // (organ-koden: RD '', RF lankod, KF kommunkod). mergeVotes utan extra → oförändrat.
+  // Röster för EN församling = geografiskt aggregat + församlingens HELA uppsamlingshink
+  // (lösta+olösta — organtotalen ska alltid vara den fulla summan). mergeVotes utan extra
+  // → oförändrat.
   const votesFor = (codes: string[] | undefined, organKey: string) =>
-    mergeVotes(aggregate(emptyIfNone(codes)), uppsamling?.get(organKey))
+    mergeVotes(aggregate(emptyIfNone(codes)), uppsamling?.byOrgan.get(organKey))
 
   if (valtyp === 'RD') {
     if (level !== 'riket') return null
@@ -298,7 +343,11 @@ export interface ValkretsMandate {
 // PLACERA utjämningen geografiskt (placeLevelingSeats, mandate.ts) och slå ihop till den
 // RIKTIGA totalen per valkrets — fasta OCH utjämning, inte en "minst"-golvsiffra. Delas av
 // RD (nationellt, 12 %-kvalificering) och RF/KF (region-/kommunscopat, ingen 12 %-regel).
-function valkretsMandate(
+// EXPORTERAD (utöver de två 2026-specifika wrapper-funktionerna nedan) så verify-scripten
+// kan köra DENNA — den faktiskt SKEPPADE algoritmen — direkt mot 2022 års historiska config
+// (andra fasta mandat-per-valkrets än 2026:s SEAT_CONFIG_2026) i stället för att duplicera
+// logiken. Se scripts/verify-mandate-leveling-rfkf.ts och -rd-uppsamling.ts.
+export function valkretsMandate(
   votesByConstituency: ConstituencyVotes,
   fixedSeatsByConstituency: Record<string, number>,
   areaCode: string,
@@ -345,17 +394,27 @@ function valkretsMandate(
 // inkomna röster: fasta valkretsmandat (steg B) PLUS utjämningsmandaten geografiskt
 // PLACERADE (jämförelsetal per valkrets, se placeLevelingSeats i mandate.ts) — inte bara
 // en "minst"-golvsiffra längre (tillagd 12 sep, ersätter den tidigare fasta-bara versionen).
-// Verifierad EXAKT mot Valmyndighetens 2022-facit på valkretsnivå: 232/232 (valkrets,parti)
-// -par, 0 avvikelser (scripts/verify-mandate-leveling.ts). ALLA 29 valkretsar deltar i
-// röstunderlaget (kvalificering + placering är rikstäckande, kan inte göras per valkrets
-// isolerat). Ingen uppsamling vägs in — sena röster har ingen valkrets-nyckel att slå in på.
+// ALLA 29 valkretsar deltar i röstunderlaget (kvalificering + placering är rikstäckande,
+// kan inte göras per valkrets isolerat).
+//
+// Uppsamling (12 sep, se UppsamlingBuckets docstring): trodde tidigare "RD har ingen
+// valkrets-nyckel att slå in på" och verifierade mot Valmyndighetens FÄRDIGAGGREGERADE
+// valkrets-facit (roster-rd-2022.xlsx — redan resolvat, ingen uppsamlingsdistrikt-etikett
+// kvar), vilket gav 232/232 exakt men aldrig faktiskt testade den RÅA JSON-vägen (denna
+// funktions verkliga indata). Verifiering mot 2022 SLUTLIG-filens egen rostfordelning visade
+// att alla 314 RD-uppsamlingsdistrikt DE FAKTO har kretskod (220 640 röster, ~3,4 % av
+// riket) — utan attribuering: 161/166 (valkrets,parti)-par exakt (Stockholm/Östergötland/
+// Skåne västra/VG västra fel); MED: 166/166.
 export function computeRdValkretsMandate(
   areaCode: string,
   vkToDistricts: Map<string, string[]>,
   aggregate: (codes: Iterable<string>) => PartyVotes,
+  uppsamling?: UppsamlingBuckets | null,
 ): ValkretsMandate | null {
   const votesByConstituency: ConstituencyVotes = {}
-  for (const [vk, districts] of vkToDistricts) votesByConstituency[vk] = aggregate(districts)
+  for (const [vk, districts] of vkToDistricts) {
+    votesByConstituency[vk] = mergeVotes(aggregate(districts), uppsamling?.byValkrets.get(vk))
+  }
   return valkretsMandate(
     votesByConstituency,
     SEAT_CONFIG_2026.RD.valkrets,
@@ -363,6 +422,7 @@ export function computeRdValkretsMandate(
     SEAT_CONFIG_2026.RD.totalSeats,
     SEAT_CONFIG_2026.RD.threshold,
     0.12,
+    uppsamling?.unresolvedByOrgan.get(''),
   )
 }
 
@@ -375,15 +435,17 @@ export function computeRdValkretsMandate(
 // kvalificering (bara RD har den, Vallag) → constituencyThreshold = Infinity, vilket också
 // slår på `fullyLevels` (Vallag 14 kap. — inget överskott, se valkretsMandate). `prefix`
 // filtrerar vkToDistricts (RF-valkretskod är länsprefixad 4 siffror, KF-valkretskod
-// kommunprefixad 6) till bara den egna regionens/kommunens valkretsar. `uppsamling`
-// (organets EGNA sena röster, ingen egen valkrets) väger in i spärr/mål men placeras
-// aldrig geografiskt — se computeAssembly/placeLevelingSeats.
+// kommunprefixad 6) till bara den egna regionens/kommunens valkretsar. Uppsamling: den
+// LÖSTA delen (kretskod känd) läggs direkt i sin valkrets röstunderlag (steg B/fasta); bara
+// den OLÖSTA resten väger in i organets spärr/mål utan att placeras — se computeAssembly/
+// placeLevelingSeats och UppsamlingBuckets-docstringen.
 //
 // Verifierad mot Valmyndighetens riktiga 2022-resultatarkiv (scripts/verify-mandate-
-// leveling-rfkf.ts, 12 sep): KF 100 % exakt (17/17 delade kommuner). RF 9/11 regioner
-// exakta, 2 kvarvarande enstaka avvikelser (Kalmar, Västra Götaland) som INTE beror på
-// tie-breaking (jämförelsetalen skiljer sig klart) eller en känd bugg — se skriptets
-// header. 677/679 (valkrets,parti)-par totalt, 99,7 %.
+// leveling-rfkf.ts, 12 sep — nu körd mot DENNA funktion direkt, inte en duplicerad
+// hand-rullad kopia): KF 100 % exakt (17/17 delade kommuner). RF 9/11 regioner exakta, 2
+// kvarvarande enstaka avvikelser (Kalmar, Västra Götaland) som INTE beror på tie-breaking
+// (jämförelsetalen skiljer sig klart) eller kretskod-attribueringen (kvar även med den) —
+// se skriptets header. 677/679 (valkrets,parti)-par totalt, 99,7 %.
 export function computeRegionOrKommunValkretsMandate(
   valtyp: 'RF' | 'KF',
   prefix: string,
@@ -391,16 +453,16 @@ export function computeRegionOrKommunValkretsMandate(
   vkToDistricts: Map<string, string[]>,
   aggregate: (codes: Iterable<string>) => PartyVotes,
   threshold: number,
-  uppsamling?: PartyVotes,
+  uppsamling?: UppsamlingBuckets | null,
 ): ValkretsMandate | null {
   const votesByConstituency: ConstituencyVotes = {}
   for (const [vk, districts] of vkToDistricts) {
-    if (vk.startsWith(prefix)) votesByConstituency[vk] = aggregate(districts)
+    if (vk.startsWith(prefix)) votesByConstituency[vk] = mergeVotes(aggregate(districts), uppsamling?.byValkrets.get(vk))
   }
   const config = valtyp === 'RF' ? SEAT_CONFIG_2026.RF_VALKRETS : SEAT_CONFIG_2026.KF_VALKRETS
   const totalSeatsOrgan = valtyp === 'RF' ? SEAT_CONFIG_2026.RF[prefix] : SEAT_CONFIG_2026.KF[prefix]?.seats
   if (!totalSeatsOrgan) return null
-  return valkretsMandate(votesByConstituency, config, areaCode, totalSeatsOrgan, threshold, Infinity, uppsamling)
+  return valkretsMandate(votesByConstituency, config, areaCode, totalSeatsOrgan, threshold, Infinity, uppsamling?.unresolvedByOrgan.get(prefix))
 }
 
 // Slå in mandat i partiraderna (behåller andel/sortering).

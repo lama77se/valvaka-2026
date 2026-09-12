@@ -74,9 +74,12 @@ async function processFile(f, sets) {
       const kommunkod = typeof vd.kommunkod === 'string' ? vd.kommunkod : null
       const lankod = typeof vd.lankod === 'string' ? vd.lankod : null
       if (typeof kod !== 'string' || !kommunkod || !lankod) continue
+      // Sena röster löses ofta till sin RIKTIGA valkrets (kretskod) — samma syskon-fält/logik
+      // som edge (ingest-result/index.ts). Null = olöst → organ-vid hink (aggregate.ts UppsamlingBuckets).
+      const kretskod = typeof vd.kretskod === 'string' ? vd.kretskod : null
       for (const p of vd.rostfordelning?.rosterPaverkaMandat?.partiRoster ?? []) {
         if (!sets.partySet.has(p.partikod)) continue
-        uppRows.push({ valtyp: j.valtyp, kod, kommunkod, lankod, partikod: p.partikod, roster: p.antalRoster, status: rakstatus })
+        uppRows.push({ valtyp: j.valtyp, kod, kommunkod, lankod, kretskod, partikod: p.partikod, roster: p.antalRoster, status: rakstatus })
       }
       continue
     }

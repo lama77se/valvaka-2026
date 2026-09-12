@@ -15,7 +15,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { supabase } from '@/lib/supabase'
 import { fetchSnapshotBlob } from '@/lib/snapshotBlob'
 import { ResultStore, TurnoutStore, VALTYPER, VALTYP_VK_COLUMN, type ColorMode, type Valtyp } from '@/lib/results'
-import { buildGroups, type AreaComparison, type AreaGroups, type Comparison2022, type DistrictMeta, type Level, type PartyMeta } from '@/lib/aggregate'
+import { buildGroups, type AreaComparison, type AreaGroups, type Comparison2022, type DistrictMeta, type Level, type PartyMeta, type UppsamlingBuckets } from '@/lib/aggregate'
 import type { PartyVotes } from '@/lib/mandate'
 import type { AreaIndex } from '@/lib/hierarchy'
 
@@ -141,8 +141,9 @@ export interface ResultsContextValue {
   metaRef: RefObject<Map<string, DistrictMeta>>
   allCodesRef: RefObject<string[]>
   groupsRef: RefObject<AreaGroups>
-  // Uppsamlingsröster per valtyp, hinkade på organ-kod (RD '', RF lankod, KF kommunkod).
-  uppsamlingRef: RefObject<Record<Valtyp, Map<string, PartyVotes>>>
+  // Uppsamlingsröster per valtyp — organ-hink (RD '', RF lankod, KF kommunkod) PLUS
+  // kretskod-attribuerad valkrets-hink, se UppsamlingBuckets (aggregate.ts).
+  uppsamlingRef: RefObject<Record<Valtyp, UppsamlingBuckets>>
   comparisonRef: RefObject<Comparison2022 | null>
   districtComparisonRef: RefObject<Map<string, string>>
   distriktNamnRef: RefObject<Map<string, string>>
@@ -267,8 +268,9 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
   const metaRef = useRef<Map<string, DistrictMeta>>(new Map())
   const allCodesRef = useRef<string[]>([])
   const groupsRef = useRef<AreaGroups>(buildGroups([]))
-  // Uppsamlingsröster per valtyp, hinkade på organ-kod. Läses en gång vid mount (nedan).
-  const uppsamlingRef = useRef<Record<Valtyp, Map<string, PartyVotes>>>({ RD: new Map(), RF: new Map(), KF: new Map() })
+  // Uppsamlingsröster per valtyp. Läses en gång vid mount (nedan).
+  const emptyUppsamling = (): UppsamlingBuckets => ({ byOrgan: new Map(), byValkrets: new Map(), unresolvedByOrgan: new Map() })
+  const uppsamlingRef = useRef<Record<Valtyp, UppsamlingBuckets>>({ RD: emptyUppsamling(), RF: emptyUppsamling(), KF: emptyUppsamling() })
   // Valkretsindex per valtyp (RD 2-siffrig vk_rd, RF 4-siffrig län-prefixad vk_rf).
   // Byggs en gång ur distriktsmetadatan; KF har ingen valkretsnivå (tomt index).
   const emptyIndex = (): AreaIndex => ({ districtToVk: new Map(), vkToDistricts: new Map(), kommunToVk: new Map() })
@@ -620,7 +622,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
             .limit(1)
           if (!probeErr && probe && probe.length === 0) continue
         }
-        const next: Record<Valtyp, Map<string, PartyVotes>> = { RD: new Map(), RF: new Map(), KF: new Map() }
+        const next: Record<Valtyp, UppsamlingBuckets> = { RD: emptyUppsamling(), RF: emptyUppsamling(), KF: emptyUppsamling() }
         const PAGE = 10000
         let from = 0
         let failed = false
@@ -628,20 +630,27 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
         while (aliveRef.current) {
           const { data, error } = await supabase
             .from('uppsamling_result')
-            .select('valtyp,kommunkod,lankod,partikod,roster,updated_at')
+            .select('valtyp,kommunkod,lankod,kretskod,partikod,roster,updated_at')
             .order('valtyp', { ascending: true }) // PK-ordning (valtyp,kod,partikod) → stabil, ingen överhoppad rad
             .order('kod', { ascending: true })
             .order('partikod', { ascending: true })
             .range(from, from + PAGE - 1)
           if (error) { markPollError(`uppsamling: ${error.message}`); failed = true; break }
           if (!data || data.length === 0) break
-          for (const r of data as unknown as Array<{ valtyp: string; kommunkod: string; lankod: string; partikod: string; roster: number; updated_at?: string | null }>) {
-            const m = next[r.valtyp as Valtyp]
-            if (!m) continue
+          for (const r of data as unknown as Array<{
+            valtyp: string; kommunkod: string; lankod: string; kretskod: string | null; partikod: string; roster: number; updated_at?: string | null
+          }>) {
+            const buckets = next[r.valtyp as Valtyp]
+            if (!buckets) continue
             // Organ-nyckel: RD → riket (EN hink), RF → länet, KF → kommunen.
-            const key = r.valtyp === 'RD' ? '' : r.valtyp === 'RF' ? r.lankod : r.kommunkod
-            const bucket = m.get(key) ?? m.set(key, {}).get(key)!
-            bucket[r.partikod] = (bucket[r.partikod] ?? 0) + r.roster
+            const organKey = r.valtyp === 'RD' ? '' : r.valtyp === 'RF' ? r.lankod : r.kommunkod
+            const add = (m: Map<string, PartyVotes>, key: string) => {
+              const bucket = m.get(key) ?? m.set(key, {}).get(key)!
+              bucket[r.partikod] = (bucket[r.partikod] ?? 0) + r.roster
+            }
+            add(buckets.byOrgan, organKey)
+            if (r.kretskod) add(buckets.byValkrets, r.kretskod)
+            else add(buckets.unresolvedByOrgan, organKey)
             if (r.updated_at && r.updated_at > maxTs) maxTs = r.updated_at
           }
           from += data.length
@@ -769,10 +778,13 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
       // Uppsamling-introspektion: antal organ-hinkar + total röster per valtyp, samt manuell
       // omladdning (bevisar att live-vägen plockar upp nyinsatta uppsamlingsrader).
       uppsamling: () => Object.fromEntries((['RD', 'RF', 'KF'] as Valtyp[]).map((vt) => {
-        const m = uppsamlingRef.current[vt]
-        let roster = 0
-        for (const b of m.values()) for (const v of Object.values(b)) roster += v
-        return [vt, { buckets: m.size, roster }]
+        const b = uppsamlingRef.current[vt]
+        const sum = (m: Map<string, PartyVotes>) => {
+          let roster = 0
+          for (const bucket of m.values()) for (const v of Object.values(bucket)) roster += v
+          return roster
+        }
+        return [vt, { organBuckets: b.byOrgan.size, valkretsBuckets: b.byValkrets.size, roster: sum(b.byOrgan), resolvedRoster: sum(b.byValkrets), unresolvedRoster: sum(b.unresolvedByOrgan) }]
       })),
       reloadUpp: () => loadUppsamling(),
       // Valdeltagande-introspektion: kör en turnout-resync, eller läs aggregatet för en
