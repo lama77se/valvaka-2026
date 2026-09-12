@@ -96,7 +96,7 @@ function DesktopApp() {
                 rader på högre skärmar men håller sig kompakta nära brytpunkten, utan att krocka
                 med legenden ovanför. */}
             <div className="pointer-events-none absolute inset-y-4 left-4 flex flex-col gap-3">
-              <div className="flex max-w-[248px] flex-col gap-3">
+              <div className="flex w-[var(--boards-w)] flex-col gap-3">
               <div className="pointer-events-none relative rounded-lg border border-slate-700 bg-slate-900/85 p-4 shadow-lg backdrop-blur">
                 {/* Källkodslänk — icon-only-länk (best practice: aria-label för
                     skärmläsare, target=_blank + rel=noopener noreferrer, pointer-events-auto
