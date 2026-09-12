@@ -3,14 +3,8 @@
 // 422-433 (oförändrad logik, bara flyttad) så AreaSelect.tsx (Dashboard-vyns egna
 // väljarinstanser) och ResultPanel själv kan dela EN källa i stället för att driva
 // isär. Se docs/superpowers/specs/2026-09-12-dashboard-vy-design.md.
-import type { Level } from '@/lib/aggregate'
+import { defaultAreaFor, RIKET, type Area } from '@/lib/area'
 import type { Valtyp } from './results'
-
-export type Area = { level: Level; code: string | null }
-export const RIKET: Area = { level: 'riket', code: null }
-
-const NATIVE_LEVEL: Record<Valtyp, Level> = { RD: 'riket', RF: 'region', KF: 'kommun' }
-const defaultAreaFor = (valtyp: Valtyp): Area => ({ level: NATIVE_LEVEL[valtyp], code: null })
 
 // Nivåer väljaren erbjuder per valtyp: den nativa nivån + geografisk nedbrytning
 // UNDER den (aldrig uppåt). RD: riket → VALKRETS (riksdagens nivå) → kommun; RF:

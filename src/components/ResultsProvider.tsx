@@ -18,17 +18,9 @@ import { ResultStore, TurnoutStore, VALTYPER, VALTYP_VK_COLUMN, type ColorMode, 
 import { buildGroups, type AreaComparison, type AreaGroups, type Comparison2022, type DistrictMeta, type Level, type PartyMeta, type UppsamlingBuckets } from '@/lib/aggregate'
 import type { PartyVotes } from '@/lib/mandate'
 import type { AreaIndex } from '@/lib/hierarchy'
+import { RIKET, defaultAreaFor, type Area } from '@/lib/area'
 
-export type Area = { level: Level; code: string | null }
-export const RIKET: Area = { level: 'riket', code: null }
-
-// Varje valtyp väljer ett organ på EN nativ nivå: RD ett riksorgan, RF 20 region-
-// fullmäktige, KF 290 kommunfullmäktige. Ovanför den nivån finns bara röstaggregat,
-// ingen församling → väljaren aggregerar aldrig uppåt förbi den nativa nivån.
-export const NATIVE_LEVEL: Record<Valtyp, Level> = { RD: 'riket', RF: 'region', KF: 'kommun' }
-// Default-område per valtyp. RD → Riket (organ finns). RF/KF → ingen riksnivå, så
-// "välj region/kommun"-läge (code null) tills man väljer i listan eller klickar i kartan.
-export const defaultAreaFor = (valtyp: Valtyp): Area => ({ level: NATIVE_LEVEL[valtyp], code: null })
+export { RIKET, defaultAreaFor, type Area } from '@/lib/area'
 
 // --- Delbara vy-URL:er ------------------------------------------------------------------
 // En vy = valtyp + markerat område. Kodas i query-strängen så en länk kan öppna en
