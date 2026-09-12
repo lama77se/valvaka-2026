@@ -23,7 +23,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type * as maplibregl from 'maplibre-gl'
 
-type Place = { name: string; lat: number; lon: number; tier: number }
+type Place = { name: string; lat: number; lon: number; tier: number; pop: number }
 
 // Zoom-tröskel per tier — satt empiriskt (samma princip som handover:en
 // föreslår: testa i browsern, dra åt vid behov). Tier 1 syns alltid, även vid
@@ -32,8 +32,9 @@ const TIER_MIN_ZOOM: Record<number, number> = { 1: 0, 2: 5.5, 3: 7, 4: 8.5, 5: 1
 
 // Enkel gles kollisionskoll (INTE en fullständig kollisionsmotor): två SAMTIDIGT
 // synliga etiketter närmare varandra än detta (pixlar) → skippa den senare i
-// listan (platslistan är sorterad tier-stigande, så en högre-tier ort vinner
-// alltid mot en lägre om de skulle kollidera).
+// prioritetsordningen (se sortNodesByPriority nedan — tier-stigande, sedan
+// befolkning-fallande INOM en tier — så en större/viktigare ort alltid vinner
+// mot en mindre om de skulle kollidera, oavsett var de råkar ligga i filen).
 const MIN_LABEL_SPACING_PX = 42
 // Marginal utanför synliga ytan innan en etikett hoppas över helt (undviker att
 // uppdatera/positionera noder som ändå inte syns).
@@ -72,7 +73,12 @@ export function PlaceLabels({ map, ready }: { map: maplibregl.Map | null; ready:
     // kontrast oavsett vad som ligger under (distriktsfärg, mörk bakgrund, ELLER en
     // ljus gränslinje), i stället för att förlita sig på att skuggan "vinner".
     container.innerHTML = ''
-    const nodes = places.map((p) => {
+    // Prioritetsordning för kollisionsloopen: tier-stigande (en tier 1-stad vinner
+    // alltid mot en tier 2-ort), sedan befolkning-fallande INOM en tier (Stockholm
+    // vinner mot Huddinge — annars avgjorde filens (alfabetiska) ordning av misstag,
+    // vilket kunde gömma en viktigare ort bakom en mindre men alfabetiskt tidigare).
+    const sorted = [...places].sort((a, b) => a.tier - b.tier || b.pop - a.pop)
+    const nodes = sorted.map((p) => {
       const el = document.createElement('div')
       el.className =
         'absolute left-0 top-0 flex items-center gap-1 whitespace-nowrap rounded px-1 py-0.5 text-[11px] font-medium text-slate-100'
