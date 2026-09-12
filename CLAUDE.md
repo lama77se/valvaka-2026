@@ -68,9 +68,9 @@ Dessa gäller ALL parsning av val.se-filer. Bryt inte mot dem:
 - Nya beslut/underlag hör hemma i `docs/`.
 - Områdesvyns röster/mandat/valdeltagande-beräkning och områdesväljaren är redan
   extraherade som delade byggstenar: `computeAreaView`/`areaFromSelectValue`
-  (`src/lib/`) samt `useAreaView`/`AreaSelect` (`src/components/`). Återanvänd
-  dessa i stället för att duplicera logiken en tredje gång (t.ex. i en framtida
-  Dashboard-vy).
+  (`src/lib/`) samt `useAreaView`/`AreaSelect` (`src/components/`) — används
+  redan av Dashboard-vyn (`AreaSummary`/`DashboardGrid`). Återanvänd dessa i
+  stället för att duplicera logiken ytterligare en gång.
 
 ## Git
 
