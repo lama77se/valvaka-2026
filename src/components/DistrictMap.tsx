@@ -813,7 +813,7 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
       {variant !== 'mobile' && dataset?.test && (
         // Centrerad över den SYNLIGA kartan (samma uträkning som valtyp-väljaren), inte
         // skärmens mitt som ligger en bit in under panelen.
-        <div className="pointer-events-none absolute left-[calc((1rem_+_var(--boards-w)_+_100%_-_var(--panel-w))/2)] top-0 z-10 -translate-x-1/2">
+        <div className="pointer-events-none absolute left-[calc((1rem_+_var(--boards-w)_+_100%_-_var(--panel-w))/2)] top-0 z-30 -translate-x-1/2">
           <div className="flex items-center gap-2 rounded-b-md border border-t-0 border-amber-500/60 bg-amber-500/15 px-4 py-1.5 text-sm font-semibold text-amber-200 shadow-lg backdrop-blur">
             <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />

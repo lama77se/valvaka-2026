@@ -6,6 +6,10 @@
 // ResultPanel.tsx:areaName/useAreaView) krävs för de två syntetiska "nuvarande
 // värde"-optionerna nedan — de ska visa NAMNET, inte den råa koden.
 // Se docs/superpowers/specs/2026-09-12-dashboard-vy-design.md.
+//
+// valkretsListRef (INTE context-fältet `valkretsar`, som bara täcker den GLOBALT
+// AKTIVA valtypen): Dashboard-rutorna anropar denna komponent med SIN EGEN valtyp,
+// som kan skilja sig från den aktiva — samma resonemang som useAreaView.ts.
 import { useMemo } from 'react'
 import { useResults, type Area } from '@/components/ResultsProvider'
 import { LEVELS, PROMPT, areaFromSelectValue } from '@/lib/areaSelect'
@@ -23,7 +27,7 @@ export function AreaSelect({
   areaName: string
   onChange: (next: Area) => void
 }) {
-  const { kommuner, regioner, valkretsar } = useResults()
+  const { kommuner, regioner, valkretsListRef, snapshotVersion } = useResults()
   const levels = LEVELS[valtyp]
 
   // Regionväljaren (RF) ska bara lista regioner som FAKTISKT har ett regionval — Gotland
@@ -39,9 +43,11 @@ export function AreaSelect({
   // — sorterat på suffixet ser då slumpmässigt blandat ut (Jönköping mellan Halland och
   // Kalmar). Sortera i stället på den riktiga visningstexten.
   const valkretsarForSelect = useMemo(() => {
+    const valkretsar = valkretsListRef.current[valtyp] ?? []
     const label = (v: (typeof valkretsar)[number]) => (valtyp === 'RF' ? `${regionName.get(v.code.slice(0, 2)) ?? ''} · ${v.name}` : v.name)
     return [...valkretsar].sort((a, b) => label(a).localeCompare(label(b), 'sv'))
-  }, [valkretsar, valtyp, regionName])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [valtyp, regionName, snapshotVersion])
 
   const isPrompt = area.level !== 'riket' && area.code == null
   const selectValue = isPrompt

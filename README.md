@@ -105,6 +105,10 @@ valnatten, så kartan visar "inga 2026-röster än" tills dess.
   besökare som bara läser resultat aldrig betalar för geometrin/WebGL-kontexten. Båda
   layouterna delar samma state, så valt val + område följer med över brytpunkten (t.ex. vid
   rotation) utan omladdning.
+- **Dashboard-vy — fyra oberoende resultatrutor.** Enbart desktop; en Karta/Dashboard-
+  växlare ersätter fullskärmskartan med ett rutnät av fyra rutor, var och en med egen
+  valtyp- och områdesväljare (samma `useAreaView`/`AreaSelect`-byggstenar som huvudvyn),
+  så t.ex. Riksdagen i en valkrets kan jämföras mot Kommunvalet i en annan, sida vid sida.
 - **Skarp valnatt-ingest** — en Deno edge function schemalagd med `pg_cron` pollar de
   **preliminära** resultatfilerna och **strömmar** in dem (fflate streaming-unzip → SAX-parser →
   batch-upsert), så minnet är oberoende av filstorlek. Verifierad end-to-end mot generalrepet; på
