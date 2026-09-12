@@ -8,6 +8,9 @@ import { PartyLegend } from '@/components/PartyLegend'
 import { MobileApp } from '@/components/mobile/MobileApp'
 import { AttributionInfo } from '@/components/AttributionInfo'
 import { DashboardGrid } from '@/components/DashboardGrid'
+import { TestdataBanner } from '@/components/TestdataBanner'
+import { InfoButton } from '@/components/InfoButton'
+import { ReportingStatus } from '@/components/ReportingStatus'
 import { VALTYPER } from '@/lib/results'
 
 // Brytpunkt = Tailwinds xl (1280 px). Desktop-layouten (svävande overlays) visas från
@@ -33,7 +36,7 @@ function useIsMobile() {
 // App() till en egen komponent så mobil/desktop kan dela EN ResultsProvider (snapshot
 // laddas en gång, överlever rotation över brytpunkten).
 function DesktopApp() {
-  const { valtyp, view, setView } = useResults()
+  const { valtyp, view, setView, dataset } = useResults()
   return (
     <main className="relative h-screen w-screen overflow-hidden bg-[#0b1020] text-slate-100">
         {/* Vy-växlare (Karta/Dashboard) — alltid synlig, oavsett läge. Samma bredd/
@@ -59,6 +62,27 @@ function DesktopApp() {
           </div>
         </div>
 
+        {/* Dashboard-lägets header-chrome — testdata-banner, rapporteringsstatus och
+            källhänvisning. Kartläget visar samma info redan via DistrictMap:s egna
+            interna delar (banner/attribution i vänsterspalten), så detta renderas
+            BARA i Dashboard-läget för att undvika dubblering. Ryms i den vänstra,
+            annars tomma delen av 44px-headerremsan (vy-växlaren upptar bara
+            höger, --panel-w-breda, delen). Komponenterna delas med mobil —
+            extraherade ur MobileChrome.tsx i denna fix-våg. */}
+        {view === 'dashboard' && (
+          <div className="absolute left-0 top-0 z-20 flex h-11 items-center gap-3 overflow-hidden px-4">
+            {dataset?.test && <TestdataBanner genrep={dataset.source === 'genrep2026'} />}
+            <ReportingStatus />
+            <InfoButton />
+          </div>
+        )}
+
+        {/* Kartläge vs Dashboard-läge byts genom att montera/avmontera hela grenen —
+            varje toggle till Karta gör alltså en FULL DistrictMap-reinit (GeoJSON
+            re-tessellation, viewport återställd till SWEDEN_BOUNDS, panorering/zoom
+            tappas). Ett medvetet, accepterat UX-tradeoff för v1 (för riskabelt att
+            ändra strax före valnatten) — kontrasta mot MobileApp.tsx:s tab-växlare,
+            som håller kartan monterad och togglar `hidden` för att slippa just detta. */}
         {view === 'karta' ? (
           <>
             <DistrictMap />

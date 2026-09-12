@@ -5,11 +5,11 @@
 //   • områdesrad — visar valt område + snabb återställning till valtypens toppnivå;
 //     tapp öppnar Resultat-fliken (där drill-down-listan bor). Full väljare = fas 2.
 //   • kompakt rapporteringsstatus (X av Y · %) + live-indikator.
-import { useState } from 'react'
-import { createPortal } from 'react-dom'
 import { useResults, defaultAreaFor } from '@/components/ResultsProvider'
 import { ValtypSelector } from '@/components/ValtypSelector'
-import { AttributionInfo } from '@/components/AttributionInfo'
+import { TestdataBanner } from '@/components/TestdataBanner'
+import { InfoButton } from '@/components/InfoButton'
+import { ReportingStatus } from '@/components/ReportingStatus'
 import { GROUP_LEVEL_LABEL, VALTYP_LABEL } from '@/lib/results'
 
 // Kartfärgläget (se ColorMode/ValtypSelector showColorMode) på mobil: samma två lägen
@@ -35,116 +35,6 @@ function ColorModeToggle() {
         <path d="m3.5 17 8.5 5 8.5-5" />
       </svg>
     </button>
-  )
-}
-
-// Källhänvisning saknar annars plats på mobil (desktopens info-kort finns bara i
-// vänsterspalten) — Valmyndighetens villkor kräver att källan syns oavsett viewport.
-// Enkel knapp + overlay-popover, samma text som desktop via <AttributionInfo>.
-function InfoButton() {
-  const [open, setOpen] = useState(false)
-  return (
-    <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        aria-label="Om källa och mandatberäkning"
-        title="Om källa och mandatberäkning"
-        className="flex shrink-0 items-center justify-center rounded-md border border-slate-700 bg-slate-900/90 p-2 text-slate-300"
-      >
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <circle cx="12" cy="12" r="10" />
-          <path d="M12 16v-4M12 8h.01" />
-        </svg>
-      </button>
-      {open &&
-        createPortal(
-          // Portal till document.body: headern har backdrop-blur, vilket skapar ett nytt
-          // "containing block" för position:fixed-barn (samma effekt som transform/filter)
-          // — utan portalen kapas overlayn till headerns egen ruta och hamnar under kartan.
-          <div
-            className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4 pt-16"
-            onClick={() => setOpen(false)}
-          >
-            <div
-              role="dialog"
-              aria-label="Om källa och mandatberäkning"
-              className="w-full max-w-sm rounded-lg border border-slate-700 bg-slate-900 p-4 shadow-lg"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <AttributionInfo />
-                <button
-                  type="button"
-                  onClick={() => setOpen(false)}
-                  aria-label="Stäng"
-                  className="shrink-0 rounded text-slate-400 hover:text-slate-100"
-                >
-                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <path d="M18 6 6 18M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-          </div>,
-          document.body,
-        )}
-    </>
-  )
-}
-
-// genrep = generalrepetitionens testdata flödar; annars mellanläget efter en valnatts-
-// cutover men innan Valmyndigheten publicerat något (source 'reset') — samma
-// grenlogik/motivering som desktopens banner i DistrictMap.tsx.
-function TestdataBanner({ genrep }: { genrep: boolean }) {
-  return (
-    <div className="flex items-center gap-2 border-b border-amber-500/50 bg-amber-500/15 px-3 py-1.5 text-[12px] font-semibold text-amber-200">
-      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
-        <path d="M12 9v4M12 17h.01" />
-      </svg>
-      {genrep ? (
-        <span>Generalrep · <span className="font-bold">testdata</span> — inte skarpa valresultat</span>
-      ) : (
-        <span><span className="font-bold">Väntar på valnatten</span> — inga resultat än</span>
-      )}
-    </div>
-  )
-}
-
-// Kompakt rapporteringsstatus, härledd ur providerns store (inte kartans lokala state,
-// så den funkar även innan Karta-fliken öppnats). Bumpas av revision/snapshotVersion.
-function ReportingStatus() {
-  const { valtyp, totalByValtyp, storesRef, realtimeConnected, pollError, revision, snapshotVersion } = useResults()
-  void revision
-  void snapshotVersion
-  const store = storesRef.current[valtyp]
-  const reported = store.reportedCount
-  const total = totalByValtyp[valtyp]
-  if (total === 0) return null
-  const pct = Math.round((reported / total) * 100)
-  const prog = store.slutligProgress()
-  const tone =
-    prog.state === 'preliminar' ? 'bg-amber-500/15 text-amber-300'
-    : prog.state === 'slutlig' ? 'bg-emerald-500/15 text-emerald-300'
-    : 'bg-sky-500/15 text-sky-300'
-  const label =
-    prog.state === 'preliminar' ? 'Prel.'
-    : prog.state === 'slutlig' ? 'Slutgiltigt'
-    : `${prog.pct} %`
-  return (
-    <div className="flex shrink-0 items-center gap-1.5 text-[11px] text-slate-300">
-      <span className={`rounded px-1.5 py-0.5 font-semibold uppercase tracking-wide ${tone}`}>{label}</span>
-      <span className="tabular-nums">
-        <span className="font-semibold text-slate-100">{reported.toLocaleString('sv-SE')}</span>
-        <span className="text-slate-500"> / {total.toLocaleString('sv-SE')}</span>
-        <span className="ml-1 text-sky-300">{pct}%</span>
-      </span>
-      <span
-        className={`h-1.5 w-1.5 rounded-full ${realtimeConnected ? 'animate-pulse bg-emerald-400' : pollError ? 'bg-amber-400' : 'bg-slate-500'}`}
-        title={realtimeConnected ? 'Live' : pollError ?? 'Pausad'}
-      />
-    </div>
   )
 }
 

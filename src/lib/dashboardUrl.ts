@@ -30,7 +30,9 @@ export type ViewMode = 'karta' | 'dashboard'
 export type DashboardBox = { valtyp: Valtyp; area: Area }
 const DASHBOARD_BOX_COUNT = 4
 
-function encodeAreaParam(area: Area): string {
+// Delad med ResultsProvider.tsx:s viewToSearch (samma "nivå:kod"-kodning för karta-
+// lägets ?omrade=) — se finalgranskningens fix-våg (Minor #3, DRY).
+export function encodeAreaParam(area: Area): string {
   return `${area.level}${area.code ? ':' + encodeURIComponent(area.code) : ''}`
 }
 

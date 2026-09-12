@@ -19,7 +19,7 @@ import { buildGroups, type AreaComparison, type AreaGroups, type Comparison2022,
 import type { PartyVotes } from '@/lib/mandate'
 import type { AreaIndex } from '@/lib/hierarchy'
 import { RIKET, defaultAreaFor, type Area, type NamedCode } from '@/lib/area'
-import { parseAreaParam, readDashboardFromUrl, dashboardToSearch, type ViewMode, type DashboardBox } from '@/lib/dashboardUrl'
+import { parseAreaParam, readDashboardFromUrl, dashboardToSearch, encodeAreaParam, type ViewMode, type DashboardBox } from '@/lib/dashboardUrl'
 
 export { RIKET, defaultAreaFor, type Area, type NamedCode } from '@/lib/area'
 export type { ViewMode, DashboardBox } from '@/lib/dashboardUrl'
@@ -91,7 +91,8 @@ export function viewToSearch(valtyp: Valtyp, area: Area, colorMode: ColorMode): 
   if (valtyp === 'RD' && areaIsDefault && !farg) return '' // app-defaulten (Riksdag/Riket/Valdistrikt) → ren URL
   // Bygg strängen för hand så "nivå:kod" behåller ett läsbart kolon (URLSearchParams
   // %3A-kodar det). Koderna är siffror/korta alfanumeriska → encodeURIComponent är no-op.
-  const omrade = areaIsDefault ? '' : `&omrade=${area.level}${area.code ? ':' + encodeURIComponent(area.code) : ''}`
+  // encodeAreaParam delas med dashboardUrl.ts (samma kodning för Dashboard-vyns aN=).
+  const omrade = areaIsDefault ? '' : `&omrade=${encodeAreaParam(area)}`
   return `?val=${valtyp}${omrade}${farg}`
 }
 
