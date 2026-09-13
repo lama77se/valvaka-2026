@@ -202,14 +202,8 @@ export function computeAreaView(p: AreaViewParams): AreaViewResult {
           return { seatsByParty, totalMandat: Object.values(seatsByParty).reduce((a, b) => a + b, 0) }
         })()
       : null
-  // Hämtas HÄR (innan buildRows), inte bara vid invalidVotes-blocket nedan: t.ejAnmalda
-  // (Valmyndighetens "rösterEjPaverkaMandat.rosterEjAnmaltDeltagande" — de ~81 icke-
-  // itemiserade småpartiernas samlade röster) vägs numera in i giltiga/Övriga-raden via
-  // buildRows, se dess kommentar. Handover Val ANALYSIS 13 sep: säkert (mandaträkningen
-  // delar inte giltiga), avgränsat till denna visning.
-  const t = turnoutStore.aggregate(codes)
   let areaResult = applyMandate(
-    buildRows(votes, party, sparrFor(valtyp, area.level, area.code), t.ejAnmalda ?? 0),
+    buildRows(votes, party, sparrFor(valtyp, area.level, area.code)),
     valseMandate ?? mandate ?? (valkretsMandate && { seatsByParty: valkretsMandate.seatsByParty, totalMandat: valkretsMandate.totalSeats }),
   )
   const districtLeaf =
@@ -217,6 +211,7 @@ export function computeAreaView(p: AreaViewParams): AreaViewResult {
   areaResult = applyComparison(areaResult, valtyp, area.level, area.code, comparison, party, districtLeaf)
   const display = collapseForDisplay(areaResult)
   const has2022 = areaResult.rows.some((r) => r.andel2022 != null)
+  const t = turnoutStore.aggregate(codes)
   // Valdeltagande för området: Σtotalt / Σröstberättigade över dess (reguljära) distrikt.
   // null när nämnaren är 0 (inga rapporterade distrikt med röstlängd än) → visas ej.
   const turnout = t.rb > 0 ? (t.total / t.rb) * 100 : null
