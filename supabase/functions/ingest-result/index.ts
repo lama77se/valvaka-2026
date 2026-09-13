@@ -83,11 +83,68 @@ interface FileResult {
   turnoutUp?: number
   bytes?: number // zip-bytes (CPU-proxy för invokeringens budget); ~0 för toobig
   error?: string
+  // Valmyndighetens EGEN mandatfördelning (mandat_valse, handover 13 sep) — HELT ISOLERAT
+  // från röstvägen ovan (se processFile). mandatError sätts ALDRIG status till något annat
+  // än 'ok'/whatever röstvägen bestämde — ett mandatfel påverkar aldrig om filen markeras
+  // done. Bara satta när mandatMode !== 'av'.
+  mandatUp?: number
+  mandatError?: string
+}
+
+// Trestegsflagga för mandatkälla (dataset_meta.mandat_kalla, migration 20260913130000):
+// 'av' (default) → denna edge FÖRSÖKER INTE ens parsa mandatfilen (noll CPU/risk).
+// 'shadow'/'aktiv' → parsa + lagra (identiskt ingest-beteende — skillnaden mellan de två är
+// bara VILKEN källa FRONTEND läser, se src/lib/areaView.ts, inte något edge gör olika här).
+type MandatMode = 'av' | 'shadow' | 'aktiv'
+
+// val.se:s mandatfordelning-format (verifierat i scripts/verify-mandatfordelning-live.ts,
+// samma fil denna kommentar speglar). Bara de fält vi faktiskt läser.
+interface PartiMandat { partikod: string; antalMandat: number; antalFastaMandat?: number; antalUtjamningsmandat?: number }
+interface MandatValkrets { kod?: string; mandatfordelning?: { partiLista?: PartiMandat[] } | null }
+interface MandatFile {
+  valomrade?: {
+    kod?: string
+    mandatfordelning?: { partiLista?: PartiMandat[] } | null
+    valkretsLista?: MandatValkrets[] | null
+  }
+}
+
+// Bygger mandat_valse-rader ur EN partiLista (organ- eller valkretsnivå) — ren, oberoende
+// av Deno/Supabase, defensiv (kastar ALDRIG: ogiltiga/okända fält hoppas bara över). Anropas
+// från den ISOLERADE mandat-sektionen i processFile, som ändå fångar ev. kastade fel —
+// denna funktions egen försiktighet är ett extra lager, inte den enda spärren.
+function mandatRowsFromPartiLista(
+  partiLista: PartiMandat[] | null | undefined,
+  valtyp: string,
+  niva: 'organ' | 'valkrets',
+  omradeskod: string,
+  status: string,
+  partySet: Set<string>,
+): Record<string, unknown>[] {
+  if (!Array.isArray(partiLista)) return []
+  const out: Record<string, unknown>[] = []
+  for (const p of partiLista) {
+    if (!p || typeof p.partikod !== 'string' || !partySet.has(p.partikod)) continue
+    if (typeof p.antalMandat !== 'number') continue
+    out.push({
+      valtyp,
+      niva,
+      omradeskod,
+      partikod: p.partikod,
+      antal_mandat: p.antalMandat,
+      antal_fasta_mandat: typeof p.antalFastaMandat === 'number' ? p.antalFastaMandat : null,
+      antal_utjamningsmandat: typeof p.antalUtjamningsmandat === 'number' ? p.antalUtjamningsmandat : null,
+      status,
+    })
+  }
+  return out
 }
 
 // Hämta EN organ-zip → packa upp → JSON.parse → upserta result (status ur rakningstillfalle) +
 // uppsamling_result + turnout i stora klungor. Returnerar status som styr om filen markeras done.
-async function processFile(url: string, districtSet: Set<string>, partySet: Set<string>, supabase: SupabaseClient, probe: boolean): Promise<FileResult> {
+// mandatMode styr ENDAST den helt separata, isolerade mandat-sektionen längre ned — se dess
+// egen kommentar. Röstvägen ovan/nedan är HELT OFÖRÄNDRAD av mandatMode.
+async function processFile(url: string, districtSet: Set<string>, partySet: Set<string>, supabase: SupabaseClient, probe: boolean, mandatMode: MandatMode): Promise<FileResult> {
   let res: Response
   try {
     res = await fetch(url, { signal: AbortSignal.timeout(20_000) })
@@ -115,6 +172,12 @@ async function processFile(url: string, districtSet: Set<string>, partySet: Set<
   // sträng + objektträd ≈ 150 MB för riks-RD; edge-taket 256 MB).
   // deno-lint-ignore no-explicit-any
   let j: any
+  // Mandatfilens RÅA text (ingen JSON.parse här) — ur SAMMA redan uppackade zip, ingen extra
+  // nätverksbudget. Parsas/används senare i en HELT SEPARAT, isolerad sektion (efter röst-
+  // upserten) — extraheras bara som text HÄR så ett fel i MANDATFILEN aldrig kan trigga
+  // `corrupt` och kasta bort en annars perfekt bra röstfil (se isoleringskravet, handover
+  // 13 sep). typeof-decode kastar i praktiken aldrig för giltig UTF-8, men catch:as ändå.
+  let mandatText: string | null = null
   try {
     const unz = unzipSync(zip)
     zip = null
@@ -125,6 +188,16 @@ async function processFile(url: string, districtSet: Set<string>, partySet: Set<
     if (!name) return { status: names.length ? 'nodata' : 'incomplete', bytes }
     const text = new TextDecoder().decode(unz[name])
     j = JSON.parse(text)
+    if (mandatMode !== 'av') {
+      const mandatName = names.find((n) => /mandatfordelning.*\.json$/i.test(n))
+      if (mandatName) {
+        try {
+          mandatText = new TextDecoder().decode(unz[mandatName])
+        } catch {
+          mandatText = null // tyst — mandat-sektionen nedan hoppar bara över, röstvägen opåverkad
+        }
+      }
+    }
   } catch (e) {
     // Korrupt zip/JSON för denna md5 → done (annars svält); en trunkerad nedladdning ger oftast
     // fflate-fel här också — men md5:n byts när val.se publicerar om, så den kommer tillbaka.
@@ -212,7 +285,44 @@ async function processFile(url: string, districtSet: Set<string>, partySet: Set<
   } catch (e) {
     return { status: 'dberror', error: (e as Error).message, bytes }
   }
-  return { status: 'ok', meta, resultUp: rows.length, uppUp: upp.length, turnoutUp: turnout.length, bytes }
+
+  // --- MANDAT (Valmyndighetens EGEN mandatfördelning, handover 13 sep) -------------------
+  // 🔴 ISOLERINGSKRAV: röster är REDAN upserterade ovan, okonditionerat, exakt som förut.
+  // Allt nedanför körs i ETT EGET try/catch, oberoende av röstvägens. Mandatparsning är
+  // OTESTAD mot skarp/genrep-data (till skillnad från röstvägen ovan, veckor av genrep-
+  // körningar bakom sig) — ETT kastat fel här (JSON.parse, oväntad form, DB-fel) fångas
+  // och loggas HÄR och kan ALDRIG bubbla upp och göra att en fil med perfekt bra röstdata
+  // markeras 'dberror'/krascha invokeringen. `status`/`resultUp`/`uppUp`/`turnoutUp` nedan
+  // är redan fastställda ovanför och rörs inte.
+  let mandatUp = 0
+  let mandatBytes = 0
+  let mandatError: string | undefined
+  if (mandatMode !== 'av' && mandatText) {
+    try {
+      mandatBytes = mandatText.length // räkna in i invokeringens CPU/byte-budget (krav d)
+      const m = JSON.parse(mandatText) as MandatFile
+      const vo = m.valomrade
+      const mandatRows: Record<string, unknown>[] = []
+      if (vo) {
+        // RD:s organnivå (riket) har ingen meningsfull områdeskod i filen → fast sentinel,
+        // symmetrisk med klientens egen 'riket'-nivå (se areaView.ts MANDAT_LEVELS).
+        const organKod = valtyp === 'RD' ? 'riket' : (typeof vo.kod === 'string' ? vo.kod : null)
+        if (organKod) mandatRows.push(...mandatRowsFromPartiLista(vo.mandatfordelning?.partiLista, valtyp, 'organ', organKod, status, partySet))
+        for (const vk of (Array.isArray(vo.valkretsLista) ? vo.valkretsLista : [])) {
+          if (vk && typeof vk.kod === 'string') {
+            mandatRows.push(...mandatRowsFromPartiLista(vk.mandatfordelning?.partiLista, valtyp, 'valkrets', vk.kod, status, partySet))
+          }
+        }
+      }
+      await upsert('mandat_valse', mandatRows, 2000, 'valtyp,niva,omradeskod,partikod')
+      mandatUp = mandatRows.length
+    } catch (e) {
+      mandatError = (e as Error).message
+      console.error('[ingest-result] mandat (isolerat — filens status/röster OPÅVERKADE)', url, mandatError)
+    }
+  }
+
+  return { status: 'ok', meta, resultUp: rows.length, uppUp: upp.length, turnoutUp: turnout.length, bytes: bytes + mandatBytes, mandatUp, mandatError }
 }
 
 // SNAPSHOT-BLOBBAR (CDN-contingencyn, migration 20260905150000): Postgres bygger en kompakt JSON
@@ -328,6 +438,18 @@ Deno.serve(async (req) => {
     return json({ ok: false, error: `referensdata ofullständig (district=${districtSet.size}, party=${partySet.size})` }, 503)
   }
 
+  // 3b. Mandatkälla-flaggan (dataset_meta.mandat_kalla, migration 20260913130000) — läses
+  //     DEFENSIVT: ETT FEL HÄR (t.ex. migrationen släpar efter denna deploy, kolumnen saknas
+  //     ännu) FÅR ALDRIG stoppa röstingesten — degradera tyst till 'av' (samma som startläget)
+  //     i stället för att avbryta (till skillnad från district/party ovan, som ÄR kritiska).
+  let mandatMode: MandatMode = 'av'
+  try {
+    const { data: dsMeta } = await supabase.from('dataset_meta').select('mandat_kalla').eq('id', 1).maybeSingle()
+    if (dsMeta?.mandat_kalla === 'shadow' || dsMeta?.mandat_kalla === 'aktiv') mandatMode = dsMeta.mandat_kalla
+  } catch {
+    // mandatMode förblir 'av' — se kommentaren ovan.
+  }
+
   // 4. Per ändrad organ-fil: hämta → parsa → upserta. Väggtidsbudget → stanna innan edge-taket,
   //    resten nästa varv. Filen markeras done UTOM vid transient fel.
   let upserted = 0
@@ -336,6 +458,11 @@ Deno.serve(async (req) => {
   let skipped = 0
   let failed = 0 // transienta fel (fetchfail/dberror/incomplete) — filen försöks igen nästa varv
   const errors: string[] = [] // de första felen i klartext → syns i net._http_response-kroppen
+  // Mandat-räknare (bara meningsfulla när mandatMode !== 'av') — HELT SEPARATA från failed/errors
+  // ovan: ett mandatfel gör ALDRIG att en fil räknas som failed/transient (se processFile).
+  let mandatUpserted = 0
+  let mandatFailed = 0
+  const mandatErrors: string[] = []
   const touched = new Set<string>() // valtyper vars data ändrades denna körning → regenerera deras blobbar
   let meta: FileMeta | null = null
   const deadline = Date.now() + BUDGET_MS
@@ -354,7 +481,7 @@ Deno.serve(async (req) => {
         { onConflict: 'file_path' },
       )
     }
-    const r = await processFile(f.url, districtSet, partySet, supabase, probe)
+    const r = await processFile(f.url, districtSet, partySet, supabase, probe, mandatMode)
     processed++
     invokeBytes += r.bytes ?? 0 // toobig hämtar ~0 (kroppen avbruten) → äter inte budgeten
     if (r.status === 'fetchfail' || r.status === 'dberror' || r.status === 'incomplete') {
@@ -370,6 +497,11 @@ Deno.serve(async (req) => {
       upserted += r.resultUp ?? 0
       uppUpserted += r.uppUp ?? 0
       turnoutUpserted += r.turnoutUp ?? 0
+      mandatUpserted += r.mandatUp ?? 0
+      if (r.mandatError) {
+        mandatFailed++
+        if (mandatErrors.length < 5) mandatErrors.push(`${f.rel}: ${r.mandatError}`)
+      }
       const vt = vtOf(f.rel)
       if (vt && !probe) touched.add(vt)
     } else {
@@ -416,6 +548,9 @@ Deno.serve(async (req) => {
     remaining: allChanged.length - processed, // inkl. det som budget/stor-fil-break lämnade kvar
     ...(errors.length ? { errors } : {}),
     ...(toRefresh.length ? { snapshots } : {}),
+    // Mandat (Valmyndighetens EGEN mandatfördelning) — bara med i svaret när flaggan
+    // faktiskt är påslagen (av-läget: ingen mandatMode-nyckel alls, oförändrat svar mot idag).
+    ...(mandatMode !== 'av' ? { mandatMode, mandatUpserted, mandatFailed, ...(mandatErrors.length ? { mandatErrors } : {}) } : {}),
   })
   } finally {
     if (leased) {
