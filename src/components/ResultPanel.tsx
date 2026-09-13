@@ -31,6 +31,7 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
     selectedArea,
     setSelectedArea,
     storesRef,
+    turnoutStoresRef,
     partyRef,
     allCodesRef,
     groupsRef,
@@ -104,6 +105,7 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
   const drill = useMemo(() => {
     void revision
     const store = storesRef.current[valtyp]
+    const turnoutStore = turnoutStoresRef.current[valtyp]
     const groups = isPrompt
       ? [...(valtyp === 'RF' ? groupsRef.current.byLan : groupsRef.current.byKommun)].map(([code, districts]) => ({
           level: (valtyp === 'RF' ? 'region' : 'kommun') as Level,
@@ -152,6 +154,17 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
       const votes = mergeVotes(store.aggregate(g.districts), g.level === 'valkrets' ? uppsamling.byValkrets.get(g.code) : null)
       let total = 0
       for (const v of Object.values(votes)) total += v
+      // Övriga partier-gapet (se areaView.ts/computeAreaView, PR #172) — samma per-distrikt-
+      // summering (distriktets EGEN deklarerade rosterPaverkaMandat.antalRoster minus dess
+      // itemiserade röster), men över BARNETS egna distrikt (g.districts) i stället för hela
+      // områdets `codes`. Denna "Bryt ner"-beräkning lever i en helt separat kodsväng
+      // (mergeVotes+total här, inte buildRows/aggregate.ts) och missades av #172 — utan detta
+      // blev barnradernas nämnare (och därmed alla andelar/Δ mot 2022) systematiskt för liten.
+      total += g.districts.reduce((sum, vd) => {
+        const rpm = turnoutStore.rosterPaverkarMandat(vd)
+        if (rpm == null) return sum
+        return sum + Math.max(0, rpm - store.outcome(vd).total)
+      }, 0)
       const a26: Record<string, number> = {} // förkortning → andel 2026 (0..1)
       for (const [pk, v] of Object.entries(votes)) { const f = pmap.get(pk)?.forkortning; if (f) a26[f] = (a26[f] ?? 0) + v }
       if (total > 0) for (const f in a26) a26[f] /= total
