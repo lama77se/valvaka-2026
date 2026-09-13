@@ -64,11 +64,20 @@ export interface AreaResult {
   sparr: number
   totalMandat: number | null
   totalMandat2022: number | null
+  // Giltiga, ALDRIG individuellt itemiserade röster (val.se:s "Övriga partier"-koncept, se
+  // computeOvrigaGiltigaRoster i areaView.ts) — REDAN invägt i giltiga ovan (så alla partiers
+  // andel räknas mot samma nämnare som val.se). INTE samma sak som de kända-men-under-tröskeln
+  // partier collapseForDisplay grupperar ihop nedan — den ihopslagningen läggs OVANPÅ detta, se
+  // ovriga-uträkningen. 0 = antingen inget känt gap än, eller inget gap alls.
+  ovrigaGiltigaRoster: number
 }
 
-// Bygg partirader ur redan aggregerade röster för ETT område.
-export function buildRows(votes: PartyVotes, party: Map<string, PartyMeta>, sparr: number): AreaResult {
-  const giltiga = Object.values(votes).reduce((a, b) => a + b, 0)
+// Bygg partirader ur redan aggregerade röster för ETT område. ovrigaGiltigaRoster (default 0,
+// bakåtkompatibel — scripts/verify-area-view*.ts anropar utan den) läggs till giltiga-nämnaren
+// INNAN andel räknas ut, så ALLA partiers andel (inte bara Övriga-radens) matchar val.se:s
+// nämnare. Se AreaResult-kommentaren ovan för vad talet betyder.
+export function buildRows(votes: PartyVotes, party: Map<string, PartyMeta>, sparr: number, ovrigaGiltigaRoster = 0): AreaResult {
+  const giltiga = Object.values(votes).reduce((a, b) => a + b, 0) + ovrigaGiltigaRoster
   const rows: PartyRow[] = Object.entries(votes).map(([partikod, roster]) => {
     const andel = giltiga > 0 ? roster / giltiga : 0
     const m = party.get(partikod)
@@ -88,7 +97,7 @@ export function buildRows(votes: PartyVotes, party: Map<string, PartyMeta>, spar
     }
   })
   rows.sort((a, b) => b.roster - a.roster)
-  return { rows, giltiga, sparr, totalMandat: null, totalMandat2022: null }
+  return { rows, giltiga, sparr, totalMandat: null, totalMandat2022: null, ovrigaGiltigaRoster }
 }
 
 export interface OvrigaRow {
@@ -114,11 +123,17 @@ export function collapseForDisplay(area: AreaResult, threshold = DISPLAY_THRESHO
   const rest = area.rows.filter((r) => displayAndel(r) < threshold)
   const sum = (rs: PartyRow[], pick: (r: PartyRow) => number | null) =>
     rs.every((r) => pick(r) == null) ? null : rs.reduce((a, r) => a + (pick(r) ?? 0), 0)
-  const ovriga: OvrigaRow | null = rest.length
+  // ovrigaGiltigaRoster (aldrig itemiserade partiers giltiga röster, se AreaResult-kommentaren)
+  // läggs OVANPÅ de kända-men-under-tröskeln partiernas summa — samma "Övriga"-rad, två källor.
+  // `count` räknas fortfarande bara ur KÄNDA partier (rest.length) — gapet motsvarar inget
+  // specifikt antal partier, bara en aggregerad okänd rest.
+  const ovrigaRoster = rest.reduce((a, r) => a + r.roster, 0) + area.ovrigaGiltigaRoster
+  const ovrigaAndel = rest.reduce((a, r) => a + r.andel, 0) + (area.giltiga > 0 ? area.ovrigaGiltigaRoster / area.giltiga : 0)
+  const ovriga: OvrigaRow | null = rest.length || area.ovrigaGiltigaRoster > 0
     ? {
         count: rest.length,
-        roster: rest.reduce((a, r) => a + r.roster, 0),
-        andel: rest.reduce((a, r) => a + r.andel, 0),
+        roster: ovrigaRoster,
+        andel: ovrigaAndel,
         mandat: sum(rest, (r) => r.mandat),
         andel2022: sum(rest, (r) => r.andel2022),
         mandat2022: sum(rest, (r) => r.mandat2022),
