@@ -142,6 +142,13 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
   }
 
   const pendingRef = useRef<Set<string>>(new Set())
+  // Distrikt som INTE själva rapporterat men fick feature-state satt ändå, för att
+  // 'grupp'-läget expanderar målningen till hela gruppen (se districtsToRepaint).
+  // Måste kommas ihåg mellan repaint-cykler: byter man TILLBAKA till 'distrikt' (eller
+  // stänger av 'party') räcker det inte att bara måla om pendingRef/den nya uträknade
+  // mängden — dessa distrikt har redan ett explicit (icke-null) 'color' i feature-state
+  // och skulle annars sitta kvar färgade för alltid (coalesce faller aldrig till grå).
+  const groupPaintedRef = useRef<Set<string>>(new Set())
   const rafRef = useRef<number | null>(null)
   const sourceReadyRef = useRef(false)
   const activeValtypRef = useRef<Valtyp>(valtyp) // speglar `valtyp` för closures
@@ -506,22 +513,34 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
       rafRef.current = requestAnimationFrame(() => {
         rafRef.current = null
         if (removed) return
+        let toPaint: Set<string>
         if (colorSchemeRef.current === 'party' && selectedPartyRef.current && pendingRef.current.size > 0) {
           // Samma skäl som 'grupp'-grenen nedan: en ändring var som helst kan ändra
           // den dynamiska maxskalan → måla om ALLA, inte bara pendingRef-posterna.
           // districtsToRepaint expanderar till HELA gruppen om colorMode='grupp' (se
           // dess kommentar) — annars bara de som faktiskt rapporterat, som förut.
           recomputePartyShares()
-          for (const vt of VALTYPER) for (const vd of districtsToRepaint(vt)) applyDistrict(vd)
+          toPaint = new Set()
+          for (const vt of VALTYPER) for (const vd of districtsToRepaint(vt)) toPaint.add(vd)
         } else if (colorModeRef.current === 'grupp' && pendingRef.current.size > 0) {
           // En ändring i ETT distrikt kan byta hela gruppens vinnare → måla om ALLA
           // (samma unions-iteration som recolorActive), inte bara pendingRef-posterna.
           if (colorSchemeRef.current === 'block') groupBlockWinnersRef.current = computeGroupBlockWinners(activeValtypRef.current)
           else groupWinnersRef.current = computeGroupWinners(activeValtypRef.current)
-          for (const vt of VALTYPER) for (const vd of districtsToRepaint(vt)) applyDistrict(vd)
+          toPaint = new Set()
+          for (const vt of VALTYPER) for (const vd of districtsToRepaint(vt)) toPaint.add(vd)
         } else {
-          for (const vd of pendingRef.current) applyDistrict(vd)
+          toPaint = new Set(pendingRef.current)
         }
+        // Rensa kvarvarande grupp-målad yta från en TIDIGARE cykel som inte längre ska
+        // vara målad i detta läge (t.ex. bytte tillbaka från 'grupp' till 'distrikt', eller
+        // stängde av 'party') — dessa distrikt har redan ett explicit (icke-null) 'color' i
+        // feature-state sedan förra cykeln och skulle annars sitta kvar färgade för alltid
+        // (coalesce faller aldrig till grå av sig själv). applyDistrict räknar om dem enligt
+        // det NU aktiva läget, vilket korrekt nollställer dem om de inte längre ska vara med.
+        for (const vd of groupPaintedRef.current) toPaint.add(vd)
+        groupPaintedRef.current = colorModeRef.current === 'grupp' ? new Set(toPaint) : new Set()
+        for (const vd of toPaint) applyDistrict(vd)
         pendingRef.current.clear()
         const n = storesRef.current[activeValtypRef.current].reportedCount
         setReportedCount(n)
