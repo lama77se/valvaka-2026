@@ -925,10 +925,25 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
 
   // Ladda den AKTIVA valtypens snapshot (och ladda om vid valtyp-byte om den är oladdad).
   // Placerad EFTER Realtime-effekten så kanalen är uppsatt först. Desktop-tavlorna monterar
-  // alla tre valtyperna och triggar sina egna ensureValtypLoaded → alla tre laddas där.
+  // alla tre valtyperna och triggar sina egna ensureValtypLoaded → alla tre laddas där —
+  // men BARA i Karta-läget (App.tsx monterar dem inuti `view === 'karta'`-grenen).
   useEffect(() => {
     ensureValtypLoaded(valtyp)
   }, [valtyp, ensureValtypLoaded])
+
+  // Dashboard-läget: de fyra rutorna (AreaSummary/useAreaView) kan visa VILKEN SOM HELST
+  // av de tre valtyperna oberoende av den globala `valtyp` ovan — och avgångstavlorna (den
+  // ENDA andra platsen som laddar en icke-aktiv valtyp, se kommentaren ovan) monteras aldrig
+  // i Dashboard-läget. Utan detta stod en ruta för en valtyp som råkade skilja sig från den
+  // globala kvar på reported=0/total=0 (eller fel antal) för alltid — dess ResultStore hade
+  // ALDRIG laddats alls, inte bara omålad/stale. Verifierat: KF/RF-rutor visade 0 rapporterade
+  // trots skarp data, tills man råkade besöka den valtypen via Karta-vyn manuellt. Ladda
+  // därför explicit ALLA TRE så fort Dashboard-läget är aktivt — ensureValtypLoaded är redan
+  // självvaktande (loadedValtyperRef/loadingValtyperRef) så upprepade anrop är no-ops.
+  useEffect(() => {
+    if (view !== 'dashboard') return
+    for (const vt of VALTYPER) ensureValtypLoaded(vt)
+  }, [view, ensureValtypLoaded])
 
   // DEV-only introspektion för headless-validering av fas 3 (Vite strippar hela grenen ur
   // prod-bygget). Getters läser refar live → alltid färskt utan omregistrering. Read-only.
