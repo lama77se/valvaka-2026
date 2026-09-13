@@ -42,7 +42,7 @@ export function DepartureBoard({ valtyp, onRowSelect, fill, fullWidth, emphasize
   const {
     subscribeChanges, storesRef, partyRef, distriktNamnRef, totalByValtyp, setSelectedArea, setValtyp, revision,
     snapshotVersion, areaIndexRef, kommuner, regioner, valkretsListRef, ensureValtypLoaded,
-    valtyp: activeValtyp, selectedArea,
+    valtyp: activeValtyp, selectedArea, uppsamlingRegistryRef, uppsamlingRegistryReportedRef,
   } = useResults()
   const [rows, setRows] = useState<Row[]>([])
 
@@ -174,8 +174,12 @@ export function DepartureBoard({ valtyp, onRowSelect, fill, fullWidth, emphasize
 
   void revision // rendera om när aggregatet strypt-bumpats (håller andelar färska vid idle)
   const store = storesRef.current[valtyp]
-  const reported = store.reportedCount
-  const total = totalByValtyp[valtyp]
+  // Uppsamlingsdistrikten (handover 13 sep) räknas med i nämnaren, som val.se/SVT — se
+  // ReportingStatus.tsx för samma mönster/motivering.
+  const uppRegistry = uppsamlingRegistryRef.current[valtyp]
+  const uppReportedSet = uppsamlingRegistryReportedRef.current[valtyp]
+  const reported = store.reportedCount + uppRegistry.reduce((n, e) => n + (uppReportedSet.has(e.kod) ? 1 : 0), 0)
+  const total = totalByValtyp[valtyp] + uppRegistry.length
 
   // Namn-uppslag + hierarki-sökväg för DENNA tavlas valtyp (kan skilja sig från aktiv).
   const kommunName = useMemo(() => new Map(kommuner.map((k) => [k.code, k.name])), [kommuner])

@@ -15,13 +15,21 @@ import type { Valtyp } from '@/lib/results'
 // (App.tsx) skickar `large` — tre badges sida vid sida läses bättre i lite större
 // stil, och headerraden har gott om bredd (bara valtyp-etikett + siffror + dot).
 export function ReportingStatus({ valtyp: valtypProp, large = false }: { valtyp?: Valtyp; large?: boolean } = {}) {
-  const { valtyp: activeValtyp, totalByValtyp, storesRef, realtimeConnected, pollError, revision, snapshotVersion } = useResults()
+  const {
+    valtyp: activeValtyp, totalByValtyp, storesRef, uppsamlingRegistryRef, uppsamlingRegistryReportedRef,
+    realtimeConnected, pollError, revision, snapshotVersion,
+  } = useResults()
   void revision
   void snapshotVersion
   const valtyp = valtypProp ?? activeValtyp
   const store = storesRef.current[valtyp]
-  const reported = store.reportedCount
-  const total = totalByValtyp[valtyp]
+  // Uppsamlingsdistrikten (handover 13 sep) räknas med i nämnaren, som val.se/SVT — annars
+  // visar vi t.ex. RD "X av 6312" i stället för deras "X av 6626" (6312 geografiska + 314
+  // uppsamling). Se uppsamlingsdistrikt_registry/aggregate.ts.
+  const uppRegistry = uppsamlingRegistryRef.current[valtyp]
+  const uppReportedSet = uppsamlingRegistryReportedRef.current[valtyp]
+  const reported = store.reportedCount + uppRegistry.reduce((n, e) => n + (uppReportedSet.has(e.kod) ? 1 : 0), 0)
+  const total = totalByValtyp[valtyp] + uppRegistry.length
   if (total === 0) return null
   const pct = Math.round((reported / total) * 100)
   const prog = store.slutligProgress()

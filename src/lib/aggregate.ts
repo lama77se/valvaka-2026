@@ -143,6 +143,52 @@ export function collapseForDisplay(area: AreaResult, threshold = DISPLAY_THRESHO
   return { shown, ovriga, sparrIndex: idx === -1 ? shown.length : idx }
 }
 
+// --- Uppsamlingsdistrikt-registret (handover 13 sep, Val ANALYSIS) -------------
+// Strukturell referens (kod/kommunkod/lankod/kretskod/namn) över VILKA uppsamlingsdistrikt
+// som finns per valtyp — byggs upp automatiskt av ingest-result/index.ts (tabellen
+// uppsamlingsdistrikt_registry), oavsett om ett uppsamlingsdistrikt hunnit rapportera
+// några röster än (kod/kommunkod/lankod/kretskod är känt strukturellt från start, se
+// migration 20260913160000).
+export interface UppsamlingDistriktEntry {
+  kod: string
+  namn: string | null
+  kommunkod: string | null
+  lankod: string | null
+  kretskod: string | null
+}
+
+// "X av Y distrikt räknade"-nämnaren (ResultTable-undertexten/MandatBars-progress) ska
+// matcha val.se/SVT: de RÄKNAR MED uppsamlingsdistrikten (RD 314, färre/olika RF/KF) —
+// vi visade tidigare bara mot de geografiska (RD "X av 6312" i stället för val.se:s
+// "X av 6626"). Filtreringen SPEGLAR uppsamlingForArea ovan (samma organ-/valkrets-
+// gating: RD/riket, RF/region, KF/kommun, plus valkrets för alla tre) så nämnaren
+// aldrig inkluderar uppsamlingsdistrikt vars röster INTE redan vägs in i den visade
+// ytans egen röstsumma (annars skulle Y kunna växa utan att X någonsin hinner med —
+// se t.ex. RD:s 'kommun'-nivå, som är en ren geografisk nedbrytning utan egen
+// uppsamlingshink, jfr uppsamlingForArea).
+//
+// kretskod-formatet matchar redan valkretskodens format PER VALTYP (RD 2 siffror/RF 4/
+// KF 6 — verifierat 13 sep mot färsk val.se-data, 0 av 706 fångade poster hade null
+// kretskod) så samma fält räcker för alla tre valtyper på valkretsnivå, ingen
+// kommun→valkrets-omväg (areaIndex.kommunToVk) behövs.
+export function uppsamlingCountsForArea(
+  valtyp: Valtyp,
+  level: Level,
+  areaCode: string | null,
+  entries: readonly UppsamlingDistriktEntry[],
+  reportedKoder: ReadonlySet<string>,
+): { total: number; reported: number } {
+  let list: readonly UppsamlingDistriktEntry[]
+  if (valtyp === 'RD' && level === 'riket') list = entries
+  else if (valtyp === 'RF' && level === 'region' && areaCode) list = entries.filter((e) => e.lankod === areaCode)
+  else if (valtyp === 'KF' && level === 'kommun' && areaCode) list = entries.filter((e) => e.kommunkod === areaCode)
+  else if (level === 'valkrets' && areaCode) list = entries.filter((e) => e.kretskod === areaCode)
+  else list = []
+  const total = list.length
+  const reported = list.reduce((n, e) => n + (reportedKoder.has(e.kod) ? 1 : 0), 0)
+  return { total, reported }
+}
+
 // --- Områdesfiltrering (klientsida, ur distriktsmetadata) ----------------------
 // Områdeskod härleds ur den 8-siffriga valdistriktskoden (stabil): län = 2 första,
 // kommun = 4 första. Valkrets slås upp per valtyp i metadatan.

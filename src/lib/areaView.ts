@@ -16,6 +16,7 @@ import {
   districtsInArea,
   mergeVotes,
   sparrFor,
+  uppsamlingCountsForArea,
   uppsamlingForArea,
   type AreaComparison,
   type AreaGroups,
@@ -26,6 +27,7 @@ import {
   type MandateResult,
   type PartyMeta,
   type UppsamlingBuckets,
+  type UppsamlingDistriktEntry,
 } from './aggregate'
 import { RIKET_BLOCKS, type BlockConfig } from './soffa'
 import { REGION_STYRE_BLOCKS } from './regionBlocks'
@@ -80,6 +82,12 @@ export interface AreaViewParams {
   // val.se:s egna koder — se ResultsProvider.tsx:s vk_rd/vk_rf/vk_kf-paddning).
   mandatKalla?: 'av' | 'shadow' | 'aktiv'
   mandatValse?: Map<string, Record<string, number>>
+  // Uppsamlingsdistrikt-registret (handover 13 sep, Val ANALYSIS) — vilka uppsamlingsdistrikt
+  // finns för DENNA valtyp, samt vilka av dem som redan syns i uppsamling_result. Valfria
+  // (default tom lista/tom Set → oförändrat beteende, bakåtkompatibelt med
+  // scripts/verify-area-view*.ts). Se uppsamlingCountsForArea (aggregate.ts).
+  uppsamlingRegistry?: UppsamlingDistriktEntry[]
+  uppsamlingReported?: ReadonlySet<string>
 }
 
 export interface AreaViewResult {
@@ -111,6 +119,7 @@ export function computeAreaView(p: AreaViewParams): AreaViewResult {
     valtyp, area, store, turnoutStore, allCodes, meta, party, groups, uppsamling, areaIndex, comparison,
     district2022, kommuner, regioner, valkretsar, distriktNamn,
     mandatKalla = 'av', mandatValse,
+    uppsamlingRegistry = [], uppsamlingReported = new Set<string>(),
   } = p
 
   // Slutresultat-läge PER VALTYP ur result.status i storen (preliminärt → sluträknas · X %
@@ -123,8 +132,13 @@ export function computeAreaView(p: AreaViewParams): AreaViewResult {
   // codes/reported/total/pct hoisade hit (tidigare räknade ut sent i funktionen, se
   // nedan) — blocks/showMandat nedan behöver pct FÖRE de kan avgöra om mandat ska visas.
   const codes = districtsInArea(allCodes, area.level, area.code, valtyp, meta)
-  const reported = codes.reduce((n, c) => n + (store.has(c) ? 1 : 0), 0)
-  const total = codes.length
+  // Uppsamlingsdistrikten hör till den visade ytan (handover 13 sep) — se
+  // uppsamlingCountsForArea (aggregate.ts) för exakt organ-/valkrets-gating (speglar
+  // uppsamlingForArea nedan, så nämnaren aldrig inkluderar distrikt vars röster inte redan
+  // vägs in i ytans egen röstsumma).
+  const uppCounts = uppsamlingCountsForArea(valtyp, area.level, area.code, uppsamlingRegistry, uppsamlingReported)
+  const reported = codes.reduce((n, c) => n + (store.has(c) ? 1 : 0), 0) + uppCounts.reported
+  const total = codes.length + uppCounts.total
   // Rapporteringsgrad FÖR DET VISADE OMRÅDET (t.ex. EN valkrets egen räknegrad om man
   // tittar på just den) — INTE riket/hela valtypens grad. Gatar mandatberäkningarnas
   // visning nedan, se MANDAT_REPORT_THRESHOLD.

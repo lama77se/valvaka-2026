@@ -15,7 +15,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { supabase } from '@/lib/supabase'
 import { fetchSnapshotBlob } from '@/lib/snapshotBlob'
 import { ResultStore, TurnoutStore, VALTYPER, VALTYP_VK_COLUMN, type ColorMode, type ColorScheme, type Valtyp } from '@/lib/results'
-import { buildGroups, type AreaComparison, type AreaGroups, type Comparison2022, type DistrictMeta, type PartyMeta, type UppsamlingBuckets } from '@/lib/aggregate'
+import { buildGroups, type AreaComparison, type AreaGroups, type Comparison2022, type DistrictMeta, type PartyMeta, type UppsamlingBuckets, type UppsamlingDistriktEntry } from '@/lib/aggregate'
 import type { PartyVotes } from '@/lib/mandate'
 import type { AreaIndex } from '@/lib/hierarchy'
 import { RIKET, defaultAreaFor, type Area, type NamedCode } from '@/lib/area'
@@ -172,6 +172,14 @@ export interface ResultsContextValue {
   // Uppsamlingsröster per valtyp — organ-hink (RD '', RF lankod, KF kommunkod) PLUS
   // kretskod-attribuerad valkrets-hink, se UppsamlingBuckets (aggregate.ts).
   uppsamlingRef: RefObject<Record<Valtyp, UppsamlingBuckets>>
+  // Uppsamlingsdistrikt-REGISTRET (handover 13 sep, Val ANALYSIS) — vilka uppsamlingsdistrikt
+  // finns per valtyp (kod/kommunkod/lankod/kretskod/namn, se uppsamlingsdistrikt_registry),
+  // strukturellt känt oavsett om de rapporterat röster än. uppsamlingRegistryReportedRef är
+  // mängden koder som REDAN syns i uppsamling_result (byggd i loadUppsamling). Används för
+  // "X av Y distrikt räknade"-nämnaren (areaView.ts + ReportingStatus/DistrictMap/
+  // DepartureBoard) så den matchar val.se/SVT (räknar med uppsamlingsdistrikten).
+  uppsamlingRegistryRef: RefObject<Record<Valtyp, UppsamlingDistriktEntry[]>>
+  uppsamlingRegistryReportedRef: RefObject<Record<Valtyp, Set<string>>>
   comparisonRef: RefObject<Comparison2022 | null>
   districtComparisonRef: RefObject<Map<string, string>>
   distriktNamnRef: RefObject<Map<string, string>>
@@ -340,6 +348,11 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
   // Uppsamlingsröster per valtyp. Läses en gång vid mount (nedan).
   const emptyUppsamling = (): UppsamlingBuckets => ({ byOrgan: new Map(), byValkrets: new Map(), unresolvedByOrgan: new Map() })
   const uppsamlingRef = useRef<Record<Valtyp, UppsamlingBuckets>>({ RD: emptyUppsamling(), RF: emptyUppsamling(), KF: emptyUppsamling() })
+  // Uppsamlingsdistrikt-registret (handover 13 sep) — laddas periodiskt (liten tabell,
+  // full omladdning räcker, se loadUppsamlingRegistry). uppsamlingRegistryReportedRef
+  // fylls i loadUppsamling nedan (samma poll, samma rader — bara ETT extra fält i selecten).
+  const uppsamlingRegistryRef = useRef<Record<Valtyp, UppsamlingDistriktEntry[]>>({ RD: [], RF: [], KF: [] })
+  const uppsamlingRegistryReportedRef = useRef<Record<Valtyp, Set<string>>>({ RD: new Set(), RF: new Set(), KF: new Set() })
   // Valkretsindex per valtyp (RD 2-siffrig vk_rd, RF 4-siffrig län-prefixad vk_rf).
   // Byggs en gång ur distriktsmetadatan; KF har ingen valkretsnivå (tomt index).
   const emptyIndex = (): AreaIndex => ({ districtToVk: new Map(), vkToDistricts: new Map(), kommunToVk: new Map() })
@@ -692,6 +705,11 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
           if (!probeErr && probe && probe.length === 0) continue
         }
         const next: Record<Valtyp, UppsamlingBuckets> = { RD: emptyUppsamling(), RF: emptyUppsamling(), KF: emptyUppsamling() }
+        // Vilka uppsamlingsdistrikt-KODER redan syns här (oavsett hink) — "reported"-halvan
+        // av uppsamlingsdistrikt-registrets "X av Y"-nämnare (handover 13 sep, se
+        // uppsamlingCountsForArea i aggregate.ts). Samma rader som byggs upp ovan, bara
+        // ETT extra fält (kod) i selecten — ingen ny query.
+        const reportedNext: Record<Valtyp, Set<string>> = { RD: new Set(), RF: new Set(), KF: new Set() }
         const PAGE = 10000
         let from = 0
         let failed = false
@@ -699,7 +717,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
         while (aliveRef.current) {
           const { data, error } = await supabase
             .from('uppsamling_result')
-            .select('valtyp,kommunkod,lankod,kretskod,partikod,roster,updated_at')
+            .select('valtyp,kod,kommunkod,lankod,kretskod,partikod,roster,updated_at')
             .order('valtyp', { ascending: true }) // PK-ordning (valtyp,kod,partikod) → stabil, ingen överhoppad rad
             .order('kod', { ascending: true })
             .order('partikod', { ascending: true })
@@ -707,10 +725,11 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
           if (error) { markPollError(`uppsamling: ${error.message}`); failed = true; break }
           if (!data || data.length === 0) break
           for (const r of data as unknown as Array<{
-            valtyp: string; kommunkod: string; lankod: string; kretskod: string | null; partikod: string; roster: number; updated_at?: string | null
+            valtyp: string; kod: string; kommunkod: string; lankod: string; kretskod: string | null; partikod: string; roster: number; updated_at?: string | null
           }>) {
             const buckets = next[r.valtyp as Valtyp]
             if (!buckets) continue
+            reportedNext[r.valtyp as Valtyp]?.add(r.kod)
             // Organ-nyckel: RD → riket (EN hink), RF → länet, KF → kommunen.
             const organKey = r.valtyp === 'RD' ? '' : r.valtyp === 'RF' ? r.lankod : r.kommunkod
             const add = (m: Map<string, PartyVotes>, key: string) => {
@@ -727,12 +746,57 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
         }
         if (!aliveRef.current) return
         // Fel (t.ex. tabell saknas i ett kort deploy-fönster) → behåll förra aggregatet, ingen krasch/nollning.
-        if (!failed) { uppsamlingRef.current = next; uppsamlingCursorRef.current = maxTs; setRevision((r) => r + 1) }
+        if (!failed) {
+          uppsamlingRef.current = next
+          uppsamlingRegistryReportedRef.current = reportedNext
+          uppsamlingCursorRef.current = maxTs
+          setRevision((r) => r + 1)
+        }
       } while (uppsamlingAgainRef.current && aliveRef.current)
     } finally {
       uppsamlingBusyRef.current = false
     }
   }, [markPollError])
+
+  // Uppsamlingsdistrikt-REGISTRET (handover 13 sep, Val ANALYSIS — självuppdaterande variant):
+  // strukturell referens (kod/kommunkod/lankod/kretskod/namn), inte röster — liten tabell
+  // (hela riket, alla tre valtyper, uppskattningsvis ~1000 rader när komplett) så en FULL
+  // omladdning varje poll räcker (ingen HWM/incremental-komplexitet, till skillnad från
+  // uppsamling_result ovan som är per-parti och alltså mycket större). Fel → behåll förra
+  // registret (ingen tyst nollning), samma försiktighetsprincip som loadUppsamling.
+  const uppsamlingRegistryBusyRef = useRef(false)
+  const loadUppsamlingRegistry = useCallback(async () => {
+    if (uppsamlingRegistryBusyRef.current) return
+    uppsamlingRegistryBusyRef.current = true
+    try {
+      const next: Record<Valtyp, UppsamlingDistriktEntry[]> = { RD: [], RF: [], KF: [] }
+      const PAGE = 5000
+      let from = 0
+      let failed = false
+      while (aliveRef.current) {
+        const { data, error } = await supabase
+          .from('uppsamlingsdistrikt_registry')
+          .select('valtyp,kod,kommunkod,lankod,kretskod,namn')
+          .order('valtyp', { ascending: true })
+          .order('kod', { ascending: true })
+          .range(from, from + PAGE - 1)
+        if (error) { failed = true; break }
+        if (!data || data.length === 0) break
+        for (const r of data as unknown as Array<{
+          valtyp: string; kod: string; kommunkod: string; lankod: string; kretskod: string | null; namn: string | null
+        }>) {
+          next[r.valtyp as Valtyp]?.push({ kod: r.kod, kommunkod: r.kommunkod, lankod: r.lankod, kretskod: r.kretskod, namn: r.namn })
+        }
+        from += data.length
+        if (data.length < PAGE) break
+      }
+      if (!aliveRef.current || failed) return
+      uppsamlingRegistryRef.current = next
+      setRevision((r) => r + 1)
+    } finally {
+      uppsamlingRegistryBusyRef.current = false
+    }
+  }, [])
 
   // Dataset-provenance + GENERATIONSVAKT (se effekten längre ned). Byter datasetet identitet
   // (source/valtillfalle) medan fliken är öppen — valnattens N1-reset (`source='reset'`) och sedan
@@ -807,6 +871,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     const pump = () => {
       for (const vt of VALTYPER) if (loadedValtyperRef.current.has(vt)) { void resyncValtyp(vt); void resyncTurnout(vt) }
       void loadUppsamling()
+      void loadUppsamlingRegistry()
       void refreshDatasetMeta() // banner-färskhet + generationsvakt (reload om datasetet bytts)
       refreshPollHealth() // "Live" = senaste LYCKADE poll är färsk — inte "vi försökte just"
     }
@@ -826,7 +891,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
       if (timer) clearTimeout(timer)
       document.removeEventListener('visibilitychange', onVisible)
     }
-  }, [resyncValtyp, resyncTurnout, loadUppsamling, refreshDatasetMeta, refreshPollHealth])
+  }, [resyncValtyp, resyncTurnout, loadUppsamling, loadUppsamlingRegistry, refreshDatasetMeta, refreshPollHealth])
 
   // Nämnare (mount-en gång). Realtime är BORTTAGET → uppdateringar kommer via poll-loopen ovan;
   // snapshoten laddas efterfrågestyrt per valtyp (ensureValtypLoaded), triggad av aktiv valtyp +
@@ -895,13 +960,22 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
         return [vt, { organBuckets: b.byOrgan.size, valkretsBuckets: b.byValkrets.size, roster: sum(b.byOrgan), resolvedRoster: sum(b.byValkrets), unresolvedRoster: sum(b.unresolvedByOrgan) }]
       })),
       reloadUpp: () => loadUppsamling(),
+      // Uppsamlingsdistrikt-registret (handover 13 sep): antal kända uppsamlingsdistrikt +
+      // antal av dem som redan syns i uppsamling_result, per valtyp. Manuell omladdning för
+      // headless-verifiering (bevisar att registret växer när nya organ-filer publiceras).
+      uppsamlingRegistry: () => Object.fromEntries((['RD', 'RF', 'KF'] as Valtyp[]).map((vt) => {
+        const entries = uppsamlingRegistryRef.current[vt]
+        const reportedSet = uppsamlingRegistryReportedRef.current[vt]
+        return [vt, { total: entries.length, reported: entries.filter((e) => reportedSet.has(e.kod)).length }]
+      })),
+      reloadUppsamlingRegistry: () => loadUppsamlingRegistry(),
       // Valdeltagande-introspektion: kör en turnout-resync, eller läs aggregatet för en
       // uppsättning distriktskoder (Σtotal/Σröstberättigade → %). tCursor spolar cursorn.
       turnoutCursor: () => ({ ...turnoutCursorRef.current }),
       resyncTurnout: (vt: Valtyp) => resyncTurnout(vt),
       turnout: (vt: Valtyp, codes: string[]) => turnoutStoresRef.current[vt].aggregate(codes),
     }
-  }, [resyncValtyp, resyncTurnout, loadUppsamling])
+  }, [resyncValtyp, resyncTurnout, loadUppsamling, loadUppsamlingRegistry])
 
   // Referensdata (mount-en gång): partifärger, distriktsmetadata, ±2022, jämförbarhet.
   useEffect(() => {
@@ -1013,7 +1087,8 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
   // så uppsamling som mot förmodan kommer redan på valnatten syns utan sidladdning.
   useEffect(() => {
     void loadUppsamling()
-  }, [loadUppsamling])
+    void loadUppsamlingRegistry()
+  }, [loadUppsamling, loadUppsamlingRegistry])
 
   // Distriktsval → hämta det distriktets 2022-resultat (en gång, cache:at). Bumpar
   // revision när det landat så tabellen räknar om med 2022-kolumnerna ifyllda.
@@ -1072,6 +1147,8 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     allCodesRef,
     groupsRef,
     uppsamlingRef,
+    uppsamlingRegistryRef,
+    uppsamlingRegistryReportedRef,
     comparisonRef,
     districtComparisonRef,
     distriktNamnRef,
