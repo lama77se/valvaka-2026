@@ -19,9 +19,11 @@ export interface SnapshotBlob {
   hwm: string
   turnout_hwm: string
   result: Array<[string, string, number, string | null, string | null]> // vd, pk, roster, status, rapporteringstid
-  // vd, totalt_antal_roster, antal_rostberattigade, [blanka, ej_anmalda_partier, ovriga_ogiltiga]
-  // — de tre sista tillkom i v2 (ogiltiga röster); saknas i en v1-blob, se fetchSnapshotBlob.
-  turnout: Array<[string, number, number, (number | null)?, (number | null)?, (number | null)?]>
+  // vd, totalt_antal_roster, antal_rostberattigade, [blanka, ej_anmalda_partier, ovriga_ogiltiga,
+  // roster_paverkar_mandat] — de tre "ogiltiga"-fälten tillkom i v2, roster_paverkar_mandat i v3
+  // (den RIKTIGA "Övriga partier"-källan, se aggregate.ts/areaView.ts) — saknas i en äldre blob,
+  // se fetchSnapshotBlob.
+  turnout: Array<[string, number, number, (number | null)?, (number | null)?, (number | null)?, (number | null)?]>
 }
 
 const MAX_AGE_MS = 15 * 60_000
@@ -40,11 +42,12 @@ export async function fetchSnapshotBlob(vt: Valtyp): Promise<SnapshotBlob | null
     const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) })
     if (!res.ok) return null
     const blob = (await res.json()) as Partial<SnapshotBlob>
-    // v1 (utan ogiltiga röster) och v2 (med) accepteras båda — en kort övergångsperiod efter
-    // migration finns alltid (nästa 1-min-refresh regenererar) och v1:s turnout-tupler har bara
-    // 3 element, saknar de tre sista → TurnoutStore.set defaultar dem till null, som väntat.
+    // v1 (utan ogiltiga röster), v2 (med) och v3 (+ roster_paverkar_mandat) accepteras alla — en
+    // kort övergångsperiod efter varje migration finns alltid (nästa 1-min-refresh regenererar)
+    // och en äldre blobs turnout-tupler saknar bara de sista elementen → TurnoutStore.set
+    // defaultar dem till null, som väntat.
     if (
-      (blob.v !== 1 && blob.v !== 2) || blob.valtyp !== vt ||
+      (blob.v !== 1 && blob.v !== 2 && blob.v !== 3) || blob.valtyp !== vt ||
       typeof blob.hwm !== 'string' || typeof blob.turnout_hwm !== 'string' || typeof blob.generated_at !== 'string' ||
       !Array.isArray(blob.result) || !Array.isArray(blob.turnout)
     ) return null

@@ -197,6 +197,14 @@ export interface TurnoutRow {
   blanka: number | null
   ejAnmalda: number | null
   ovrigaOgiltiga: number | null
+  // Distriktets EGEN deklarerade rosterPaverkaMandat.antalRoster (turnout.roster_paverkar_mandat,
+  // migration <se filens datum>) — den RIKTIGA "Övriga partier"-källan: gapet mot summan av
+  // itemiserade partiRoster är giltiga, oitemiserade röster (INTE samma sak som ejAnmalda ovan,
+  // som hör till Ogiltiga röster — se PR #170/#171-historiken). Egen per-distrikt-getter
+  // (rosterPaverkarMandat nedan) i stället för i aggregate(): den delar MEDVETET INTE
+  // aggregate():s alla-eller-inget-mönster (blanka/ejAnmalda/ovrigaOgiltiga blir null om NÅGOT
+  // distrikt saknar dem) — Lars beslut är en PARTIELL, växande "Övriga"-summa, se areaView.ts.
+  rosterPaverkarMandat: number | null
 }
 
 export class TurnoutStore {
@@ -210,12 +218,14 @@ export class TurnoutStore {
     blanka: number | null = null,
     ejAnmalda: number | null = null,
     ovrigaOgiltiga: number | null = null,
+    rosterPaverkarMandat: number | null = null,
   ): boolean {
     const prev = this.byDistrict.get(valdistriktskod)
-    const next: TurnoutRow = { total: totalAntalRoster, rb: antalRostberattigade, blanka, ejAnmalda, ovrigaOgiltiga }
+    const next: TurnoutRow = { total: totalAntalRoster, rb: antalRostberattigade, blanka, ejAnmalda, ovrigaOgiltiga, rosterPaverkarMandat }
     if (
       prev && prev.total === next.total && prev.rb === next.rb &&
-      prev.blanka === next.blanka && prev.ejAnmalda === next.ejAnmalda && prev.ovrigaOgiltiga === next.ovrigaOgiltiga
+      prev.blanka === next.blanka && prev.ejAnmalda === next.ejAnmalda && prev.ovrigaOgiltiga === next.ovrigaOgiltiga &&
+      prev.rosterPaverkarMandat === next.rosterPaverkarMandat
     ) return false
     this.byDistrict.set(valdistriktskod, next)
     return true
@@ -223,6 +233,15 @@ export class TurnoutStore {
 
   has(valdistriktskod: string): boolean {
     return this.byDistrict.has(valdistriktskod)
+  }
+
+  // Ett distrikts EGEN deklarerade rosterPaverkaMandat.antalRoster, eller null om okänt (ingen
+  // rad än, eller en rad ingesterad innan migrationen fanns). Egen getter (INTE en del av
+  // aggregate() nedan) — se TurnoutRow-kommentaren för varför: gapet mot itemiserade röster ska
+  // visas som en PARTIELL, växande summa, inte alla-eller-inget. Beräkningen (giltiga-bidrag per
+  // distrikt, se areaView.ts) behöver den EN i taget, inte försummerad över ett helt område.
+  rosterPaverkarMandat(valdistriktskod: string): number | null {
+    return this.byDistrict.get(valdistriktskod)?.rosterPaverkarMandat ?? null
   }
 
   // Summera alla fält över en uppsättning distrikt. Andelen (procent) beräknas av anroparen

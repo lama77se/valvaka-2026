@@ -202,8 +202,24 @@ export function computeAreaView(p: AreaViewParams): AreaViewResult {
           return { seatsByParty, totalMandat: Object.values(seatsByParty).reduce((a, b) => a + b, 0) }
         })()
       : null
+  // Övriga partier — den RIKTIGA källan (handover 13 sep; se PR #170/#171-historiken för det
+  // FÖRSTA, FELAKTIGA försöket som av misstag återanvände ej_anmalda_partier, ett Ogiltiga-
+  // röster-fält). val.se:s rostfordelning-JSON har en distrikts-EGEN deklarerad
+  // rosterPaverkaMandat.antalRoster som kan vara STÖRRE än summan av de itemiserade
+  // partiRoster-posterna — gapet är giltiga, ALDRIG individuellt itemiserade röster
+  // (turnout.roster_paverkar_mandat). Räknas PER DISTRIKT (bara de som redan har fältet;
+  // resten bidrar via dagens itemiserade väg precis som förut, se store.aggregate ovan) — en
+  // PARTIELL, VÄXANDE summa (Lars uttryckliga beslut, bekräftat två gånger) — väntar INTE på
+  // att alla distrikt i området ska ha fältet, till skillnad från invalidVotes ovan (som
+  // medvetet ÄR alla-eller-inget). Klampas till ≥0 per distrikt (säkerhetsnät mot dataskev/
+  // timing-artefakter — aldrig observerat negativt i verifieringen mot skarp data).
+  const ovrigaGiltigaRoster = codes.reduce((sum, vd) => {
+    const rpm = turnoutStore.rosterPaverkarMandat(vd)
+    if (rpm == null) return sum
+    return sum + Math.max(0, rpm - store.outcome(vd).total)
+  }, 0)
   let areaResult = applyMandate(
-    buildRows(votes, party, sparrFor(valtyp, area.level, area.code)),
+    buildRows(votes, party, sparrFor(valtyp, area.level, area.code), ovrigaGiltigaRoster),
     valseMandate ?? mandate ?? (valkretsMandate && { seatsByParty: valkretsMandate.seatsByParty, totalMandat: valkretsMandate.totalSeats }),
   )
   const districtLeaf =

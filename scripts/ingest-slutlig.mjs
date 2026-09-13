@@ -93,6 +93,11 @@ async function processFile(f, sets) {
       // defensivt så en oväntad form aldrig stoppar upserten av röster/valdeltagande ovan.
       const ejPaverka = vd.rostfordelning?.rosterEjPaverkaMandat
       const asInt = (v) => (typeof v === 'number' ? v : null)
+      // Distriktets EGEN deklarerade mandatrelevanta totalsumma — samma redan-öppnade
+      // rostfordelning-objekt, inget nytt uppslag. "Övriga partier"-källan (handover 13 sep,
+      // se PR #170/#171): gapet mot summan av itemiserade partiRoster nedan är giltiga,
+      // ALDRIG individuellt itemiserade röster. Lockstegad med ingest-result/index.ts.
+      const rosterPaverkarMandat = asInt(vd.rostfordelning?.rosterPaverkaMandat?.antalRoster)
       turnoutRows.push({
         valtyp: j.valtyp,
         valdistriktskod: kod,
@@ -102,6 +107,7 @@ async function processFile(f, sets) {
         blanka: asInt(ejPaverka?.blankaRoster?.antalRoster),
         ej_anmalda_partier: asInt(ejPaverka?.rosterEjAnmaltDeltagande?.antalRoster),
         ovriga_ogiltiga: asInt(ejPaverka?.ovrigaOgiltiga?.antalRoster),
+        roster_paverkar_mandat: rosterPaverkarMandat,
       })
     }
     for (const p of vd.rostfordelning?.rosterPaverkaMandat?.partiRoster ?? []) {
