@@ -172,6 +172,20 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
   const boundsRef = useRef<Record<string, [number, number, number, number]>>({})
   const [boundsReady, setBoundsReady] = useState(false)
   const [mapReady, setMapReady] = useState(false)
+  // Laddningsindikator för förstagångsbesöket: BLANK_STYLE ritar bara den tomma mörka
+  // bakgrunden tills geometrikällan (GEOMETRY_URL, ~1 MB brotli i prod) hämtats/parsats
+  // OCH bitit (mapReady, satt strax efter). Utan denna ser besökaren bara en tom karta i
+  // några sekunder. ~250 ms fördröjning innan den visas — en varm cache/snabb uppkoppling
+  // hinner då bli klar utan att spinnern hinner flimra till.
+  const [showMapLoading, setShowMapLoading] = useState(false)
+  useEffect(() => {
+    if (mapReady) {
+      setShowMapLoading(false)
+      return
+    }
+    const t = setTimeout(() => setShowMapLoading(true), 250)
+    return () => clearTimeout(t)
+  }, [mapReady])
 
   const [reportedCount, setReportedCount] = useState(0)
   const [lastUpdated, setLastUpdated] = useState<string | null>(null) // HH:MM:SS för senaste dataändring
@@ -1009,6 +1023,24 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
   return (
     <div className="absolute inset-0">
       <div ref={containerRef} className="h-full w-full" />
+
+      {/* Laddningsindikator (förstagångsbesök, tom cache) — se showMapLoading-effekten
+          ovan. Gäller BÅDA variant='desktop'/'mobile' (samma komponent). z-40: ska synas
+          ovanpå ALLT annat overlay (banner z-30, väljare) tills kartan är redo — enda
+          gången den är relevant är precis vid mount, innan något annat hunnit rendera
+          över den ändå, men explicit z-index kostar inget och gör ordningen robust mot
+          framtida omordningar i JSX:en nedan. */}
+      {showMapLoading && (
+        <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center">
+          <div className="flex items-center gap-2.5 rounded-lg border border-slate-700 bg-slate-900/85 px-4 py-3 shadow-lg backdrop-blur">
+            <svg className="h-4 w-4 animate-spin text-slate-300" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2.5" strokeOpacity="0.25" />
+              <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+            </svg>
+            <span className="text-sm text-slate-200">Laddar karta…</span>
+          </div>
+        </div>
+      )}
 
       {/* Ortnamn-overlay — se PlaceLabels.tsx. Renderas ovanpå kartan (senare i DOM-
           ordningen än containerRef-diven, ingen z-index behövs) men UNDER de andra
