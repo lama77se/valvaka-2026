@@ -11,6 +11,7 @@ import { DashboardGrid } from '@/components/DashboardGrid'
 import { TestdataBanner } from '@/components/TestdataBanner'
 import { InfoButton } from '@/components/InfoButton'
 import { ReportingStatus } from '@/components/ReportingStatus'
+import { VersionWatcher } from '@/components/VersionWatcher'
 import { VALTYPER } from '@/lib/results'
 
 // Brytpunkt = Tailwinds xl (1280 px). Desktop-layouten (svävande overlays) visas från
@@ -168,6 +169,8 @@ function App() {
   return (
     <ResultsProvider>
       {isMobile ? <MobileApp /> : <DesktopApp />}
+      {/* Global, oberoende av mobil/desktop-grenen — se VersionWatcher.tsx. */}
+      <VersionWatcher />
     </ResultsProvider>
   )
 }

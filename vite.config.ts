@@ -1,7 +1,7 @@
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'node:path'
-import { copyFileSync, mkdirSync } from 'node:fs'
+import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs'
 
 // maplibre-gl v6 beräknar sin worker-URL i RUNTIME (import.meta.url + en villkorlig
 // filsträng) i stället för ett statiskt `new URL('./literal.mjs', import.meta.url)`
@@ -36,9 +36,28 @@ function copyMaplibreWorker(): Plugin {
   }
 }
 
+// Klientdetektering av ny deploy (VersionWatcher.tsx) — INTE PWA/service worker
+// (medvetet valbort: onödig komplexitet/offline-cachingrisk för ett rent "ny version →
+// ladda om"-behov). Skriver en liten dist/version.json vid VARJE build; klienten sparar
+// sitt EGET `v`-värde vid mount och pollar filen — vid mismatch, ladda om (jittrat,
+// synlighets-gated, se VersionWatcher.tsx). VERCEL_GIT_COMMIT_SHA finns automatiskt i
+// Vercels byggmiljö (unikt per deploy) — Date.now() som lokal-build-fallback (samma fil
+// byggd två gånger i rad ska ändå skilja sig).
+function writeVersionFile(): Plugin {
+  return {
+    name: 'write-version-file',
+    apply: 'build',
+    closeBundle() {
+      const v = process.env.VERCEL_GIT_COMMIT_SHA ?? String(Date.now())
+      mkdirSync(path.resolve(__dirname, 'dist'), { recursive: true })
+      writeFileSync(path.resolve(__dirname, 'dist', 'version.json'), JSON.stringify({ v }))
+    },
+  }
+}
+
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), copyMaplibreWorker()],
+  plugins: [react(), copyMaplibreWorker(), writeVersionFile()],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
