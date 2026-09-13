@@ -106,6 +106,11 @@ export type DatasetMeta = {
   test: boolean
   rakningstillfalle: string | null
   kalla_uppdaterad: string | null
+  // Trestegsflagga (handover 13 sep) för Valmyndighetens EGEN mandatfördelning som en
+  // förberedd, DORMANT alternativ källa till vår egen beräkning — se areaView.ts. 'av'
+  // (default) = frontend rör aldrig mandat_valse. 'shadow' = edge lagrar tyst, frontend
+  // läser ändå vår egen beräkning. 'aktiv' = frontend växlar källa (se useAreaView.ts).
+  mandat_kalla: 'av' | 'shadow' | 'aktiv'
 }
 
 export interface ResultsContextValue {
@@ -146,6 +151,9 @@ export interface ResultsContextValue {
   comparisonRef: RefObject<Comparison2022 | null>
   districtComparisonRef: RefObject<Map<string, string>>
   distriktNamnRef: RefObject<Map<string, string>>
+  // Valmyndighetens EGEN mandatfördelning (mandat_valse) — DORMANT tills dataset.mandat_kalla
+  // ==='aktiv', se areaView.ts/useAreaView.ts. Tom Map annars (laddas aldrig).
+  mandatValseRef: RefObject<Map<string, Record<string, number>>>
   district2022Ref: RefObject<Map<string, AreaComparison | null>>
   // 2022 års vinnarparti per distrikt (batch-hämtat per kommun för drill-down-listan).
   districtWinners2022Ref: RefObject<Map<string, WinnerParty | null>>
@@ -705,15 +713,54 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
   // genrep-färgade distrikt + testbannern hela natten med skarpa distrikt ovanpå.
   const datasetGenRef = useRef<string | null>(null)
   const reloadingRef = useRef(false)
+
+  // Valmyndighetens EGEN mandatfördelning (mandat_valse, handover 13 sep) — DORMANT tills
+  // dataset.mandat_kalla==='aktiv' (default 'av'). Litet, sällan-ändrat bord (organ + delade
+  // valkretsar × partier, i praktiken max ett par tusen rader) → en enkel FULL omladdning
+  // (ingen kursor/delta) räcker, samma sida-storlek som övriga referensladdningar. Anropas
+  // bara när flaggan faktiskt är 'aktiv' (se refreshDatasetMeta nedan) → noll kostnad annars.
+  const mandatValseRef = useRef<Map<string, Record<string, number>>>(new Map())
+  const loadMandatValse = useCallback(async () => {
+    const next = new Map<string, Record<string, number>>()
+    const PAGE = 1000
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from('mandat_valse')
+        .select('valtyp,niva,omradeskod,partikod,antal_mandat')
+        .range(from, from + PAGE - 1)
+      if (error || !data) break
+      for (const row of data) {
+        const key = `${row.valtyp}|${row.niva}|${row.omradeskod}`
+        const bucket = next.get(key) ?? next.set(key, {}).get(key)!
+        bucket[row.partikod] = row.antal_mandat
+      }
+      if (data.length < PAGE) break
+    }
+    if (aliveRef.current) mandatValseRef.current = next
+  }, [])
+
   const refreshDatasetMeta = useCallback(async () => {
-    const { data } = await supabase
+    let { data } = await supabase
       .from('dataset_meta')
-      .select('source,valtillfalle,test,rakningstillfalle,kalla_uppdaterad')
+      .select('source,valtillfalle,test,rakningstillfalle,kalla_uppdaterad,mandat_kalla')
       .eq('id', 1)
       .maybeSingle()
+    if (!data) {
+      // mandat_kalla-kolumnen kan saknas en kort stund om migrationen (egen GitHub Action,
+      // db-migrate.yml) inte hunnit landa före denna frontend-deploy — degradera till den
+      // gamla selecten så bannern/generationsvakten inte går sönder under det smala
+      // fönstret. Nästa poll (45–90s) läker sig själv när migrationen är klar.
+      const fallback = await supabase
+        .from('dataset_meta')
+        .select('source,valtillfalle,test,rakningstillfalle,kalla_uppdaterad')
+        .eq('id', 1)
+        .maybeSingle()
+      data = fallback.data ? { ...fallback.data, mandat_kalla: 'av' } : null
+    }
     if (!aliveRef.current || !data) return
     const meta = data as DatasetMeta
     setDataset(meta)
+    if (meta.mandat_kalla === 'aktiv') void loadMandatValse()
     const gen = `${meta.source}|${meta.valtillfalle ?? ''}`
     if (datasetGenRef.current === null) { datasetGenRef.current = gen; return } // baslinje vid mount
     if (gen !== datasetGenRef.current && !reloadingRef.current) {
@@ -721,7 +768,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
       console.warn('[valvaka] datasetet bytte identitet', datasetGenRef.current, '→', gen, '— laddar om')
       setTimeout(() => location.reload(), Math.random() * 10_000)
     }
-  }, [])
+  }, [loadMandatValse])
 
   // Poll-loop — PRIMÄR uppdateringsväg sedan Realtime togs bort. Var 45–90 s (jittrat) hämtar varje
   // LADDAD valtyp sin delta + laddar om uppsamling, men BARA när fliken är synlig (bakgrundsflik
@@ -1000,6 +1047,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     comparisonRef,
     districtComparisonRef,
     distriktNamnRef,
+    mandatValseRef,
     district2022Ref,
     districtWinners2022Ref,
     districtAndel2022Ref,

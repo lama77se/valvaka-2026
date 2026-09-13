@@ -18,7 +18,7 @@ export function useAreaView(valtyp: Valtyp, area: Area): AreaViewResult {
   const {
     storesRef, turnoutStoresRef, allCodesRef, metaRef, partyRef, groupsRef, uppsamlingRef,
     areaIndexRef, comparisonRef, district2022Ref, kommuner, regioner, valkretsListRef,
-    distriktNamnRef, revision, snapshotVersion,
+    distriktNamnRef, mandatValseRef, dataset, revision, snapshotVersion,
   } = useResults()
 
   return useMemo(
@@ -40,8 +40,11 @@ export function useAreaView(valtyp: Valtyp, area: Area): AreaViewResult {
         regioner,
         valkretsar: valkretsListRef.current[valtyp] ?? [],
         distriktNamn: distriktNamnRef.current,
+        // Dormant tills dataset.mandat_kalla==='aktiv' (default 'av') — se areaView.ts.
+        mandatKalla: dataset?.mandat_kalla ?? 'av',
+        mandatValse: mandatValseRef.current,
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [valtyp, area, revision, snapshotVersion, kommuner, regioner],
+    [valtyp, area, revision, snapshotVersion, kommuner, regioner, dataset?.mandat_kalla],
   )
 }

@@ -23,6 +23,7 @@ import {
   type DisplayRows,
   type DistrictMeta,
   type Level,
+  type MandateResult,
   type PartyMeta,
   type UppsamlingBuckets,
 } from './aggregate'
@@ -71,6 +72,14 @@ export interface AreaViewParams {
   regioner: NamedCode[]
   valkretsar: NamedCode[]
   distriktNamn: Map<string, string>
+  // Valmyndighetens EGEN mandatfördelning (mandat_valse-tabellen, dormant-flaggad handover
+  // 13 sep) — bara relevant vid mandatKalla==='aktiv'. Valfria (default 'av'/tom karta) så
+  // befintliga anrop (verify-area-view*.ts) fortsätter fungera oförändrade. Nyckel:
+  // `${valtyp}|${niva:'organ'|'valkrets'}|${omradeskod}` → partikod → antal mandat. omradeskod
+  // för organnivå är 'riket' (RD) eller area.code (RF/KF, redan i samma paddade format som
+  // val.se:s egna koder — se ResultsProvider.tsx:s vk_rd/vk_rf/vk_kf-paddning).
+  mandatKalla?: 'av' | 'shadow' | 'aktiv'
+  mandatValse?: Map<string, Record<string, number>>
 }
 
 export interface AreaViewResult {
@@ -98,7 +107,11 @@ export interface AreaViewResult {
 }
 
 export function computeAreaView(p: AreaViewParams): AreaViewResult {
-  const { valtyp, area, store, turnoutStore, allCodes, meta, party, groups, uppsamling, areaIndex, comparison, district2022, kommuner, regioner, valkretsar, distriktNamn } = p
+  const {
+    valtyp, area, store, turnoutStore, allCodes, meta, party, groups, uppsamling, areaIndex, comparison,
+    district2022, kommuner, regioner, valkretsar, distriktNamn,
+    mandatKalla = 'av', mandatValse,
+  } = p
 
   // Slutresultat-läge PER VALTYP ur result.status i storen (preliminärt → sluträknas · X %
   // → slutgiltigt). Panelen renderas om på `revision` så andelen hålls färsk. Fasen visas
@@ -172,9 +185,26 @@ export function computeAreaView(p: AreaViewParams): AreaViewResult {
             sparrFor(valtyp, 'valkrets', area.code),
             uppsamling,
           )
+  // Valmyndighetens EGEN mandatfördelning (mandat_valse, handover 13 sep) — DORMANT tills
+  // mandatKalla==='aktiv' (default 'av' → alltid null här, exakt dagens beteende oförändrat).
+  // Källväxlingen sker HÄR, på ETT ställe: när en matchande rad finns vinner den över vår
+  // egen beräkning (mandate/valkretsMandate nedan), annars oförändrat fallback. Samma
+  // MANDAT_LEVELS-gate som showMandat — en mandat_valse-slagning görs bara på de nivåer där
+  // mandat överhuvudtaget är meningsfullt.
+  const valseMandate: MandateResult | null =
+    mandatKalla === 'aktiv' && mandatValse && MANDAT_LEVELS[valtyp].includes(area.level)
+      ? (() => {
+          const niva = area.level === 'valkrets' ? 'valkrets' : 'organ'
+          const omradeskod = niva === 'organ' && valtyp === 'RD' ? 'riket' : area.code
+          if (!omradeskod) return null
+          const seatsByParty = mandatValse.get(`${valtyp}|${niva}|${omradeskod}`)
+          if (!seatsByParty) return null
+          return { seatsByParty, totalMandat: Object.values(seatsByParty).reduce((a, b) => a + b, 0) }
+        })()
+      : null
   let areaResult = applyMandate(
     buildRows(votes, party, sparrFor(valtyp, area.level, area.code)),
-    mandate ?? (valkretsMandate && { seatsByParty: valkretsMandate.seatsByParty, totalMandat: valkretsMandate.totalSeats }),
+    valseMandate ?? mandate ?? (valkretsMandate && { seatsByParty: valkretsMandate.seatsByParty, totalMandat: valkretsMandate.totalSeats }),
   )
   const districtLeaf =
     area.level === 'distrikt' && area.code ? (district2022.get(`${valtyp}:${area.code}`) ?? null) : null
