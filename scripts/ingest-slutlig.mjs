@@ -68,6 +68,7 @@ async function processFile(f, sets) {
   const rows = []
   const uppRows = []
   const turnoutRows = []
+  const registryRows = []
   for (const vd of j.valdistrikt ?? []) {
     const kod = vd.valdistriktskod
     if (vd.valdistriktstyp === 'uppsamlingsdistrikt') {
@@ -77,6 +78,10 @@ async function processFile(f, sets) {
       // Sena röster löses ofta till sin RIKTIGA valkrets (kretskod) — samma syskon-fält/logik
       // som edge (ingest-result/index.ts). Null = olöst → organ-vid hink (aggregate.ts UppsamlingBuckets).
       const kretskod = typeof vd.kretskod === 'string' ? vd.kretskod : null
+      // Uppsamlingsdistrikt-registret (lockstegat med ingest-result/index.ts, handover 13
+      // sep) — ovillkorligt, oavsett om partier-arrayen är tom.
+      const namn = typeof vd.namn === 'string' ? vd.namn : null
+      registryRows.push({ valtyp: j.valtyp, kod, kommunkod, lankod, kretskod, namn })
       for (const p of vd.rostfordelning?.rosterPaverkaMandat?.partiRoster ?? []) {
         if (!sets.partySet.has(p.partikod)) continue
         uppRows.push({ valtyp: j.valtyp, kod, kommunkod, lankod, kretskod, partikod: p.partikod, roster: p.antalRoster, status: rakstatus })
@@ -131,7 +136,13 @@ async function processFile(f, sets) {
     const { error } = await db.from('turnout').upsert(turnoutRows.slice(i, i + 1000), { onConflict: 'valtyp,valdistriktskod' })
     if (error) { console.error(`  turnout upsert: ${error.message}`); return false }
   }
-  log(`  klart: ${rows.length} result · ${uppRows.length} uppsamling · ${turnoutRows.length} valdeltagande`)
+  // Registret är ren referensdata (ingen röstsiffra) — ett fel här ska aldrig blockera en
+  // annars lyckad sluträkning, bara loggas (samma isoleringsprincip som ingest-result/index.ts).
+  for (let i = 0; i < registryRows.length; i += 1000) {
+    const { error } = await db.from('uppsamlingsdistrikt_registry').upsert(registryRows.slice(i, i + 1000), { onConflict: 'valtyp,kod' })
+    if (error) console.error(`  uppsamlingsdistrikt_registry upsert (icke-kritiskt): ${error.message}`)
+  }
+  log(`  klart: ${rows.length} result · ${uppRows.length} uppsamling · ${turnoutRows.length} valdeltagande · ${registryRows.length} uppsamlingsdistrikt-register`)
   return true
 }
 

@@ -89,6 +89,11 @@ interface FileResult {
   // done. Bara satta när mandatMode !== 'av'.
   mandatUp?: number
   mandatError?: string
+  // Uppsamlingsdistrikt-REGISTRET (handover 13 sep) — samma isoleringsprincip som mandat_valse
+  // ovan: registryError sätts ALDRIG status till något annat, ett registerfel påverkar aldrig
+  // om filen markeras done.
+  registryUp?: number
+  registryError?: string
 }
 
 // Trestegsflagga för mandatkälla (dataset_meta.mandat_kalla, migration 20260913130000):
@@ -223,6 +228,14 @@ async function processFile(url: string, districtSet: Set<string>, partySet: Set<
   const rows: Record<string, unknown>[] = []
   const upp: Record<string, unknown>[] = []
   const turnout: Record<string, unknown>[] = []
+  // Uppsamlingsdistrikt-REGISTRET (handover 13 sep, Val ANALYSIS — självuppdaterande variant,
+  // ersätter ett tidigare förslag om ett manuellt körbart engångsskript): kod/kommunkod/lankod/
+  // kretskod/namn är strukturellt KÄNT från start, oavsett om distriktet rapporterat några
+  // röster än (val.se:s organfiler listar redan uppsamlingsdistrikten innan rösträkningen).
+  // Byggs upp av sig själv i takt med den vanliga pollningen. Klienten använder registret för
+  // "X av Y distrikt räknade"-nämnaren (matchar val.se/SVT, som räknar med uppsamlingsdistrikten,
+  // inte bara de geografiska). Se isolerad upsert längre ner (samma mönster som mandat_valse).
+  const registry: Record<string, unknown>[] = []
   for (const vd of (Array.isArray(j.valdistrikt) ? j.valdistrikt : [])) {
     if (!vd || typeof vd !== 'object' || !('valdistriktskod' in vd)) continue
     const kod = vd.valdistriktskod
@@ -235,6 +248,10 @@ async function processFile(url: string, districtSet: Set<string>, partySet: Set<
       // 314/314 uppsamlingsdistrikt lösta, RF/KF bara ibland. Null = olöst → väger bara in i
       // organets spärr/mål (client aggregate.ts UppsamlingBuckets), placeras aldrig geografiskt.
       const kretskod = typeof vd.kretskod === 'string' ? vd.kretskod : null
+      const namn = typeof vd.namn === 'string' ? vd.namn : null
+      // Ovillkorlig — fångas ÄVEN när partier-arrayen är tom (orapporterat distrikt), till
+      // skillnad från upp.push nedan som bara sker per faktisk röstpost.
+      registry.push({ valtyp, kod, kommunkod, lankod, kretskod, namn })
       for (const p of partier) {
         if (!partySet.has(p.partikod)) continue
         upp.push({ valtyp, kod, kommunkod, lankod, kretskod, partikod: p.partikod, roster: p.antalRoster, status })
@@ -293,6 +310,21 @@ async function processFile(url: string, districtSet: Set<string>, partySet: Set<
     return { status: 'dberror', error: (e as Error).message, bytes }
   }
 
+  // --- UPPSAMLINGSDISTRIKT-REGISTRET (handover 13 sep, självuppdaterande variant) --------
+  // 🔴 ISOLERINGSKRAV: röster/turnout/uppsamling_result är REDAN upserterade ovan. Detta är
+  // ren, lågriskabel referensdata (ingen röstsiffra) men ändå i EGET try/catch — ett DB-fel
+  // här (t.ex. tabellen saknas i ett kort deploy-fönster) får ALDRIG bubbla upp och markera
+  // en fil med perfekt bra röstdata som 'dberror'.
+  let registryUp = 0
+  let registryError: string | undefined
+  try {
+    await upsert('uppsamlingsdistrikt_registry', registry, 1000, 'valtyp,kod')
+    registryUp = registry.length
+  } catch (e) {
+    registryError = (e as Error).message
+    console.error('[ingest-result] uppsamlingsdistrikt_registry (isolerat — filens status/röster OPÅVERKADE)', url, registryError)
+  }
+
   // --- MANDAT (Valmyndighetens EGEN mandatfördelning, handover 13 sep) -------------------
   // 🔴 ISOLERINGSKRAV: röster är REDAN upserterade ovan, okonditionerat, exakt som förut.
   // Allt nedanför körs i ETT EGET try/catch, oberoende av röstvägens. Mandatparsning är
@@ -329,7 +361,7 @@ async function processFile(url: string, districtSet: Set<string>, partySet: Set<
     }
   }
 
-  return { status: 'ok', meta, resultUp: rows.length, uppUp: upp.length, turnoutUp: turnout.length, bytes: bytes + mandatBytes, mandatUp, mandatError }
+  return { status: 'ok', meta, resultUp: rows.length, uppUp: upp.length, turnoutUp: turnout.length, bytes: bytes + mandatBytes, mandatUp, mandatError, registryUp, registryError }
 }
 
 // SNAPSHOT-BLOBBAR (CDN-contingencyn, migration 20260905150000): Postgres bygger en kompakt JSON
@@ -470,6 +502,11 @@ Deno.serve(async (req) => {
   let mandatUpserted = 0
   let mandatFailed = 0
   const mandatErrors: string[] = []
+  // Uppsamlingsdistrikt-registret (handover 13 sep) — samma HELT SEPARATA räkning som mandat
+  // ovan: ett registerfel gör aldrig att en fil räknas som failed/transient (se processFile).
+  let registryUpserted = 0
+  let registryFailed = 0
+  const registryErrors: string[] = []
   const touched = new Set<string>() // valtyper vars data ändrades denna körning → regenerera deras blobbar
   let meta: FileMeta | null = null
   const deadline = Date.now() + BUDGET_MS
@@ -508,6 +545,11 @@ Deno.serve(async (req) => {
       if (r.mandatError) {
         mandatFailed++
         if (mandatErrors.length < 5) mandatErrors.push(`${f.rel}: ${r.mandatError}`)
+      }
+      registryUpserted += r.registryUp ?? 0
+      if (r.registryError) {
+        registryFailed++
+        if (registryErrors.length < 5) registryErrors.push(`${f.rel}: ${r.registryError}`)
       }
       const vt = vtOf(f.rel)
       if (vt && !probe) touched.add(vt)
@@ -551,13 +593,16 @@ Deno.serve(async (req) => {
   return json({
     ok: failed === 0,
     source: base.includes('genrep') ? 'genrep2026' : 'val2026',
-    changed: processed, upserted, uppUpserted, turnoutUpserted, skipped, failed,
+    changed: processed, upserted, uppUpserted, turnoutUpserted, registryUpserted, skipped, failed,
     remaining: allChanged.length - processed, // inkl. det som budget/stor-fil-break lämnade kvar
     ...(errors.length ? { errors } : {}),
     ...(toRefresh.length ? { snapshots } : {}),
     // Mandat (Valmyndighetens EGEN mandatfördelning) — bara med i svaret när flaggan
     // faktiskt är påslagen (av-läget: ingen mandatMode-nyckel alls, oförändrat svar mot idag).
     ...(mandatMode !== 'av' ? { mandatMode, mandatUpserted, mandatFailed, ...(mandatErrors.length ? { mandatErrors } : {}) } : {}),
+    // Uppsamlingsdistrikt-registret är ALLTID aktivt (ingen flagga, till skillnad från mandat
+    // ovan) — bara registryFailed/registryErrors är villkorade (inget att larma om vid 0 fel).
+    ...(registryFailed ? { registryFailed, ...(registryErrors.length ? { registryErrors } : {}) } : {}),
   })
   } finally {
     if (leased) {

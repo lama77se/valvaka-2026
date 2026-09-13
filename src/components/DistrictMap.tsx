@@ -94,6 +94,8 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
     groupsRef,
     comparisonRef,
     totalByValtyp,
+    uppsamlingRegistryRef,
+    uppsamlingRegistryReportedRef,
     subscribeChanges,
     snapshotVersion,
     realtimeConnected,
@@ -1013,8 +1015,14 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
     }
   }, [])
 
-  const total = totalByValtyp[valtyp]
-  const reportedPct = total > 0 ? Math.round((reportedCount / total) * 100) : 0
+  // Uppsamlingsdistrikten (handover 13 sep) räknas med i BÅDE täljare och nämnare, som
+  // val.se/SVT — "X av 6312 valdistrikt" blir t.ex. RD:s riktiga "X av 6626" (6312
+  // geografiska + 314 uppsamling). Se ReportingStatus.tsx för samma mönster/motivering.
+  const uppRegistry = uppsamlingRegistryRef.current[valtyp]
+  const uppReportedSet = uppsamlingRegistryReportedRef.current[valtyp]
+  const total = totalByValtyp[valtyp] + uppRegistry.length
+  const reportedCombined = reportedCount + uppRegistry.reduce((n, e) => n + (uppReportedSet.has(e.kod) ? 1 : 0), 0)
+  const reportedPct = total > 0 ? Math.round((reportedCombined / total) * 100) : 0
   // Slutresultat-läge PER VALTYP ur result.status i denna valtyps store: preliminärt →
   // sluträknas · X % (onsdagsräkningen pågår, distrikt för distrikt) → slutgiltigt (alla
   // distrikt slutligt räknade). RD kan vara preliminär medan RF/KF sluträknas. "X av 6312
@@ -1177,7 +1185,7 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
               {tagLabel}
             </span>
             <span>
-              <span className="font-mono text-base font-semibold tabular-nums">{reportedCount}</span>
+              <span className="font-mono text-base font-semibold tabular-nums">{reportedCombined}</span>
               <span className="text-slate-400"> av {total.toLocaleString('sv-SE')}</span>
               <span className="ml-2 text-xs text-sky-300">{reportedPct}%</span>
             </span>
