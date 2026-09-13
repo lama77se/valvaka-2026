@@ -75,25 +75,49 @@ const minusMs = (iso: string, ms: number): string => {
   return Number.isFinite(t) ? new Date(Math.max(0, t - ms)).toISOString() : iso
 }
 
-export function readViewFromUrl(): { valtyp: Valtyp; area: Area; colorMode: ColorMode } {
-  if (typeof window === 'undefined') return { valtyp: 'RD', area: RIKET, colorMode: 'distrikt' }
+export function readViewFromUrl(): { valtyp: Valtyp; area: Area; colorMode: ColorMode; colorScheme: ColorScheme; selectedParty: string | null } {
+  if (typeof window === 'undefined') return { valtyp: 'RD', area: RIKET, colorMode: 'distrikt', colorScheme: 'largest', selectedParty: null }
   const q = new URLSearchParams(window.location.search)
   const raw = (q.get('val') ?? '').toUpperCase()
   const valtyp = (VALTYPER as readonly string[]).includes(raw) ? (raw as Valtyp) : 'RD'
   const colorMode: ColorMode = q.get('farg') === 'grupp' ? 'grupp' : 'distrikt'
-  return { valtyp, area: parseAreaParam(q.get('omrade'), valtyp), colorMode }
+  // fargskala: 'block' (bara giltigt för RD — samma regel som runtime-skyddsnätet nedan i
+  // komponenten, block→largest vid valtyp≠RD; spegla den redan här så en gammal/manipulerad
+  // URL med block+RF/KF inte ens hinner blinka till fel läge) eller 'parti:<forkortning>'
+  // ("nivå:kod"-kolonstilen, samma som encodeAreaParam/parseAreaParam ovan). Okänt/saknat →
+  // 'largest' (default, ingen parameter alls i en ren URL — se viewToSearch).
+  const fargskala = q.get('fargskala')
+  let colorScheme: ColorScheme = 'largest'
+  let selectedParty: string | null = null
+  if (fargskala === 'block' && valtyp === 'RD') {
+    colorScheme = 'block'
+  } else if (fargskala?.startsWith('parti:')) {
+    const forkortning = fargskala.slice('parti:'.length)
+    if (forkortning) {
+      colorScheme = 'party'
+      selectedParty = forkortning
+    }
+  }
+  return { valtyp, area: parseAreaParam(q.get('omrade'), valtyp), colorMode, colorScheme, selectedParty }
 }
 
-export function viewToSearch(valtyp: Valtyp, area: Area, colorMode: ColorMode): string {
+export function viewToSearch(valtyp: Valtyp, area: Area, colorMode: ColorMode, colorScheme: ColorScheme, selectedParty: string | null): string {
   const def = defaultAreaFor(valtyp)
   const areaIsDefault = area.level === def.level && area.code === def.code
   const farg = colorMode === 'grupp' ? '&farg=grupp' : '' // default ('distrikt') → utelämnas, ren URL
-  if (valtyp === 'RD' && areaIsDefault && !farg) return '' // app-defaulten (Riksdag/Riket/Valdistrikt) → ren URL
+  // default ('largest') → utelämnas helt, precis som farg=distrikt. selectedParty ignoreras
+  // om colorScheme inte faktiskt är 'party' (undviker en spöklänk-parti om man växlar bort
+  // utan att nollställa selectedParty — se ColorSchemeSelector/PartyLegend).
+  const fargskala =
+    colorScheme === 'block' ? '&fargskala=block'
+      : colorScheme === 'party' && selectedParty ? `&fargskala=parti:${encodeURIComponent(selectedParty)}`
+        : ''
+  if (valtyp === 'RD' && areaIsDefault && !farg && !fargskala) return '' // app-defaulten → ren URL
   // Bygg strängen för hand så "nivå:kod" behåller ett läsbart kolon (URLSearchParams
   // %3A-kodar det). Koderna är siffror/korta alfanumeriska → encodeURIComponent är no-op.
   // encodeAreaParam delas med dashboardUrl.ts (samma kodning för Dashboard-vyns aN=).
   const omrade = areaIsDefault ? '' : `&omrade=${encodeAreaParam(area)}`
-  return `?val=${valtyp}${omrade}${farg}`
+  return `?val=${valtyp}${omrade}${farg}${fargskala}`
 }
 
 type ChangeListener = (vd: string, valtyp: Valtyp) => void
@@ -207,12 +231,16 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
   // ovan (som bara styr aggregeringsnivå). 'block' gäller BARA RD (se soffa.ts/RIKET_BLOCKS
   // — RF/KF:s styre-mot-opposition är ett annat begrepp, erbjuds inte som kartläge här) →
   // byter man valtyp till RF/KF med block valt, faller vyn automatiskt tillbaka till
-  // 'largest' (effekten nedan). Ingen URL-persistens (litet, sessionslokalt tillägg).
-  const [colorScheme, setColorScheme] = useState<ColorScheme>('largest')
+  // 'largest' (effekten nedan). URL-persisterad (fargskala=, 13 sep) — ursprungligen
+  // medvetet SESSIONSLOKAL ("litet tillägg"), men VersionWatcher.tsx gör nu en riktig
+  // window.location.reload() vanlig under natten (en per deploy) — utan persistens skulle
+  // ett aktivt valt Block-läge eller en vald partis intensitetskarta tystas tillbaka till
+  // 'largest' vid VARJE sådan reload, inte bara en sällsynt manuell F5.
+  const [colorScheme, setColorScheme] = useState<ColorScheme>(() => readViewFromUrl().colorScheme)
   // Valt parti (FORKORTNING, inte partikod — stabil identitet över RD/RF/KF eftersom
   // partikoder skiljer per valtyp, se PartyMeta) för colorScheme 'party'. null = inget
-  // valt än.
-  const [selectedParty, setSelectedParty] = useState<string | null>(null)
+  // valt än. URL-persisterad tillsammans med colorScheme ovan, se dess kommentar.
+  const [selectedParty, setSelectedParty] = useState<string | null>(() => readViewFromUrl().selectedParty)
   useEffect(() => {
     if (colorScheme === 'block' && valtyp !== 'RD') setColorScheme('largest')
   }, [valtyp, colorScheme])
@@ -242,13 +270,13 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
   // Spegla vald vy i URL:en (delbar). replaceState → ingen historik-skräp; länken
   // pekar alltid på nuvarande valtyp + område (+ Dashboard-vyns läge/rutor, additivt).
   useEffect(() => {
-    const base = viewToSearch(valtyp, selectedArea, colorMode) // '' or '?val=...'
+    const base = viewToSearch(valtyp, selectedArea, colorMode, colorScheme, selectedParty) // '' or '?val=...'
     const dash = dashboardToSearch(view, dashboardBoxes) // '' or 'vy=dashboard&p1=...'
     // base starts with '?' (or is ''); dash has no leading punctuation (or is '').
     // Combine correctly whichever combination is present:
     const search = base ? (dash ? `${base}&${dash}` : base) : dash ? `?${dash}` : ''
     window.history.replaceState(null, '', window.location.pathname + search + window.location.hash)
-  }, [valtyp, selectedArea, colorMode, view, dashboardBoxes])
+  }, [valtyp, selectedArea, colorMode, colorScheme, selectedParty, view, dashboardBoxes])
   const [revision, setRevision] = useState(0)
   const [snapshotVersion, setSnapshotVersion] = useState(0)
   const [kommuner, setKommuner] = useState<NamedCode[]>([])
