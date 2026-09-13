@@ -262,7 +262,7 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
       : applyComparison(
           area, valtyp, 'distrikt', hover.kod, null, partyRef.current,
           (() => {
-            const a2022 = districtAndel2022Ref.current?.get(hover.kod)
+            const a2022 = districtAndel2022Ref.current?.get(`${valtyp}:${hover.kod}`)
             return a2022 && Object.keys(a2022).length ? { andel: a2022, mandat: {} as Record<string, number> } : null
           })(),
         )

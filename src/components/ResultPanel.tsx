@@ -130,7 +130,7 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
     const andel2022Of = (level: string, code: string): Record<string, number> => {
       const bet =
         level === 'distrikt'
-          ? districtAndel2022Ref.current.get(code)
+          ? districtAndel2022Ref.current.get(`${valtyp}:${code}`)
           : comparison
             ? comparisonFor(comparison, valtyp, level as never, code)?.andel
             : undefined

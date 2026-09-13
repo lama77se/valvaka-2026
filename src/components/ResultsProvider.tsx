@@ -189,7 +189,7 @@ export interface ResultsContextValue {
   district2022Ref: RefObject<Map<string, AreaComparison | null>>
   // 2022 års vinnarparti per distrikt (batch-hämtat per kommun för drill-down-listan).
   districtWinners2022Ref: RefObject<Map<string, WinnerParty | null>>
-  districtAndel2022Ref: RefObject<Map<string, Record<string, number>>> // vd → beteckning → 2022-andel (per-parti-kolumner)
+  districtAndel2022Ref: RefObject<Map<string, Record<string, number>>> // `${valtyp}:${vd}` → beteckning → 2022-andel (per-parti-kolumner) — valtyp-prefixad, se ensureDistrictWinners2022
   ensureDistrictWinners2022: (valtyp: Valtyp, kommunCode: string) => void
 
   // Områdesväljar-listor + HUD-nämnare
@@ -376,20 +376,39 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
   const ensureDistrictWinners2022 = useCallback((valtyp: Valtyp, kommunCode: string) => {
     const key = `${valtyp}:${kommunCode}`
     if (dw2022FetchedRef.current.has(key)) return
-    dw2022FetchedRef.current.add(key)
+    dw2022FetchedRef.current.add(key) // optimistiskt — rensas igen nedan om hämtningen misslyckas
     ;(async () => {
       const { data, error } = await supabase
         .from('district_result_2022')
         .select('valdistriktskod,beteckning,andel')
         .eq('valtyp', valtyp)
         .like('valdistriktskod', `${kommunCode}%`)
-      if (error || !data) return
+      if (error || !data) {
+        // Ett transient fel (429/5xx/nätverksglapp) fick annars kommunen permanent
+        // markerad som "hämtad" utan att någon data någonsin landade i
+        // districtAndel2022Ref — Bryt ner/hover för den kommunen visade då tyst "–"
+        // (eller, om ett TIDIGARE lyckat anrop redan seedat NÅGRA av distrikten men
+        // inte andra i samma svep, en ofullständig — därmed missvisande — ±2022) för
+        // RESTEN av sessionen, tills en sidladdning rensade cachen och försökte igen.
+        // Ta bort nyckeln så nästa hover/Bryt ner-öppning av samma kommun försöker om.
+        dw2022FetchedRef.current.delete(key)
+        return
+      }
       const top = new Map<string, { namn: string; andel: number }>()
       for (const r of data) {
         const cur = top.get(r.valdistriktskod)
         if (!cur || r.andel > cur.andel) top.set(r.valdistriktskod, { namn: r.beteckning, andel: r.andel })
-        // Full andel per distrikt (beteckning → andel) för per-parti-kolumnerna.
-        const full = districtAndel2022Ref.current.get(r.valdistriktskod) ?? districtAndel2022Ref.current.set(r.valdistriktskod, {}).get(r.valdistriktskod)!
+        // Full andel per distrikt (beteckning → andel) för per-parti-kolumnerna. Nyckeln
+        // MÅSTE vara valtyp-prefixad (`${valtyp}:${vd}`), inte bara `vd`: samma 8-siffriga
+        // valdistriktskod delas av RD/RF/KF (samma fysiska distrikt, tre olika val samma
+        // dag) — utan prefixet skrev ett senare ensureDistrictWinners2022-anrop för EN
+        // valtyp över/blandade sig med ett tidigare anrops data för en ANNAN valtyp i
+        // SAMMA Map-nyckel, så fort man under samma session tittat på Bryt ner/hover för
+        // samma distrikt i mer än en valtyp. Gav en felaktig ±2022 (fel valtyps 2022-andel)
+        // som satt kvar tills en sidladdning rensade cachen. district2022Ref (distriktets
+        // EGEN sida, se effekten längre ner) hade redan rätt valtyp-prefix — det är därför
+        // bara Bryt ner-vyn drabbades, aldrig distriktets egen sida.
+        const full = districtAndel2022Ref.current.get(`${valtyp}:${r.valdistriktskod}`) ?? districtAndel2022Ref.current.set(`${valtyp}:${r.valdistriktskod}`, {}).get(`${valtyp}:${r.valdistriktskod}`)!
         full[r.beteckning] = r.andel
       }
       const nameToParty = new Map<string, PartyMeta>()
