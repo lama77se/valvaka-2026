@@ -64,24 +64,11 @@ export interface AreaResult {
   sparr: number
   totalMandat: number | null
   totalMandat2022: number | null
-  ejAnmaldaPartier: number // se buildRows — vägs in i giltiga OCH Övriga-radens röster/andel
 }
 
 // Bygg partirader ur redan aggregerade röster för ETT område.
-//
-// ejAnmaldaPartier (default 0, valfri): Valmyndighetens EGEN "rösterEjPaverkaMandat.
-// rosterEjAnmaltDeltagande.antalRoster" — de ~81 icke-mandatrelevanta partiernas röster,
-// som ALDRIG itemiseras per parti i källfilen (varken preliminärt eller slutligt) utan
-// bara finns som denna EN aggregerade siffra. Utan den blir `giltiga` (och därmed ALLA
-// partiers `andel`) för lågt räknat mot val.se:s egen nämnare — och Övriga-raden visade
-// hårdkodat 0 röster trots att vi redan ingesterar denna siffra (används sen tidigare
-// bara i "ogiltiga röster"-visningen, TurnoutStore.aggregate().ejAnmalda). Handover
-// Val ANALYSIS 13 sep: mandaträkningen (mandate.ts) delar INTE denna giltiga-variabel
-// (egen nationalTotal ur store.aggregate()) → rör INTE mandattalen. Enda avsedda
-// bieffekten är att spärrlinjens `overSparr` (andel >= sparr) nu räknas mot en marginellt
-// bredare, mer korrekt nämnare.
-export function buildRows(votes: PartyVotes, party: Map<string, PartyMeta>, sparr: number, ejAnmaldaPartier = 0): AreaResult {
-  const giltiga = Object.values(votes).reduce((a, b) => a + b, 0) + ejAnmaldaPartier
+export function buildRows(votes: PartyVotes, party: Map<string, PartyMeta>, sparr: number): AreaResult {
+  const giltiga = Object.values(votes).reduce((a, b) => a + b, 0)
   const rows: PartyRow[] = Object.entries(votes).map(([partikod, roster]) => {
     const andel = giltiga > 0 ? roster / giltiga : 0
     const m = party.get(partikod)
@@ -101,7 +88,7 @@ export function buildRows(votes: PartyVotes, party: Map<string, PartyMeta>, spar
     }
   })
   rows.sort((a, b) => b.roster - a.roster)
-  return { rows, giltiga, sparr, totalMandat: null, totalMandat2022: null, ejAnmaldaPartier }
+  return { rows, giltiga, sparr, totalMandat: null, totalMandat2022: null }
 }
 
 export interface OvrigaRow {
@@ -127,22 +114,16 @@ export function collapseForDisplay(area: AreaResult, threshold = DISPLAY_THRESHO
   const rest = area.rows.filter((r) => displayAndel(r) < threshold)
   const sum = (rs: PartyRow[], pick: (r: PartyRow) => number | null) =>
     rs.every((r) => pick(r) == null) ? null : rs.reduce((a, r) => a + (pick(r) ?? 0), 0)
-  // ejAnmaldaPartier vägs in i SUMMAN (röster/andel) men INTE i `count` — de ~81 kända
-  // partierna under tröskeln är samma "st" oavsett; siffran korrigerar bara att den
-  // kollapsade radens röstsumma annars alltid var 0 (se buildRows-kommentaren).
-  const extraRoster = area.ejAnmaldaPartier
-  const extraAndel = area.giltiga > 0 ? extraRoster / area.giltiga : 0
-  const ovriga: OvrigaRow | null =
-    rest.length || extraRoster > 0
-      ? {
-          count: rest.length,
-          roster: rest.reduce((a, r) => a + r.roster, 0) + extraRoster,
-          andel: rest.reduce((a, r) => a + r.andel, 0) + extraAndel,
-          mandat: sum(rest, (r) => r.mandat),
-          andel2022: sum(rest, (r) => r.andel2022),
-          mandat2022: sum(rest, (r) => r.mandat2022),
-        }
-      : null
+  const ovriga: OvrigaRow | null = rest.length
+    ? {
+        count: rest.length,
+        roster: rest.reduce((a, r) => a + r.roster, 0),
+        andel: rest.reduce((a, r) => a + r.andel, 0),
+        mandat: sum(rest, (r) => r.mandat),
+        andel2022: sum(rest, (r) => r.andel2022),
+        mandat2022: sum(rest, (r) => r.mandat2022),
+      }
+    : null
   const idx = shown.findIndex((r) => !r.overSparr)
   return { shown, ovriga, sparrIndex: idx === -1 ? shown.length : idx }
 }
