@@ -4,7 +4,7 @@
 // <ResultTable>. Områdesväljaren styr delad `selectedArea` (kartklick → drilldown).
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { VALTYP_LABEL, type Valtyp } from '@/lib/results'
-import { comparisonFor, mergeVotes, sparrFor, uppsamlingRowFor, type Level } from '@/lib/aggregate'
+import { comparisonFor, mergeVotes, sparrFor, uppsamlingCountsForArea, uppsamlingRowFor, type Level } from '@/lib/aggregate'
 import { RIKET, useResults } from '@/components/ResultsProvider'
 import { ResultTable } from '@/components/ResultTable'
 import { MandatBars } from '@/components/MandatBars'
@@ -36,6 +36,8 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
     allCodesRef,
     groupsRef,
     uppsamlingRef,
+    uppsamlingRegistryRef,
+    uppsamlingRegistryReportedRef,
     comparisonRef,
     kommuner,
     regioner,
@@ -145,6 +147,8 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
     // ett barns EGEN rad ska väga in sin lösta uppsamling (bara valkrets-barn kan, se nedan).
     const childLevel = (groups[0]?.level ?? childLevelOf(valtyp, selectedArea.level)) as ReturnType<typeof childLevelOf>
     const uppsamling = uppsamlingRef.current[valtyp]
+    const uppsamlingRegistry = uppsamlingRegistryRef.current[valtyp]
+    const uppsamlingReported = uppsamlingRegistryReportedRef.current[valtyp]
     const items = groups.map((g) => {
       // Valkrets-barn: väg in DEN valkretsens LÖSTA uppsamling (kretskod känd) i barnets
       // egen totalrad — samma nesting som val.se gör (fast här i valkretsens totalsumma,
@@ -169,7 +173,13 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
       for (const [pk, v] of Object.entries(votes)) { const f = pmap.get(pk)?.forkortning; if (f) a26[f] = (a26[f] ?? 0) + v }
       if (total > 0) for (const f in a26) a26[f] /= total
       const a22 = andel2022Of(g.level, g.code)
-      const reported = g.districts.reduce((n, c) => n + (store.has(c) ? 1 : 0), 0)
+      // Uppsamlingsdistrikten hör till barnets yta (samma organ-/valkrets-gating som
+      // huvudvyns "X av Y" sedan PR #173, se uppsamlingCountsForArea) — annars visade
+      // "Räkn."-kolumnen bara de geografiska distrikten, missad av #173 (som bara rörde
+      // computeAreaView + de fyra globala platserna, aldrig denna separata Bryt ner-väg).
+      const uppCounts = uppsamlingCountsForArea(valtyp, g.level, g.code, uppsamlingRegistry, uppsamlingReported)
+      const reported = g.districts.reduce((n, c) => n + (store.has(c) ? 1 : 0), 0) + uppCounts.reported
+      const districtCount = g.districts.length + uppCounts.total
       const live = total > 0
       // Ledande parti (radens färgmarkering) = största i 2026; neutral/grå för ännu
       // orapporterade rader (ingen 2022-tonad ram — hela sektionen bygger på 2026).
@@ -178,7 +188,7 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
       let topA = 0
       for (const [f, a] of Object.entries(src)) if (a > topA) { topA = a; leadFork = f }
       const leadFarg = leadFork ? forkFarg.get(leadFork) ?? REPORTED_NEUTRAL : reported > 0 ? REPORTED_NEUTRAL : UNREPORTED_FILL
-      return { level: g.level, code: g.code, reported, total: g.districts.length, live, a26, a22, leadFarg }
+      return { level: g.level, code: g.code, reported, total: districtCount, live, a26, a22, leadFarg }
     })
     const anyLive = items.some((it) => it.live) // finns 2026-röster alls? annars visas 2022
     // Uppsamlingsröster som INTE redan nestades i ett valkrets-barns egen rad ovan → en
