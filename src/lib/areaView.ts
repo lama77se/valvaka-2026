@@ -44,6 +44,16 @@ const MANDAT_LEVELS: Record<Valtyp, Level[]> = {
   KF: ['kommun', 'valkrets'],
 }
 
+// Döljer mandatberäkningarnas VISNING (inte själva beräkningen — den körs som idag)
+// tills minst denna andel av valdistrikten i det VISADE området är räknade. Svensk
+// mediepraxis (SVT) visar traditionellt inte första preliminära mandatfördelningen
+// förrän "tillräckligt räknat" (~22:30) — tidigt räknade distrikt (ofta små) ger
+// annars en skev bild, särskilt på finkornig nivå (valkrets/utjämningsmandat). Ersätter
+// INTE den borttagna (12 sep) "minst"-hedgen på valkretsnivå (amber-ruta/`*`) — det var
+// en annan mekanism (visa en golvsiffra). Detta är en ren tröskel: under den, inget
+// mandat alls; över den, den fulla, riktiga fördelningen (ingen markering).
+const MANDAT_REPORT_THRESHOLD = 10
+
 export interface AreaViewParams {
   valtyp: Valtyp
   area: Area
@@ -97,12 +107,25 @@ export function computeAreaView(p: AreaViewParams): AreaViewResult {
   // av VALT OMRÅDE som rapporterat in (skiljer sig från `prog`, som är per valtyp).
   const statusTag = slutligTag(store.slutligProgress())
 
+  // codes/reported/total/pct hoisade hit (tidigare räknade ut sent i funktionen, se
+  // nedan) — blocks/showMandat nedan behöver pct FÖRE de kan avgöra om mandat ska visas.
+  const codes = districtsInArea(allCodes, area.level, area.code, valtyp, meta)
+  const reported = codes.reduce((n, c) => n + (store.has(c) ? 1 : 0), 0)
+  const total = codes.length
+  // Rapporteringsgrad FÖR DET VISADE OMRÅDET (t.ex. EN valkrets egen räknegrad om man
+  // tittar på just den) — INTE riket/hela valtypens grad. Gatar mandatberäkningarnas
+  // visning nedan, se MANDAT_REPORT_THRESHOLD.
+  const pct = total > 0 ? Math.round((reported / total) * 100) : 0
+  const mandatReported = pct >= MANDAT_REPORT_THRESHOLD
+
   // Tvåblocksvyn (MandatBars) — bara på valtypens högsta nivå: riksblocken för RD/riket,
   // sittande styre-vs-opposition för RF/region resp. KF/kommun (samtliga 20 regioner och
   // 290 kommuner finns i REGION_STYRE_BLOCKS/KOMMUN_STYRE_BLOCKS, se regionBlocks.ts/
-  // kommunBlocks.ts för källa/verifiering per post).
-  const blocks: BlockConfig | undefined =
-    valtyp === 'RD' && area.level === 'riket'
+  // kommunBlocks.ts för källa/verifiering per post). Under MANDAT_REPORT_THRESHOLD:
+  // undefined → MandatBars no-opar redan när blocks är falsy.
+  const blocks: BlockConfig | undefined = !mandatReported
+    ? undefined
+    : valtyp === 'RD' && area.level === 'riket'
       ? RIKET_BLOCKS
       : valtyp === 'RF' && area.level === 'region'
         ? REGION_STYRE_BLOCKS[area.code ?? '']
@@ -110,7 +133,7 @@ export function computeAreaView(p: AreaViewParams): AreaViewResult {
           ? KOMMUN_STYRE_BLOCKS[area.code ?? '']
           : undefined
 
-  const showMandat = MANDAT_LEVELS[valtyp].includes(area.level)
+  const showMandat = mandatReported && MANDAT_LEVELS[valtyp].includes(area.level)
 
   const areaName =
     area.level === 'riket'
@@ -123,7 +146,6 @@ export function computeAreaView(p: AreaViewParams): AreaViewResult {
             ? (regioner.find((r) => r.code === area.code)?.name ?? area.code ?? '')
             : (kommuner.find((k) => k.code === area.code)?.name ?? area.code ?? '')
 
-  const codes = districtsInArea(allCodes, area.level, area.code, valtyp, meta)
   // Organ-nivåerna (KF-kommun/RF-region/RD-riket) väger in uppsamlingsrösterna i BÅDE
   // röster/andel (här) och mandat (computeMandate) så den slutgiltiga presentationen
   // matchar val.se. Övriga nivåer → uppsamlingForArea ger null → rent geografiskt.
@@ -158,7 +180,6 @@ export function computeAreaView(p: AreaViewParams): AreaViewResult {
     area.level === 'distrikt' && area.code ? (district2022.get(`${valtyp}:${area.code}`) ?? null) : null
   areaResult = applyComparison(areaResult, valtyp, area.level, area.code, comparison, party, districtLeaf)
   const display = collapseForDisplay(areaResult)
-  const reported = codes.reduce((n, c) => n + (store.has(c) ? 1 : 0), 0)
   const has2022 = areaResult.rows.some((r) => r.andel2022 != null)
   const t = turnoutStore.aggregate(codes)
   // Valdeltagande för området: Σtotalt / Σröstberättigade över dess (reguljära) distrikt.
@@ -177,14 +198,17 @@ export function computeAreaView(p: AreaViewParams): AreaViewResult {
           pctOfTotal: t.total > 0 ? ((t.blanka + t.ejAnmalda + t.ovrigaOgiltiga) / t.total) * 100 : null,
         }
       : null
-  const total = codes.length
-  const pct = total > 0 ? Math.round((reported / total) * 100) : 0
 
   return {
     display,
     giltiga: areaResult.giltiga,
-    totalMandat: areaResult.totalMandat,
-    totalMandat2022: areaResult.totalMandat2022,
+    // Nollade under MANDAT_REPORT_THRESHOLD: totalMandat går direkt till MandatBars
+    // (inte bara via showMandat) och styr dess EGEN "Mandat 2026"-stapel + majoritets-
+    // linje oberoende av showMandat — måste alltså gatas separat, annars läcker den
+    // igenom. totalMandat2022 nollas av samma skäl/konsekvens (annars ser Mandat-
+    // kolumnens 2022-sida konstig ut ensam).
+    totalMandat: mandatReported ? areaResult.totalMandat : null,
+    totalMandat2022: mandatReported ? areaResult.totalMandat2022 : null,
     has2022,
     reported,
     total,
