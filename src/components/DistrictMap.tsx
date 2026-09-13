@@ -259,11 +259,18 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
   }, [hover?.kod, valtyp, colorMode, ensureDistrictWinners2022])
 
   // Mobil-fliken döljs med `hidden` (display:none) när man är på en annan flik. MapLibre
-  // mäter då containern till 0 → måste resiza:s när fliken blir synlig igen. På desktop är
-  // active alltid true (ändras aldrig) → körs en gång vid mount som en no-op.
+  // mäter då containern till 0 → måste resiza:s när fliken blir synlig igen. Om urvalet
+  // ändrades MEDAN fliken var dold (t.ex. "Hela Sverige"-knappen i MobileChrome, som är
+  // synlig och klickbar från Resultat-fliken) räknade fokuseffekten ut fitBounds mot den
+  // dolda 0×0-containern → fel (för utzoomad) kamera. resize() ensam rättar bara
+  // canvasens upplösning, inte den redan felaktiga zoomen — måste refit:a på nytt (utan
+  // animation, som vid fönsterresize) efter resize för att landa på rätt zoom/centrering.
+  // På desktop är active alltid true (ändras aldrig) → körs en gång vid mount som en no-op.
   useEffect(() => {
-    if (active) mapRef.current?.resize()
-    else setHover(null) // lämnar Karta-fliken → stäng ev. öppen tapp-sheet
+    if (active) {
+      mapRef.current?.resize()
+      refitRef.current?.()
+    } else setHover(null) // lämnar Karta-fliken → stäng ev. öppen tapp-sheet
   }, [active])
 
   // Mobil: tapp-sheeten (hover-state) är HELT separat från selectedArea (ResultsProvider)
