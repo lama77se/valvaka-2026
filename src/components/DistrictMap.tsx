@@ -886,8 +886,19 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
         pad = { top: dataset?.test ? 150 : 110, right: panelW + 24, bottom: 48, left: Math.round(boardsRight) + 24 }
       }
       // maxZoom kapar bara mycket små kommuner — annars fit:ar vi områdets egen utsträckning.
-      if (on && box) m.fitBounds(box, { padding: pad, maxZoom: level === 'distrikt' ? 11 : 10, duration })
-      else if (code == null) m.fitBounds(SWEDEN_BOUNDS, { padding: pad, duration })
+      if (on && box && level === 'distrikt') {
+        // Tapp på ett distrikt (karta eller avgångstavla) ska INTE zooma ut: fitBounds till
+        // hela kommunen zoomar annars ut varje gång man redan tittar närmare in än vad
+        // kommunen kräver. cameraForBounds räknar bara ut kameran (rör den inte) → vi tar
+        // max(nuvarande zoom, den kommunen kräver) så vi bara zoomar IN vid behov, aldrig ut.
+        const cam = m.cameraForBounds(box, { padding: pad, maxZoom: 11 })
+        if (cam?.center) m.easeTo({ center: cam.center, zoom: Math.max(m.getZoom(), cam.zoom ?? 0), duration })
+        else m.fitBounds(box, { padding: pad, maxZoom: 11, duration })
+      } else if (on && box) {
+        m.fitBounds(box, { padding: pad, maxZoom: 10, duration })
+      } else if (code == null) {
+        m.fitBounds(SWEDEN_BOUNDS, { padding: pad, duration })
+      }
     }
     runFit(on ? 700 : 600)
     // Fönsterstorleksändring re-fit:ar mot nuvarande urval (utan animation — se resize-effekt).
