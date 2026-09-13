@@ -405,6 +405,22 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
       }
       return result
     }
+    // I 'grupp'-läge ska HELA gruppen (valkrets/region/kommun) färgas så fort NÅGOT
+    // distrikt i den rapporterat — inte bara de enskilda distrikt som själva har data.
+    // computeGroupWinners/-BlockWinners/computeGroupPartyShares sätter redan samma
+    // utfall för ALLA medlemsdistrikt (se ovan), men om repaint-loopen bara går igenom
+    // storesRef.current[vt].districts() (de som FAKTISKT rapporterat) får resten av
+    // gruppen aldrig sitt feature-state satt → förblir grå trots att aggregatet redan
+    // finns. Denna funktion ger rätt mängd att gå igenom beroende på läge.
+    const districtsToRepaint = (vt: Valtyp): Iterable<string> => {
+      const store = storesRef.current[vt]
+      if (colorModeRef.current !== 'grupp') return store.districts()
+      const expanded = new Set<string>()
+      for (const districts of groupDistrictMapFor(vt).values()) {
+        if (districts.some((vd) => store.has(vd))) for (const vd of districts) expanded.add(vd)
+      }
+      return expanded
+    }
     // Distrikten som delar vd:s grupp (aktiv valtyp) — används för att låta hover-
     // highlighten (feature-state 'hover') täcka HELA gruppen i stället för bara det
     // enskilda polygon-fältet pekaren råkar stå på. O(1): RD via districtToVk-
@@ -493,14 +509,16 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
         if (colorSchemeRef.current === 'party' && selectedPartyRef.current && pendingRef.current.size > 0) {
           // Samma skäl som 'grupp'-grenen nedan: en ändring var som helst kan ändra
           // den dynamiska maxskalan → måla om ALLA, inte bara pendingRef-posterna.
+          // districtsToRepaint expanderar till HELA gruppen om colorMode='grupp' (se
+          // dess kommentar) — annars bara de som faktiskt rapporterat, som förut.
           recomputePartyShares()
-          for (const vt of VALTYPER) for (const vd of storesRef.current[vt].districts()) applyDistrict(vd)
+          for (const vt of VALTYPER) for (const vd of districtsToRepaint(vt)) applyDistrict(vd)
         } else if (colorModeRef.current === 'grupp' && pendingRef.current.size > 0) {
           // En ändring i ETT distrikt kan byta hela gruppens vinnare → måla om ALLA
           // (samma unions-iteration som recolorActive), inte bara pendingRef-posterna.
           if (colorSchemeRef.current === 'block') groupBlockWinnersRef.current = computeGroupBlockWinners(activeValtypRef.current)
           else groupWinnersRef.current = computeGroupWinners(activeValtypRef.current)
-          for (const vt of VALTYPER) for (const vd of storesRef.current[vt].districts()) applyDistrict(vd)
+          for (const vt of VALTYPER) for (const vd of districtsToRepaint(vt)) applyDistrict(vd)
         } else {
           for (const vd of pendingRef.current) applyDistrict(vd)
         }
