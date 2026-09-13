@@ -910,11 +910,38 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
       if (on && box && level === 'distrikt') {
         // Tapp på ett distrikt (karta eller avgångstavla) ska INTE zooma ut: fitBounds till
         // hela kommunen zoomar annars ut varje gång man redan tittar närmare in än vad
-        // kommunen kräver. cameraForBounds räknar bara ut kameran (rör den inte) → vi tar
-        // max(nuvarande zoom, den kommunen kräver) så vi bara zoomar IN vid behov, aldrig ut.
-        const cam = m.cameraForBounds(box, { padding: pad, maxZoom: 11 })
-        if (cam?.center) m.easeTo({ center: cam.center, zoom: Math.max(m.getZoom(), cam.zoom ?? 0), duration })
-        else m.fitBounds(box, { padding: pad, maxZoom: 11, duration })
+        // kommunen kräver — vi vill bara zooma IN vid behov, aldrig ut.
+        //
+        // cameraForBounds().center är dock BARA korrekt ihopparat med DESS EGEN uträknade
+        // zoom: asymmetrisk padding (panel/tavlor/tapp-sheet) bakas in som ett pixel→grad-
+        // offset som skalas efter den zoomen internt (se maplibre-gl:s cameraForBoxAndBearing
+        // — offsetet divideras med zoomScale(zoom)). Att återanvända samma center men tvinga
+        // fram en ANNAN (högre) zoom skalar det offsetet exponentiellt fel → kartan "gled"
+        // iväg upp/ner och det tappade distriktet kunde hamna helt utanför vyn vid djup
+        // inzoomning (även en distriktsbox har samma problem: glesbygdsdistrikt kan vara så
+        // stora att DERAS egen fit-zoom också ligger under den man redan tittar på).
+        //
+        // Fix: räkna alltid ut center själv, EXAKT för zoomen vi faktiskt landar på — genom
+        // att hoppa dit temporärt (project/unproject, inga andra listeners hinner rita om
+        // något innan vi hoppar tillbaka, allt sker synkront) i stället för att lita på
+        // cameraForBounds egna, zoom-bundna offset.
+        const currentZoom = m.getZoom()
+        const kommunZoom = m.cameraForBounds(box, { padding: pad, maxZoom: 11 })?.zoom ?? currentZoom
+        const targetZoom = Math.max(currentZoom, kommunZoom)
+        const districtBox = boundsRef.current[code ?? '']
+        // Zoomar vi in för att visa hela kommunen: centrera på kommunen. Redan djupare
+        // inzoomad än så: centrera i stället på det TAPPADE DISTRIKTET så det stannar i vy.
+        const targetBox = targetZoom > currentZoom || !districtBox ? box : districtBox
+        const point: [number, number] = [(targetBox[0] + targetBox[2]) / 2, (targetBox[1] + targetBox[3]) / 2]
+        const orig = { center: m.getCenter(), zoom: currentZoom, bearing: m.getBearing() }
+        m.jumpTo({ center: point, zoom: targetZoom })
+        const w = m.getContainer().clientWidth
+        const h = m.getContainer().clientHeight
+        const desiredX = pad.left + (w - pad.left - pad.right) / 2
+        const desiredY = pad.top + (h - pad.top - pad.bottom) / 2
+        const corrected = m.unproject([w - desiredX, h - desiredY])
+        m.jumpTo(orig)
+        m.easeTo({ center: corrected, zoom: targetZoom, duration })
       } else if (on && box) {
         m.fitBounds(box, { padding: pad, maxZoom: 10, duration })
       } else if (code == null) {
