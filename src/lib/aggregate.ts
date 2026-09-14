@@ -143,28 +143,36 @@ export function collapseForDisplay(area: AreaResult, threshold = DISPLAY_THRESHO
   return { shown, ovriga, sparrIndex: idx === -1 ? shown.length : idx }
 }
 
-// Render-tid: formatera marginalmandat-raden (handover 14 sep, Val ANALYSIS) — delad text-
-// byggnad mellan ResultPanel.tsx (huvudvyn, desktop+mobil) och AreaSummary.tsx (Dashboard-
-// rutorna), så BÅDA ytorna alltid visar exakt samma text för samma data. `partyName` är en
-// enkel uppslagsfunktion (partikod → förkortning) — hålls fri från React/PartyMeta-typen här
-// så denna fil inte behöver bry sig om VILKEN källa anroparen har (partyRef.current.get(...)
-// i båda dagens call sites). Visar bara DEN NÄRMASTE utmanaren (redan sorterad så i
-// marginalSeatInfo), en rad text, aldrig en tabell. `null` om ingen utmanare finns (bör
-// aldrig hända i praktiken — marginalSeatInfo kräver redan ≥2 kvalificerade partier).
+// Render-tid: formatera marginalmandat-raden (handover 14 sep, Val ANALYSIS; utökad 14 sep
+// med näst närmaste utmanaren, Lars uttryckliga önskan) — delad textbyggnad mellan
+// ResultPanel.tsx (huvudvyn, desktop+mobil) och AreaSummary.tsx (Dashboard-rutorna), så BÅDA
+// ytorna alltid visar exakt samma text för samma data. `partyName` är en enkel
+// uppslagsfunktion (partikod → förkortning) — hålls fri från React/PartyMeta-typen här så
+// denna fil inte behöver bry sig om VILKEN källa anroparen har (partyRef.current.get(...) i
+// båda dagens call sites). Visar de TVÅ närmaste utmanarna (redan sorterade så i
+// marginalSeatInfo) — näst närmast utelämnas graciöst om den inte finns (bara 2 kvalificerade
+// partier totalt → bara 1 möjlig utmanare, marginalpartiet räknas inte som sin egen utmanare).
+// `null` om ingen utmanare alls finns (bör aldrig hända i praktiken — marginalSeatInfo kräver
+// redan ≥2 kvalificerade partier).
 export function formatMarginalSeat(
   m: MarginalSeatInfo,
   totalMandat: number | null,
   compact: boolean,
   partyName: (kod: string) => string,
 ): string | null {
-  const top = m.challengers[0]
+  const [top, second] = m.challengers
   if (!top) return null
   const marginalName = partyName(m.marginalParty)
   const challengerName = partyName(top.party)
   const votes = top.votesNeeded.toLocaleString('sv-SE')
+  const secondText =
+    second &&
+    (compact
+      ? ` ${partyName(second.party)} näst närmast (~${second.votesNeeded.toLocaleString('sv-SE')}).`
+      : ` Därefter ${partyName(second.party)}, som skulle behöva ~${second.votesNeeded.toLocaleString('sv-SE')} röster.`)
   return compact
-    ? `Sista mandatet: ${marginalName}. ${challengerName} närmast (~${votes} röster).`
-    : `Sista mandatet${totalMandat != null ? ` (#${totalMandat})` : ''} innehas av ${marginalName}. ${challengerName} ligger närmast och skulle behöva ~${votes} fler röster för att ta det.`
+    ? `Sista mandatet: ${marginalName}. ${challengerName} närmast (~${votes} röster).${secondText || ''}`
+    : `Sista mandatet${totalMandat != null ? ` (#${totalMandat})` : ''} innehas av ${marginalName}. ${challengerName} ligger närmast och skulle behöva ~${votes} fler röster för att ta det.${secondText || ''}`
 }
 
 // --- Uppsamlingsdistrikt-registret (handover 13 sep, Val ANALYSIS) -------------
