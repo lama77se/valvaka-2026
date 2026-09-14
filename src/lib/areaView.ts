@@ -4,7 +4,7 @@
 // resultatpanelen och Dashboard-vyns fyra oberoende rutor. Ingen React här —
 // parametriserad rent på valtyp+område+data, testbar isolerat (se
 // scripts/verify-area-view.ts). Se docs/superpowers/specs/2026-09-12-dashboard-vy-design.md.
-import { slutligTag, type ResultStore, type TurnoutStore, type Valtyp } from './results'
+import { deriveSlutligState, slutligTag, type ResultStore, type SlutligState, type TurnoutStore, type Valtyp } from './results'
 import {
   applyComparison,
   applyMandate,
@@ -124,6 +124,15 @@ export interface AreaViewResult {
   areaName: string
   pct: number
   statusTag: ReturnType<typeof slutligTag>
+  // Slutlig-baren (handover 14 sep, Val ANALYSIS) — RAT {done,total,pct,state} för DET
+  // VISADE OMRÅDET, så UI kan rendera en EGEN progress-bar (samma visuella mönster som
+  // rapporteringsbaren, se SlutligBar.tsx) i stället för bara `statusTag`s förkortade badge.
+  // `slutligTotal` = geografiskt rapporterade (INTE samma som `total` ovan, som inkluderar
+  // uppsamling — uppsamlingsdistrikt saknar egen slutlig-spårning).
+  slutligDone: number
+  slutligTotal: number
+  slutligPct: number
+  slutligState: SlutligState
 }
 
 export function computeAreaView(p: AreaViewParams): AreaViewResult {
@@ -134,13 +143,6 @@ export function computeAreaView(p: AreaViewParams): AreaViewResult {
     uppsamlingRegistry = [], uppsamlingReported = new Set<string>(),
   } = p
 
-  // Slutresultat-läge PER VALTYP ur result.status i storen (preliminärt → sluträknas · X %
-  // → slutgiltigt). Panelen renderas om på `revision` så andelen hålls färsk. Fasen visas
-  // som en egen badge (samma tone/etikett som kartvyns statustagg, `slutligTag`) i stället
-  // för att stå inbäddad i bar-texten — baren nedan är då entydigt EN sak: hur stor andel
-  // av VALT OMRÅDE som rapporterat in (skiljer sig från `prog`, som är per valtyp).
-  const statusTag = slutligTag(store.slutligProgress())
-
   // codes/reported/total/pct hoisade hit (tidigare räknade ut sent i funktionen, se
   // nedan) — blocks/showMandat nedan behöver pct FÖRE de kan avgöra om mandat ska visas.
   const codes = districtsInArea(allCodes, area.level, area.code, valtyp, meta)
@@ -149,13 +151,29 @@ export function computeAreaView(p: AreaViewParams): AreaViewResult {
   // uppsamlingForArea nedan, så nämnaren aldrig inkluderar distrikt vars röster inte redan
   // vägs in i ytans egen röstsumma).
   const uppCounts = uppsamlingCountsForArea(valtyp, area.level, area.code, uppsamlingRegistry, uppsamlingReported)
-  const reported = codes.reduce((n, c) => n + (store.has(c) ? 1 : 0), 0) + uppCounts.reported
+  // GEOGRAFISKT rapporterade (utan uppsamling) — egen variabel eftersom slutlig-statusen
+  // nedan (isSlutlig) bara känner till geografiska distrikt (uppsamlingsdistrikt har ingen
+  // egen slutlig-spårning i ResultStore). `reported`/`total` (med uppsamling invägt) driver
+  // FORTFARANDE rapporteringsbaren/mandat-tröskeln som förut — oförändrat.
+  const geoReported = codes.reduce((n, c) => n + (store.has(c) ? 1 : 0), 0)
+  const reported = geoReported + uppCounts.reported
   const total = codes.length + uppCounts.total
   // Rapporteringsgrad FÖR DET VISADE OMRÅDET (t.ex. EN valkrets egen räknegrad om man
   // tittar på just den) — INTE riket/hela valtypens grad. Gatar mandatberäkningarnas
   // visning nedan, se MANDAT_REPORT_THRESHOLD.
   const pct = total > 0 ? Math.round((reported / total) * 100) : 0
   const mandatReported = pct >= MANDAT_REPORT_THRESHOLD
+
+  // Slutresultat-läge FÖR DET VISADE OMRÅDET (handover 14 sep, Val ANALYSIS) — INTE
+  // riksomfattande längre (tidigare `slutligTag(store.slutligProgress())`, missvisande så
+  // fort man tittar på ett specifikt, redan-klart område medan resten av riket fortfarande
+  // är preliminärt — t.ex. Hudiksvall 100 % slutgiltigt skulle ändå visa riksblandningens
+  // låga %). Samma nämnarlogik som förut (andel av DE REDAN RAPPORTERADE geografiska
+  // distrikten i området, se `deriveSlutligState`), bara skopad till `codes` i stället för
+  // hela valtypens store. Uppsamlingsdistrikt räknas INTE in (ingen slutlig-spårning för dem).
+  const slutligDone = codes.reduce((n, c) => n + (store.isSlutlig(c) ? 1 : 0), 0)
+  const { state: slutligState, pct: slutligPct } = deriveSlutligState(slutligDone, geoReported)
+  const statusTag = slutligTag({ state: slutligState, pct: slutligPct })
 
   // Tvåblocksvyn (MandatBars) — bara på valtypens högsta nivå: riksblocken för RD/riket,
   // sittande styre-vs-opposition för RF/region resp. KF/kommun (samtliga 20 regioner och
@@ -309,5 +327,9 @@ export function computeAreaView(p: AreaViewParams): AreaViewResult {
     areaName,
     pct,
     statusTag,
+    slutligDone,
+    slutligTotal: geoReported,
+    slutligPct,
+    slutligState,
   }
 }

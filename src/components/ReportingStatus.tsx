@@ -8,7 +8,8 @@
 // som faktiskt syns på skärmen). Extraherad härifrån (ursprungligen mobil-lokal) i
 // samband med finalgranskningens fix-våg.
 import { useResults } from '@/components/ResultsProvider'
-import type { Valtyp } from '@/lib/results'
+import { deriveSlutligState, type Valtyp } from '@/lib/results'
+import { SlutligBar } from '@/components/SlutligBar'
 
 // `large` (valfri, default false): mobilens enda instans behåller den ursprungliga
 // kompakta 11px-storleken (oförändrat beteende). Dashboard-lägets tre instanser
@@ -32,22 +33,18 @@ export function ReportingStatus({ valtyp: valtypProp, large = false }: { valtyp?
   const total = totalByValtyp[valtyp] + uppRegistry.length
   if (total === 0) return null
   const pct = Math.round((reported / total) * 100)
-  const prog = store.slutligProgress()
-  const tone =
-    prog.state === 'preliminar' ? 'bg-amber-500/15 text-amber-300'
-    : prog.state === 'slutlig' ? 'bg-emerald-500/15 text-emerald-300'
-    : 'bg-sky-500/15 text-sky-300'
-  const label =
-    prog.state === 'preliminar' ? 'Prel.'
-    : prog.state === 'slutlig' ? 'Slutgiltigt'
-    : `${prog.pct} %`
+  // Slutgiltig-räkningens EGEN, samtidiga bar (handover 14 sep, Val ANALYSIS) — ersätter den
+  // tidigare enda tone/label-chippen (Prel./X %/Slutgiltigt). Riksomfattande, geografiskt
+  // (ingen uppsamling — se DistrictMap.tsx/areaView.ts för samma princip). `flex-wrap` på
+  // ytterst raden (nedan) låter den falla ner på egen rad om det inte finns plats i den
+  // trånga mobil-chromen, i stället för att klippas eller tvinga fram horisontell scroll.
+  const { state: slutligState, pct: slutligPct } = deriveSlutligState(store.slutligDoneCount, store.reportedCount)
   return (
-    <div className={`flex shrink-0 items-center gap-1.5 text-slate-300 ${large ? 'text-sm' : 'text-[11px]'}`}>
+    <div className={`flex shrink-0 flex-wrap items-center gap-1.5 text-slate-300 ${large ? 'text-sm' : 'text-[11px]'}`}>
       {/* Valtyp-etikett bara när `valtyp` skickas in explicit (Dashboard-lägets tre
           instanser, sida vid sida) — mobilens enda instans (ingen prop) behöver ingen,
           den globalt aktiva valtypen syns redan i chromen intill. */}
       {valtypProp && <span className="font-semibold uppercase tracking-wide text-slate-400">{valtypProp}</span>}
-      <span className={`rounded font-semibold uppercase tracking-wide ${tone} ${large ? 'px-2 py-1' : 'px-1.5 py-0.5'}`}>{label}</span>
       <span
         className="tabular-nums"
         // `large` (Dashboard, gott om bredd) → synlig text; kompakt (mobil) → bara tooltip,
@@ -61,6 +58,7 @@ export function ReportingStatus({ valtyp: valtypProp, large = false }: { valtyp?
           <span className="ml-1 text-slate-500">(varav {uppRegistry.length.toLocaleString('sv-SE')} uppsamling)</span>
         )}
       </span>
+      <SlutligBar state={slutligState} pct={slutligPct} done={store.slutligDoneCount} total={store.reportedCount} short />
       <span
         className={`rounded-full ${large ? 'h-2 w-2' : 'h-1.5 w-1.5'} ${realtimeConnected ? 'animate-pulse bg-emerald-400' : pollError ? 'bg-amber-400' : 'bg-slate-500'}`}
         title={realtimeConnected ? 'Live' : pollError ?? 'Pausad'}

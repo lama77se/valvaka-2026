@@ -8,6 +8,8 @@
 import { Fragment } from 'react'
 import type { DisplayRows } from '@/lib/aggregate'
 import { deltaColor, formatDelta as delta, formatDeltaInt as dInt } from '@/lib/delta'
+import type { SlutligState } from '@/lib/results'
+import { SlutligBar } from '@/components/SlutligBar'
 
 const NEUTRAL = '#64748b'
 const nf = new Intl.NumberFormat('sv-SE')
@@ -18,6 +20,13 @@ export interface ResultTableProps {
   subtitle?: string
   reportPct?: number // 0..100 → fyller progress-baren bakom undertexten (inrapporterat)
   statusTag?: { tone: string; label: string; title: string } // slutresultat-fas (`slutligTag`), egen badge — SKILT från reportPct
+  // Slutgiltig-baren (handover 14 sep, Val ANALYSIS) — EGEN, samtidig progress-bar under
+  // rapporteringsbaren, samma områdesskopning som `reportPct` (se areaView.ts:s
+  // slutligDone/slutligTotal/slutligPct/slutligState). Valfri: utelämnas → ingen bar.
+  slutligState?: SlutligState
+  slutligPct?: number
+  slutligDone?: number
+  slutligTotal?: number
   turnoutLabel?: string // t.ex. "Valdeltagande 84,5 %" — sitter i tabellhuvudets annars tomma yta ovanför Parti/Röster
   turnoutTitle?: string // hover-tooltip på turnoutLabel: de absoluta talen ("Räknade röster: … · Röstberättigade: …")
   display: DisplayRows
@@ -30,7 +39,11 @@ export interface ResultTableProps {
   showMandat?: boolean // mandat är bara meningsfullt på organ-/valkretsnivå → dölj kolumnerna annars
 }
 
-export function ResultTable({ title, subtitle, reportPct, statusTag, turnoutLabel, turnoutTitle, display, giltiga, sparr, invalidVotes, totalMandat, totalMandat2022, showSparr = true, showMandat = true }: ResultTableProps) {
+export function ResultTable({
+  title, subtitle, reportPct, statusTag, slutligState, slutligPct, slutligDone, slutligTotal,
+  turnoutLabel, turnoutTitle, display, giltiga, sparr, invalidVotes, totalMandat, totalMandat2022,
+  showSparr = true, showMandat = true,
+}: ResultTableProps) {
   const { shown, ovriga, sparrIndex } = display
   const sparrLabel = `${(sparr * 100).toFixed(0)} %-spärr`
   const cols = showMandat ? 8 : 5
@@ -74,6 +87,11 @@ export function ResultTable({ title, subtitle, reportPct, statusTag, turnoutLabe
             <p className="relative px-2 py-1 text-xs text-slate-300">{subtitle}</p>
           </div>
         ))}
+      {slutligState && slutligPct != null && slutligDone != null && slutligTotal != null && (
+        <div className="mb-2">
+          <SlutligBar state={slutligState} pct={slutligPct} done={slutligDone} total={slutligTotal} />
+        </div>
+      )}
 
       {/* min-w = golv mot ihoptryckning på riktigt smala telefoner; satt nära det
           NATURLIGA innehållet (~360px med de korta mobil-etiketterna) så tabellen ryms i

@@ -11,7 +11,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useResults } from '@/components/ResultsProvider'
 import { ancestorsOf } from '@/lib/hierarchy'
 import { onDark } from '@/lib/colors'
-import { VALTYP_LABEL, type Valtyp } from '@/lib/results'
+import { deriveSlutligState, VALTYP_LABEL, type Valtyp } from '@/lib/results'
+import { SlutligBar } from '@/components/SlutligBar'
 
 const NEUTRAL = '#64748b'
 const VISIBLE = 20 // hur många rader som visas (20 senaste inrapporterade per tavla)
@@ -180,6 +181,9 @@ export function DepartureBoard({ valtyp, onRowSelect, fill, fullWidth, emphasize
   const uppReportedSet = uppsamlingRegistryReportedRef.current[valtyp]
   const reported = store.reportedCount + uppRegistry.reduce((n, e) => n + (uppReportedSet.has(e.kod) ? 1 : 0), 0)
   const total = totalByValtyp[valtyp] + uppRegistry.length
+  // Sluträkningsgrad — EGEN, samtidig bar (handover 14 sep, Val ANALYSIS), riksomfattande
+  // som denna tavlas befintliga reported/total ovan (samma princip som DistrictMap.tsx:s HUD).
+  const { state: slutligState, pct: slutligPct } = deriveSlutligState(store.slutligDoneCount, store.reportedCount)
 
   // Namn-uppslag + hierarki-sökväg för DENNA tavlas valtyp (kan skilja sig från aktiv).
   const kommunName = useMemo(() => new Map(kommuner.map((k) => [k.code, k.name])), [kommuner])
@@ -221,6 +225,10 @@ export function DepartureBoard({ valtyp, onRowSelect, fill, fullWidth, emphasize
           {VALTYP_LABEL[valtyp]} · {reported.toLocaleString('sv-SE')}
           {total ? ` / ${total.toLocaleString('sv-SE')}` : ''}
         </span>
+      </div>
+      {/* Sluträkningsgrad — EGEN, samtidig bar under rubrikraden (handover 14 sep). */}
+      <div className="px-2 pt-1.5">
+        <SlutligBar state={slutligState} pct={slutligPct} done={store.slutligDoneCount} total={store.reportedCount} compact />
       </div>
 
       {rows.length === 0 ? (
