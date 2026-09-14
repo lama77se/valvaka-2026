@@ -102,6 +102,7 @@ async function processFile(f, sets) {
   const turnoutRows = []
   const registryRows = []
   const personrosterRows = []
+  const uppPersonrosterRows = []
   for (const vd of j.valdistrikt ?? []) {
     const kod = vd.valdistriktskod
     if (vd.valdistriktstyp === 'uppsamlingsdistrikt') {
@@ -118,6 +119,26 @@ async function processFile(f, sets) {
       for (const p of vd.rostfordelning?.rosterPaverkaMandat?.partiRoster ?? []) {
         if (!sets.partySet.has(p.partikod)) continue
         uppRows.push({ valtyp: j.valtyp, kod, kommunkod, lankod, kretskod, partikod: p.partikod, roster: p.antalRoster, status: rakstatus })
+        // Personröster för uppsamlingsdistrikt (Beslut 0, handover 14 sep) — EGEN tabell
+        // (uppsamling_personroster), inte samma rad-form som personroster nedan: ingen
+        // giltig district-FK för uppsamlingskoder, men SAMMA partiRoster[].summeradePersonroster-
+        // form (bekräftat samma JSON-schema som geografiska distrikt). kretskod följer med här
+        // av samma skäl som uppRows ovan (framtida kryssspärr-/RPC-upplösning).
+        for (const kp of p.summeradePersonroster ?? []) {
+          if (typeof kp.kandidatnummer !== 'number' || typeof kp.namn !== 'string' || typeof kp.antalPersonroster !== 'number') continue
+          uppPersonrosterRows.push({
+            valtyp: j.valtyp,
+            kod,
+            kommunkod,
+            lankod,
+            kretskod,
+            partikod: p.partikod,
+            kandidatnummer: kp.kandidatnummer,
+            namn: kp.namn,
+            antal_personroster: kp.antalPersonroster,
+            status: rakstatus,
+          })
+        }
       }
       continue
     }
@@ -171,7 +192,7 @@ async function processFile(f, sets) {
     }
   }
   const geoDistricts = new Set(rows.map((r) => r.valdistriktskod)).size
-  log(`  byggt: ${rows.length} result-rader (${geoDistricts} distrikt) · ${uppRows.length} uppsamling-rader · ${turnoutRows.length} valdeltagande-rader · ${personrosterRows.length} personröst-rader — upsertar…`)
+  log(`  byggt: ${rows.length} result-rader (${geoDistricts} distrikt) · ${uppRows.length} uppsamling-rader · ${turnoutRows.length} valdeltagande-rader · ${personrosterRows.length} personröst-rader · ${uppPersonrosterRows.length} uppsamling-personröst-rader — upsertar…`)
 
   // Slutligt → 1000 rader/upsert (Realtime behövs ej ons–fre; klienten läser via snapshot).
   for (let i = 0; i < rows.length; i += 1000) {
@@ -200,6 +221,12 @@ async function processFile(f, sets) {
   for (let i = 0; i < personrosterRows.length; i += 2000) {
     const { error } = await db.from('personroster').upsert(personrosterRows.slice(i, i + 2000), { onConflict: 'valtyp,valdistriktskod,partikod,kandidatnummer' })
     if (error) { console.error(`  personroster upsert (icke-kritiskt): ${error.message}`); break }
+  }
+  // Personröster för uppsamlingsdistrikt (Beslut 0, handover 14 sep) — EGEN tabell
+  // (uppsamling_personroster, ingen district-FK), samma isolering/break-motivering som ovan.
+  for (let i = 0; i < uppPersonrosterRows.length; i += 2000) {
+    const { error } = await db.from('uppsamling_personroster').upsert(uppPersonrosterRows.slice(i, i + 2000), { onConflict: 'valtyp,kod,partikod,kandidatnummer' })
+    if (error) { console.error(`  uppsamling_personroster upsert (icke-kritiskt): ${error.message}`); break }
   }
   // --- MANDAT (Valmyndighetens EGEN mandatfördelning, handover 13/14 sep) -----------------
   // 🔴 ISOLERINGSKRAV: röster/turnout/uppsamling/register är REDAN upserterade ovan. Ett fel
@@ -232,7 +259,7 @@ async function processFile(f, sets) {
       console.error(`  mandat_valse upsert (isolerat — resultatet ovan OPÅVERKAT): ${e.message}`)
     }
   }
-  log(`  klart: ${rows.length} result · ${uppRows.length} uppsamling · ${turnoutRows.length} valdeltagande · ${registryRows.length} uppsamlingsdistrikt-register · ${mandatUp} mandat_valse · ${personrosterRows.length} personroster`)
+  log(`  klart: ${rows.length} result · ${uppRows.length} uppsamling · ${turnoutRows.length} valdeltagande · ${registryRows.length} uppsamlingsdistrikt-register · ${mandatUp} mandat_valse · ${personrosterRows.length} personroster · ${uppPersonrosterRows.length} uppsamling_personroster`)
   return true
 }
 
