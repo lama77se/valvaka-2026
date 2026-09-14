@@ -30,7 +30,7 @@ create table personroster (
   primary key (valtyp, valdistriktskod, partikod, kandidatnummer)
 );
 
--- ⚠️ LÄRDOM FRÅN IKVÄLL (PR #187-utredningen, 20260914090000_fix_turnout_bump_trigger.sql):
+-- ⚠️ LÄRDOM FRÅN IKVÄLL (PR #185-utredningen, 20260914090000_fix_turnout_bump_trigger.sql):
 -- en tidigare "hoppa över om oförändrad"-trigger (bump_turnout_updated_at, 5 sep) glömde
 -- inkludera SENARE tillagda kolumner i sin jämförelse-tupel, vilket permanent blockerade
 -- skrivningar av dem. Var explicit och FULLSTÄNDIG här från start — jämför ALLA icke-
