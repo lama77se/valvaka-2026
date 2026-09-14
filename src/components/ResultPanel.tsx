@@ -207,6 +207,13 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
       const uppCounts = uppsamlingCountsForArea(valtyp, g.level, g.code, uppsamlingRegistry, uppsamlingReported)
       const reported = g.districts.reduce((n, c) => n + (store.has(c) ? 1 : 0), 0) + uppCounts.reported
       const districtCount = g.districts.length + uppCounts.total
+      // Slutgiltigt räknade (Lars önskemål 14 sep): EGEN räkning, skild från `reported`
+      // ovan (preliminärt inrapporterat). store.isSlutlig(vd) är monotont (kan aldrig gå
+      // tillbaka, se result_no_status_downgrade-triggern) — samma källa som SlutligBar/
+      // slutligProgress() redan bygger på. Uppsamling har ingen egen per-post slutlig-
+      // status i dagens modell → räknas bara mot de geografiska distrikten, inte mot
+      // districtCount (som inkluderar uppsamling) — se raden nedan.
+      const slutlig = g.districts.reduce((n, c) => n + (store.isSlutlig(c) ? 1 : 0), 0)
       const live = total > 0
       // Ledande parti (radens färgmarkering) = största i 2026; neutral/grå för ännu
       // orapporterade rader (ingen 2022-tonad ram — hela sektionen bygger på 2026).
@@ -215,7 +222,7 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
       let topA = 0
       for (const [f, a] of Object.entries(src)) if (a > topA) { topA = a; leadFork = f }
       const leadFarg = leadFork ? forkFarg.get(leadFork) ?? REPORTED_NEUTRAL : reported > 0 ? REPORTED_NEUTRAL : UNREPORTED_FILL
-      return { level: g.level, code: g.code, reported, total: districtCount, uppTotal: uppCounts.total, uppReported: uppCounts.reported, live, a26, a22, leadFarg }
+      return { level: g.level, code: g.code, reported, total: districtCount, uppTotal: uppCounts.total, uppReported: uppCounts.reported, slutlig, slutligTotal: g.districts.length, live, a26, a22, leadFarg }
     })
     const anyLive = items.some((it) => it.live) // finns 2026-röster alls? annars visas 2022
     // Uppsamlingsröster som INTE redan nestades i ett valkrets-barns egen rad ovan → en
@@ -478,20 +485,48 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
                             </td>
                           )
                         })}
-                        <td className="whitespace-nowrap py-0.5 pl-1 text-right text-slate-500">
+                        <td className="whitespace-nowrap py-0.5 pl-1 text-right align-top leading-tight text-slate-500">
                           {it.level === 'distrikt' ? (
-                            it.reported > 0 ? <span className="text-emerald-400" title="räknat">✓</span> : <span title="ej räknat">·</span>
+                            // Enskilt distrikt: skilj slutgiltigt (grön) från bara preliminärt
+                            // inrapporterat (himmelsblå, samma ton som Sluträknas-badgen) från
+                            // ej alls räknat (·) — samma tre-läges-princip som gruppraderna nedan,
+                            // fast som EN bock i stället för en andra rad (inget "X/Y" att dela upp).
+                            it.slutlig > 0 ? (
+                              <span className="text-emerald-400" title="slutgiltigt räknat">✓</span>
+                            ) : it.reported > 0 ? (
+                              <span className="text-sky-400" title="preliminärt räknat">✓</span>
+                            ) : (
+                              <span title="ej räknat">·</span>
+                            )
                           ) : (
-                            // Färdigräknat område (alla distrikt inne) → grön bock + grön text,
-                            // annars neutral "X/Y". Understryker "ALLT räknat" på samma språk
-                            // som distriktsradernas bock.
-                            <span
-                              className={it.total > 0 && it.reported === it.total ? 'text-emerald-400' : ''}
-                              title={`${it.reported} av ${it.total} distrikt räknade${uppTitleSuffix}`}
-                            >
-                              {it.total > 0 && it.reported === it.total && <span className="mr-0.5">✓</span>}
-                              {it.reported}/{it.total}
-                            </span>
+                            <>
+                              {/* Preliminärt inrapporterat — färdigräknat område (alla distrikt
+                                  inne) → grön bock + grön text, annars neutral "X/Y". */}
+                              <div
+                                className={it.total > 0 && it.reported === it.total ? 'text-emerald-400' : ''}
+                                title={`${it.reported} av ${it.total} distrikt räknade${uppTitleSuffix}`}
+                              >
+                                {it.total > 0 && it.reported === it.total && <span className="mr-0.5">✓</span>}
+                                {it.reported}/{it.total}
+                              </div>
+                              {/* Slutgiltigt räknade — EGEN rad (Lars önskemål 14 sep), samma
+                                  två-rader-mönster som partikolumnernas andel/±2022. Egen
+                                  nämnare (slutligTotal, bara geografiska distrikt — uppsamling
+                                  har ingen per-post slutlig-status i dagens modell) i stället för
+                                  `total` (som inkluderar uppsamling) — annars skulle en "klar"
+                                  grupp visa t.ex. "18/18" preliminärt men "3/23" slutgiltigt, en
+                                  förvirrande nämnarskillnad mellan raderna. Döljs helt vid 0 —
+                                  samma relevans-gating som Sluträknas-badgen i MandatBars.tsx.
+                                  Himmelsblå = pågår, grön = alla geografiska distrikt slutgiltiga. */}
+                              {it.slutlig > 0 && (
+                                <div
+                                  className={`text-[12px] leading-none ${it.slutlig === it.slutligTotal ? 'text-emerald-400' : 'text-sky-400'}`}
+                                  title={`${it.slutlig} av ${it.slutligTotal} distrikt slutgiltigt räknade`}
+                                >
+                                  {it.slutlig}/{it.slutligTotal}
+                                </div>
+                              )}
+                            </>
                           )}
                         </td>
                       </tr>
