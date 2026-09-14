@@ -1049,6 +1049,11 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
   // sluträknas. Denominatorn (reportedCount) är GEOGRAFISK ENDAST — uppsamlingsdistrikt
   // saknar egen slutlig-spårning (se areaView.ts för samma princip områdesskopat).
   const { state: slutligState, pct: slutligPct } = deriveSlutligState(slutligDoneCount, reportedCount)
+  // Döljer den PRELIMINÄRA rapporteringsraden helt när den redan är 100 % OCH en
+  // sluträkning faktiskt pågår (handover 14 sep, Lars uppföljning: "om PREL 100% och SLUT
+  // t.ex. 4%, visa bara SLUT 4%") — Live-pricken/klockslaget flyttar då med till den
+  // kvarvarande raden (se JSX:en nedan) så den informationen inte försvinner helt.
+  const hidePrel = reportedPct >= 100 && slutligState !== 'preliminar'
 
   // Distriktets mini-resultat (namn + hierarki + andel/±2022) — delas av desktop-hover-rutan
   // och mobilens tapp-sheet så det bara finns EN presentation av samma hoverRows.
@@ -1195,8 +1200,37 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
         )}
         <ValtypSelector showColorMode />
         <ColorSchemeSelector />
-        {total > 0 && (
+        {total > 0 && (() => {
+          // Live-pricken/etiketten/klockslaget — DELAS mellan rad 1 (rapportering) och
+          // rad 2 (sluträkning): sitter normalt på rad 1, men flyttar med till rad 2 när
+          // rad 1 döljs helt (se hidePrel nedan) så Live-statusen aldrig försvinner.
+          const liveGroup = (
+            <>
+              <span className="text-slate-700">·</span>
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${realtimeConnected ? 'animate-pulse bg-emerald-400' : pollError ? 'bg-amber-400' : 'bg-slate-500'}`}
+                title={realtimeConnected ? 'Live — senaste uppdatering lyckades nyss' : pollError ?? 'Pausad (fliken i bakgrunden)'}
+              />
+              <span className={`text-xs ${pollError && !realtimeConnected ? 'text-amber-300' : 'text-slate-400'}`}>
+                {realtimeConnected ? 'Live' : pollError ?? 'Pausad'}
+              </span>
+              {/* Klockslaget lyftes fram: större (text-sm) + ljusare (slate-300) + tabular så
+                  siffrorna inte hoppar. "Live"-prickens tooltip förklarar redan att det är
+                  en uppdateringstid, så ordet självt är överflödigt i den synliga texten. */}
+              {lastUpdated && (
+                <span className="text-xs text-slate-500">
+                  · <span className="text-sm font-medium tabular-nums text-slate-300">{lastUpdated}</span>
+                </span>
+              )}
+            </>
+          )
+          return (
           <div className="mx-auto w-fit space-y-1">
+          {/* Rapporteringsraden döljs helt vid 100 % + pågående sluträkning (handover 14
+              sep, Lars uppföljning: "om PREL 100% och SLUT t.ex. 4%, visa bara SLUT 4%") —
+              annars en permanent "100 %"-rad utan ny information. Live-gruppen flyttar då
+              till sluträkningsraden nedan i stället för att försvinna helt. */}
+          {!hidePrel && (
           <div className="pointer-events-none mx-auto flex w-fit items-center gap-2 whitespace-nowrap rounded-md border border-slate-700 bg-slate-900/90 px-4 py-1.5 text-sm text-slate-100 shadow-lg">
             <span>
               <span className="font-mono text-base font-semibold tabular-nums">{reportedCombined}</span>
@@ -1212,32 +1246,19 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
             </span>
             {/* Egen liten avdelare mot Live-gruppen — samma rad nu (rymdes gott om
                 bredd över, se rad-1 vs rad-2 innan), i stället för en egen rad. */}
-            <span className="text-slate-700">·</span>
-            <span
-              className={`h-1.5 w-1.5 rounded-full ${realtimeConnected ? 'animate-pulse bg-emerald-400' : pollError ? 'bg-amber-400' : 'bg-slate-500'}`}
-              title={realtimeConnected ? 'Live — senaste uppdatering lyckades nyss' : pollError ?? 'Pausad (fliken i bakgrunden)'}
-            />
-            <span className={`text-xs ${pollError && !realtimeConnected ? 'text-amber-300' : 'text-slate-400'}`}>
-              {realtimeConnected ? 'Live' : pollError ?? 'Pausad'}
-            </span>
-            {/* Klockslaget lyftes fram: större (text-sm) + ljusare (slate-300) + tabular så
-                siffrorna inte hoppar. "Live"-prickens tooltip förklarar redan att det är
-                en uppdateringstid, så ordet självt är överflödigt i den synliga texten. */}
-            {lastUpdated && (
-              <span className="text-xs text-slate-500">
-                · <span className="text-sm font-medium tabular-nums text-slate-300">{lastUpdated}</span>
-              </span>
-            )}
+            {liveGroup}
           </div>
+          )}
           {/* Sluträkningsgrad — EGEN, samtidig bar (handover 14 sep), riksomfattande som
               rapporteringstalen ovan (samma HUD, samma skopning — se klargörande fråga till
               Lars). Ersätter den tidigare kompakta tag-chippen (Preliminärt/Sluträknas/
               Slutgiltigt) med en riktig progress-bar, prominent placerad direkt under.
-              box-/textClassName OCH labelNode matchar EXAKT raden ovanför — inte bara
-              lådans stil (rounded-md/border-slate-700/bg-slate-900/90/shadow-lg) utan även
-              den BLANDADE typografin (fet mono-siffra + dämpad "av X"-text + färgad
-              procent) i stället för SlutligBar:s egen platta enfärgade standardtext —
-              Lars påpekade båda avvikelserna i local dev. */}
+              box-/textClassName OCH labelNode matchar EXAKT raden ovanför (eller, om
+              rad 1 är dold, samma mönster ändå) — inte bara lådans stil (rounded-md/
+              border-slate-700/bg-slate-900/90/shadow-lg) utan även den BLANDADE
+              typografin (fet mono-siffra + dämpad "av X"-text + färgad procent) i stället
+              för SlutligBar:s egen platta enfärgade standardtext — Lars påpekade båda
+              avvikelserna i local dev. Live-gruppen hänger med här när rad 1 är dold. */}
           <SlutligBar
             state={slutligState}
             pct={slutligPct}
@@ -1250,11 +1271,13 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
                 <span className="font-mono text-base font-semibold tabular-nums">{slutligDoneCount}</span>
                 <span className="text-slate-400"> av {reportedCount.toLocaleString('sv-SE')} slutgiltigt räknade</span>
                 <span className={`ml-2 text-xs ${SLUTLIG_PCT_TONE[slutligState]}`}>({slutligPct}%)</span>
+                {hidePrel && liveGroup}
               </>
             }
           />
           </div>
-        )}
+          )
+        })()}
       </div>
       )}
 

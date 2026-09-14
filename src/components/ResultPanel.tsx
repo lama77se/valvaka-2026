@@ -77,6 +77,13 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
   const areaIndex = areaIndexRef.current[valtyp]
 
   const pct = av.pct
+  // Döljer den PRELIMINÄRA rapporteringsbaren/-pillen helt när den redan är 100 % OCH en
+  // sluträkning faktiskt pågår (handover 14 sep, Lars uppföljning: "om PREL 100% och SLUT
+  // t.ex. 4%, visa bara SLUT 4%") — annars två fyllda barer där den ena permanent visar
+  // "100 %" utan ny information. MandatBars' egen "Prognos"-pill hanterar redan detta
+  // (villkoret där är `reportPct < 100`, oberoende identiskt) — bara ResultTable:s
+  // subtitle/reportPct behöver samma gate här.
+  const hidePrel = pct >= 100 && av.slutligState !== 'preliminar'
 
   // Områdesnamn-uppslag för breadcrumb + barnlista.
   const regionName = useMemo(() => new Map(regioner.map((r) => [r.code, r.name])), [regioner])
@@ -333,14 +340,14 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
             <ResultTable
               title={`${ELECTION[valtyp]} — ${av.areaName}`}
               statusTag={av.statusTag}
-              subtitle={subtitle(av.reported, av.total, pct, av.uppTotal)}
+              subtitle={hidePrel ? undefined : subtitle(av.reported, av.total, pct, av.uppTotal)}
               slutligState={av.slutligState}
               slutligPct={av.slutligPct}
               slutligDone={av.slutligDone}
               slutligTotal={av.slutligTotal}
               turnoutLabel={turnoutLabel(av.turnout)}
               turnoutTitle={av.turnoutTitle}
-              reportPct={av.total > 0 ? (av.reported / av.total) * 100 : 0}
+              reportPct={hidePrel ? undefined : av.total > 0 ? (av.reported / av.total) * 100 : 0}
               display={av.display}
               giltiga={av.giltiga}
               invalidVotes={av.invalidVotes}

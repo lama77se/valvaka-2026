@@ -51,6 +51,9 @@ export function ReportingStatus({ valtyp: valtypProp, large = false }: { valtyp?
   // ersätter den tidigare enda tone/label-chippen (Prel./X %/Slutgiltigt). Riksomfattande,
   // geografiskt (ingen uppsamling — se DistrictMap.tsx/areaView.ts för samma princip).
   const { state: slutligState, pct: slutligPct } = deriveSlutligState(store.slutligDoneCount, store.reportedCount)
+  // Döljer den PRELIMINÄRA raden/badgen helt vid 100 % + pågående sluträkning (handover
+  // 14 sep, Lars uppföljning: "om PREL 100% och SLUT t.ex. 4%, visa bara SLUT 4%").
+  const hidePrel = pct >= 100 && slutligState !== 'preliminar'
 
   const liveDot = (
     <span
@@ -67,29 +70,35 @@ export function ReportingStatus({ valtyp: valtypProp, large = false }: { valtyp?
   // (App.tsx) och DashboardGrid.tsx:s top-offset delar samma CSS-variabel
   // (--dashboard-header-h, index.css) så de aldrig kan hamna i otakt.
   if (large) {
+    // Rad 2 får den SYNLIGA valtyp-etiketten + Live-pricken när rad 1 döljs (hidePrel) —
+    // annars den osynliga platshållaren (bara för lodrät linjering mot rad 1:s etikett).
+    const row2Label = hidePrel
+      ? valtypProp && <span className="font-semibold uppercase tracking-wide text-slate-400">{valtypProp}</span>
+      : valtypProp && <span aria-hidden className="font-semibold uppercase tracking-wide text-transparent">{valtypProp}</span>
     return (
       <div className="flex shrink-0 flex-col gap-0.5 text-sm text-slate-300">
+        {!hidePrel && (
+          <div className="flex items-center gap-1.5">
+            {valtypProp && <span className="font-semibold uppercase tracking-wide text-slate-400">{valtypProp}</span>}
+            <span className="tabular-nums">
+              <span className="font-semibold text-slate-100">{reported.toLocaleString('sv-SE')}</span>
+              <span className="text-slate-500"> / {total.toLocaleString('sv-SE')}</span>
+              <span className="ml-1 text-sky-300">{pct}%</span>
+              {uppRegistry.length > 0 && (
+                <span className="ml-1 text-slate-500">(varav {uppRegistry.length.toLocaleString('sv-SE')} uppsamling)</span>
+              )}
+            </span>
+            {liveDot}
+          </div>
+        )}
         <div className="flex items-center gap-1.5">
-          {valtypProp && <span className="font-semibold uppercase tracking-wide text-slate-400">{valtypProp}</span>}
-          <span className="tabular-nums">
-            <span className="font-semibold text-slate-100">{reported.toLocaleString('sv-SE')}</span>
-            <span className="text-slate-500"> / {total.toLocaleString('sv-SE')}</span>
-            <span className="ml-1 text-sky-300">{pct}%</span>
-            {uppRegistry.length > 0 && (
-              <span className="ml-1 text-slate-500">(varav {uppRegistry.length.toLocaleString('sv-SE')} uppsamling)</span>
-            )}
-          </span>
-          {liveDot}
-        </div>
-        <div className="flex items-center gap-1.5">
-          {/* Osynlig platshållare i samma bredd som valtyp-etiketten ovan → rad 2:s tal
-              börjar på SAMMA x-position som rad 1:s (lodrät linjering). */}
-          {valtypProp && <span aria-hidden className="font-semibold uppercase tracking-wide text-transparent">{valtypProp}</span>}
+          {row2Label}
           <span className="tabular-nums">
             <span className="font-semibold text-slate-100">{store.slutligDoneCount.toLocaleString('sv-SE')}</span>
             <span className="text-slate-500"> / {store.reportedCount.toLocaleString('sv-SE')} slutgiltigt</span>
             <span className={`ml-1 ${SLUTLIG_PCT_TONE[slutligState]}`}>{slutligPct}%</span>
           </span>
+          {hidePrel && liveDot}
         </div>
       </div>
     )
@@ -106,13 +115,19 @@ export function ReportingStatus({ valtyp: valtypProp, large = false }: { valtyp?
   return (
     <div className="flex shrink-0 items-center gap-1 text-[11px] text-slate-300">
       {valtypProp && <span className="font-semibold uppercase tracking-wide text-slate-400">{valtypProp}</span>}
-      <span
-        className={`${BADGE_BASE} bg-slate-700/50 text-slate-300`}
-        title={`${reported.toLocaleString('sv-SE')} / ${total.toLocaleString('sv-SE')} rapporterade${uppRegistry.length > 0 ? ` (varav ${uppRegistry.length.toLocaleString('sv-SE')} uppsamlingsdistrikt)` : ''}`}
-      >
-        Prel
-      </span>
-      <span className="tabular-nums text-sky-300">{pct}%</span>
+      {/* "Prel"-badgen döljs vid 100 % + pågående sluträkning (hidePrel) — se samma
+          resonemang i `large`-grenen ovan. */}
+      {!hidePrel && (
+        <>
+          <span
+            className={`${BADGE_BASE} bg-slate-700/50 text-slate-300`}
+            title={`${reported.toLocaleString('sv-SE')} / ${total.toLocaleString('sv-SE')} rapporterade${uppRegistry.length > 0 ? ` (varav ${uppRegistry.length.toLocaleString('sv-SE')} uppsamlingsdistrikt)` : ''}`}
+          >
+            Prel
+          </span>
+          <span className="tabular-nums text-sky-300">{pct}%</span>
+        </>
+      )}
       <span
         className={`${BADGE_BASE} ${SLUT_BADGE_TONE[slutligState]}`}
         title={`${store.slutligDoneCount.toLocaleString('sv-SE')} / ${store.reportedCount.toLocaleString('sv-SE')} slutgiltigt räknade`}
