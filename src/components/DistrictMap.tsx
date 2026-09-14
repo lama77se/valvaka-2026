@@ -11,7 +11,7 @@ import {
   SWEDEN_BOUNDS,
   VALKRETS_RD_BOUNDARIES_URL,
 } from '@/lib/geometry'
-import { deriveSlutligState, GROUP_LEVEL_LABEL, VALTYPER, VALTYP_LABEL, type ColorMode, type ColorScheme, type DistrictOutcome, type Valtyp } from '@/lib/results'
+import { deriveSlutligState, GROUP_LEVEL_LABEL, VALTYPER, VALTYP_LABEL, type ColorMode, type ColorScheme, type DistrictOutcome, type SlutligState, type Valtyp } from '@/lib/results'
 import { SlutligBar } from '@/components/SlutligBar'
 import { RIKET_BLOCKS } from '@/lib/soffa'
 import { applyComparison, buildRows, collapseForDisplay, districtsInArea, sparrFor, type Level } from '@/lib/aggregate'
@@ -26,6 +26,15 @@ import { PlaceLabels } from '@/components/PlaceLabels'
 // Exporterade så partilegenden speglar exakt samma färger (en sanningskälla).
 export const REPORTED_NEUTRAL = '#64748b'
 export const UNREPORTED_FILL = '#334155'
+
+// Procentens färg i den rika slutlig-etiketten (labelNode, se HUD:en nedan) — samma
+// hue-familj som SlutligBar:s egen fyllningsfärg (amber/sky/emerald), i stället för
+// rapporteringsradens hårdkodade sky-300 (som inte har något "state"-begrepp att spegla).
+const SLUTLIG_PCT_TONE: Record<SlutligState, string> = {
+  preliminar: 'text-amber-300',
+  slutraknas: 'text-sky-300',
+  slutlig: 'text-emerald-300',
+}
 
 // Kartfärgläge 'block' (RD-only, se ColorScheme/RIKET_BLOCKS): block A (V+S+MP+C) röd,
 // block B (L+KD+M+SD) blå — Lars beslut (handover). Kulörerna är MEDVETET inte S:s eller
@@ -1224,10 +1233,11 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
               rapporteringstalen ovan (samma HUD, samma skopning — se klargörande fråga till
               Lars). Ersätter den tidigare kompakta tag-chippen (Preliminärt/Sluträknas/
               Slutgiltigt) med en riktig progress-bar, prominent placerad direkt under.
-              box-/textClassName matchar EXAKT raden ovanför (samma HUD-badge-stil:
-              rounded-md/border-slate-700/bg-slate-900/90/shadow-lg/text-sm/text-slate-100)
-              i stället för SlutligBar:s egen, mycket ljusare/mindre generiska standardstil
-              — Lars påpekade avvikelsen i local dev. */}
+              box-/textClassName OCH labelNode matchar EXAKT raden ovanför — inte bara
+              lådans stil (rounded-md/border-slate-700/bg-slate-900/90/shadow-lg) utan även
+              den BLANDADE typografin (fet mono-siffra + dämpad "av X"-text + färgad
+              procent) i stället för SlutligBar:s egen platta enfärgade standardtext —
+              Lars påpekade båda avvikelserna i local dev. */}
           <SlutligBar
             state={slutligState}
             pct={slutligPct}
@@ -1235,6 +1245,13 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
             total={reportedCount}
             boxClassName="mx-auto w-fit rounded-md border border-slate-700 bg-slate-900/90 shadow-lg"
             textClassName="px-4 py-1.5 text-sm text-slate-100"
+            labelNode={
+              <>
+                <span className="font-mono text-base font-semibold tabular-nums">{slutligDoneCount}</span>
+                <span className="text-slate-400"> av {reportedCount.toLocaleString('sv-SE')} slutgiltigt räknade</span>
+                <span className={`ml-2 text-xs ${SLUTLIG_PCT_TONE[slutligState]}`}>({slutligPct}%)</span>
+              </>
+            }
           />
           </div>
         )}

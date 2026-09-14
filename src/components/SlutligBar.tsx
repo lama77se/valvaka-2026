@@ -6,6 +6,7 @@
 // (redan i ResultTable.tsx) lämnas orörd. Delad mellan alla ytor som visar statusen
 // (ResultTable/MandatBars — områdesskopat; DistrictMap/DepartureBoard/ReportingStatus —
 // riksomfattande, se respektive fil för vilket `done`/`total` som skickas in).
+import type { ReactNode } from 'react'
 import { slutligTag, type SlutligState } from '@/lib/results'
 
 const FILL_TONE: Record<SlutligState, string> = {
@@ -23,6 +24,7 @@ export function SlutligBar({
   short = false,
   boxClassName,
   textClassName,
+  labelNode,
 }: {
   state: SlutligState
   pct: number
@@ -43,15 +45,22 @@ export function SlutligBar({
   // beroende på källordning i CSS:en, inte JSX-ordning — därför får bara EN gälla åt gången).
   boxClassName?: string
   textClassName?: string
+  // Ersätter HELA textinnehållet (label-strängen nedan) med egen JSX — för en anropare
+  // som redan har en GRANNRAD med rik, blandad typografi (t.ex. DistrictMap.tsx:s
+  // font-mono/fetstil-siffra + text-xs-procent) och behöver EXAKT samma uppbyggnad, inte
+  // bara en enfärgad platt sträng. `title`/fyllningen påverkas inte — bara `<p>`:s innehåll.
+  labelNode?: ReactNode
 }) {
   if (total === 0) return null
   const { title } = slutligTag({ state, pct })
   const fullTitle = `${title} (${done.toLocaleString('sv-SE')} av ${total.toLocaleString('sv-SE')})`
-  const label = short
-    ? `${pct} %`
-    : compact
-      ? `${done.toLocaleString('sv-SE')}/${total.toLocaleString('sv-SE')} slutgiltigt (${pct} %)`
-      : `${done.toLocaleString('sv-SE')} av ${total.toLocaleString('sv-SE')} slutgiltigt räknade (${pct} %)`
+  const label =
+    labelNode ??
+    (short
+      ? `${pct} %`
+      : compact
+        ? `${done.toLocaleString('sv-SE')}/${total.toLocaleString('sv-SE')} slutgiltigt (${pct} %)`
+        : `${done.toLocaleString('sv-SE')} av ${total.toLocaleString('sv-SE')} slutgiltigt räknade (${pct} %)`)
   return (
     <div
       className={`relative shrink-0 overflow-hidden ${boxClassName ?? `rounded border border-slate-800 bg-slate-800/40 ${short ? 'w-14' : ''}`}`}
