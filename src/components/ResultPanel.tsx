@@ -4,8 +4,7 @@
 // <ResultTable>. Områdesväljaren styr delad `selectedArea` (kartklick → drilldown).
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { VALTYP_LABEL, type Valtyp } from '@/lib/results'
-import { comparisonFor, mergeVotes, sparrFor, uppsamlingCountsForArea, uppsamlingRowFor, type Level } from '@/lib/aggregate'
-import type { MarginalSeatInfo } from '@/lib/mandate'
+import { comparisonFor, formatMarginalSeat, mergeVotes, sparrFor, uppsamlingCountsForArea, uppsamlingRowFor, type Level } from '@/lib/aggregate'
 import { RIKET, useResults } from '@/components/ResultsProvider'
 import { ResultTable } from '@/components/ResultTable'
 import { MandatBars } from '@/components/MandatBars'
@@ -70,19 +69,6 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
     return compact ? `${vd} % röstade` : `Valdeltagande ${vd} %`
   }
 
-  // Marginalmandat-raden (handover 14 sep, Val ANALYSIS) — bara DEN NÄRMASTE utmanaren (lägst
-  // votesNeeded, redan sorterad så i mandate.ts:marginalSeatInfo), en rad text, inte en tabell.
-  const marginalSeatText = (m: MarginalSeatInfo, totalMandat: number | null) => {
-    const top = m.challengers[0]
-    if (!top) return null
-    const nameOf = (kod: string) => partyRef.current.get(kod)?.forkortning ?? kod
-    const marginalName = nameOf(m.marginalParty)
-    const challengerName = nameOf(top.party)
-    const votes = top.votesNeeded.toLocaleString('sv-SE')
-    return compact
-      ? `Sista mandatet: ${marginalName}. ${challengerName} närmast (~${votes} röster).`
-      : `Sista mandatet${totalMandat != null ? ` (#${totalMandat})` : ''} innehas av ${marginalName}. ${challengerName} ligger närmast och skulle behöva ~${votes} fler röster för att ta det.`
-  }
 
   // Röster/mandat/valdeltagande/blockvy för valt område — delad ren beräkning
   // (src/lib/areaView.ts) via useAreaView, samma logik som förut men nu återanvänd
@@ -370,7 +356,9 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
                 </p>
               ))}
             {av.marginalSeat && (
-              <p className="mt-2 text-xs text-slate-400">{marginalSeatText(av.marginalSeat, av.totalMandat)}</p>
+              <p className="mt-2 text-xs text-slate-400">
+                {formatMarginalSeat(av.marginalSeat, av.totalMandat, compact, (kod) => partyRef.current.get(kod)?.forkortning ?? kod)}
+              </p>
             )}
           </>
         )}

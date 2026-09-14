@@ -6,7 +6,7 @@
 // som "–". Mandat (increment 2) och ±2022 (increment 3) fylls i utan att röra
 // tabellkomponenten. Kollaps till "Övriga" sker vid RENDER — andel/spärr räknas
 // alltid på HELA partiuppsättningen, aldrig på den 1%-kollapsade.
-import { computeAssembly, modifiedSainteLague, placeLevelingSeats, type ConstituencyVotes, type PartyVotes } from './mandate'
+import { computeAssembly, modifiedSainteLague, placeLevelingSeats, type ConstituencyVotes, type MarginalSeatInfo, type PartyVotes } from './mandate'
 import type { Valtyp } from './results'
 import { SEAT_CONFIG_2026 } from './seatConfig2026'
 
@@ -141,6 +141,30 @@ export function collapseForDisplay(area: AreaResult, threshold = DISPLAY_THRESHO
     : null
   const idx = shown.findIndex((r) => !r.overSparr)
   return { shown, ovriga, sparrIndex: idx === -1 ? shown.length : idx }
+}
+
+// Render-tid: formatera marginalmandat-raden (handover 14 sep, Val ANALYSIS) — delad text-
+// byggnad mellan ResultPanel.tsx (huvudvyn, desktop+mobil) och AreaSummary.tsx (Dashboard-
+// rutorna), så BÅDA ytorna alltid visar exakt samma text för samma data. `partyName` är en
+// enkel uppslagsfunktion (partikod → förkortning) — hålls fri från React/PartyMeta-typen här
+// så denna fil inte behöver bry sig om VILKEN källa anroparen har (partyRef.current.get(...)
+// i båda dagens call sites). Visar bara DEN NÄRMASTE utmanaren (redan sorterad så i
+// marginalSeatInfo), en rad text, aldrig en tabell. `null` om ingen utmanare finns (bör
+// aldrig hända i praktiken — marginalSeatInfo kräver redan ≥2 kvalificerade partier).
+export function formatMarginalSeat(
+  m: MarginalSeatInfo,
+  totalMandat: number | null,
+  compact: boolean,
+  partyName: (kod: string) => string,
+): string | null {
+  const top = m.challengers[0]
+  if (!top) return null
+  const marginalName = partyName(m.marginalParty)
+  const challengerName = partyName(top.party)
+  const votes = top.votesNeeded.toLocaleString('sv-SE')
+  return compact
+    ? `Sista mandatet: ${marginalName}. ${challengerName} närmast (~${votes} röster).`
+    : `Sista mandatet${totalMandat != null ? ` (#${totalMandat})` : ''} innehas av ${marginalName}. ${challengerName} ligger närmast och skulle behöva ~${votes} fler röster för att ta det.`
 }
 
 // --- Uppsamlingsdistrikt-registret (handover 13 sep, Val ANALYSIS) -------------

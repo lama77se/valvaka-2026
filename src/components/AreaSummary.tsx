@@ -9,13 +9,14 @@
 // används för undertext/valdeltagande-etiketten (samma anda som mobilens
 // `compact`-läge i ResultPanel.tsx, fast hårdkodat här — varje ruta är alltid smal).
 import { VALTYP_LABEL, type Valtyp } from '@/lib/results'
-import { sparrFor } from '@/lib/aggregate'
+import { formatMarginalSeat, sparrFor } from '@/lib/aggregate'
 import { RIKET, type Area } from '@/lib/area'
 import { ResultTable } from '@/components/ResultTable'
 import { MandatBars } from '@/components/MandatBars'
 import { AreaSelect } from '@/components/AreaSelect'
 import { ValtypSelector } from '@/components/ValtypSelector'
 import { useAreaView } from '@/components/useAreaView'
+import { useResults } from '@/components/ResultsProvider'
 
 const ELECTION: Record<Valtyp, string> = { RD: 'Riksdagsvalet', RF: 'Regionvalet', KF: 'Kommunvalet' }
 
@@ -31,6 +32,7 @@ export function AreaSummary({
   onAreaChange: (a: Area) => void
 }) {
   const av = useAreaView(valtyp, area)
+  const { partyRef } = useResults()
   const isPrompt = area.level !== 'riket' && area.code == null
   const pct = av.pct
 
@@ -106,6 +108,11 @@ export function AreaSummary({
                   Inga resultat inrapporterade för {VALTYP_LABEL[valtyp].toLowerCase()} i {av.areaName} än.
                 </p>
               ))}
+            {av.marginalSeat && (
+              <p className="mt-2 text-xs text-slate-400">
+                {formatMarginalSeat(av.marginalSeat, av.totalMandat, true, (kod) => partyRef.current.get(kod)?.forkortning ?? kod)}
+              </p>
+            )}
           </>
         )}
       </div>
