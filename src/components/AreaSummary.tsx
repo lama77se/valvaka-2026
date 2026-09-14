@@ -9,7 +9,7 @@
 // används för undertext/valdeltagande-etiketten (samma anda som mobilens
 // `compact`-läge i ResultPanel.tsx, fast hårdkodat här — varje ruta är alltid smal).
 import { VALTYP_LABEL, type Valtyp } from '@/lib/results'
-import { formatMarginalSeat, sparrFor } from '@/lib/aggregate'
+import { formatMarginalSeat, sparrFor, uppsamlingSuffix } from '@/lib/aggregate'
 import { RIKET, type Area } from '@/lib/area'
 import { ResultTable } from '@/components/ResultTable'
 import { MandatBars } from '@/components/MandatBars'
@@ -38,6 +38,14 @@ export function AreaSummary({
   // Döljer den PRELIMINÄRA rapporteringsbaren/-pillen vid 100 % + pågående sluträkning
   // (handover 14 sep, uppföljning) — se samma resonemang i ResultPanel.tsx.
   const hidePrel = pct >= 100 && av.slutligState !== 'preliminar'
+  // "Bara uppsamling kvar" (handover 14 sep, Lars) — se uppsamlingSuffix (aggregate.ts)
+  // och samma resonemang i ResultPanel.tsx:s subtitle().
+  const upp = uppsamlingSuffix(av.reported, av.total, av.uppTotal, av.uppReported)
+  const uppSubtitleSuffix = upp.onlyUppLeft
+    ? `, varav endast ${upp.uppRemaining.toLocaleString('sv-SE')} uppsamling återstår`
+    : av.uppTotal > 0
+      ? `, varav ${av.uppTotal.toLocaleString('sv-SE')} uppsamling`
+      : ''
 
   return (
     <div className="flex h-full flex-col gap-2 overflow-hidden">
@@ -86,7 +94,7 @@ export function AreaSummary({
             <ResultTable
               title={`${ELECTION[valtyp]} — ${av.areaName}`}
               statusTag={av.statusTag}
-              subtitle={hidePrel ? undefined : `${av.reported.toLocaleString('sv-SE')}/${av.total.toLocaleString('sv-SE')} distrikt (${pct} %)${av.uppTotal > 0 ? `, varav ${av.uppTotal.toLocaleString('sv-SE')} uppsamling` : ''}`}
+              subtitle={hidePrel ? undefined : `${av.reported.toLocaleString('sv-SE')}/${av.total.toLocaleString('sv-SE')} distrikt (${pct} %)${uppSubtitleSuffix}`}
               slutligState={av.slutligState}
               slutligPct={av.slutligPct}
               slutligDone={av.slutligDone}
