@@ -21,6 +21,8 @@ export function SlutligBar({
   total,
   compact = false,
   short = false,
+  boxClassName,
+  textClassName,
 }: {
   state: SlutligState
   pct: number
@@ -31,6 +33,16 @@ export function SlutligBar({
   // #151 och mobil-chromen) — bara "Z %" i en smal, fast bredd i stället för hela
   // "X av Y slutgiltigt räknade"-frasen. Fulla talen finns ändå i tooltipen (`title`).
   short?: boolean
+  // Kosmetisk override (border/bakgrund/rundning resp. padding/textstorlek/-färg) — så
+  // en anropare vars omgivande "chrome" redan har en egen stil (t.ex. DistrictMap.tsx:s
+  // mörka, ogenomskinliga HUD-badge) kan matcha DEN i stället för denna komponents egen
+  // generiska standardstil. `relative`/`overflow-hidden` (fyllningens positionering) och
+  // `whitespace-nowrap` (textens radbrytning) är ALLTID satta oavsett override — padding
+  // ingår i textClassName (default `px-2 py-1`) så en override kan sätta EN annan padding
+  // utan Tailwind-specificitetskonflikt (två `px-*`-klasser i samma stränge vinner
+  // beroende på källordning i CSS:en, inte JSX-ordning — därför får bara EN gälla åt gången).
+  boxClassName?: string
+  textClassName?: string
 }) {
   if (total === 0) return null
   const { title } = slutligTag({ state, pct })
@@ -41,13 +53,16 @@ export function SlutligBar({
       ? `${done.toLocaleString('sv-SE')}/${total.toLocaleString('sv-SE')} slutgiltigt (${pct} %)`
       : `${done.toLocaleString('sv-SE')} av ${total.toLocaleString('sv-SE')} slutgiltigt räknade (${pct} %)`
   return (
-    <div className={`relative shrink-0 overflow-hidden rounded border border-slate-800 bg-slate-800/40 ${short ? 'w-14' : ''}`} title={fullTitle}>
+    <div
+      className={`relative shrink-0 overflow-hidden ${boxClassName ?? `rounded border border-slate-800 bg-slate-800/40 ${short ? 'w-14' : ''}`}`}
+      title={fullTitle}
+    >
       <div
         className={`absolute inset-y-0 left-0 transition-[width] duration-500 ${FILL_TONE[state]}`}
         style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
         aria-hidden
       />
-      <p className={`relative whitespace-nowrap px-2 py-1 text-slate-300 ${compact || short ? 'text-[11px]' : 'text-xs'} ${short ? 'text-center' : ''}`}>
+      <p className={`relative whitespace-nowrap ${textClassName ?? `px-2 py-1 text-slate-300 ${compact || short ? 'text-[11px]' : 'text-xs'} ${short ? 'text-center' : ''}`}`}>
         {label}
       </p>
     </div>

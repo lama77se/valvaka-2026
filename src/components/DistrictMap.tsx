@@ -1223,8 +1223,19 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
           {/* Sluträkningsgrad — EGEN, samtidig bar (handover 14 sep), riksomfattande som
               rapporteringstalen ovan (samma HUD, samma skopning — se klargörande fråga till
               Lars). Ersätter den tidigare kompakta tag-chippen (Preliminärt/Sluträknas/
-              Slutgiltigt) med en riktig progress-bar, prominent placerad direkt under. */}
-          <SlutligBar state={slutligState} pct={slutligPct} done={slutligDoneCount} total={reportedCount} compact />
+              Slutgiltigt) med en riktig progress-bar, prominent placerad direkt under.
+              box-/textClassName matchar EXAKT raden ovanför (samma HUD-badge-stil:
+              rounded-md/border-slate-700/bg-slate-900/90/shadow-lg/text-sm/text-slate-100)
+              i stället för SlutligBar:s egen, mycket ljusare/mindre generiska standardstil
+              — Lars påpekade avvikelsen i local dev. */}
+          <SlutligBar
+            state={slutligState}
+            pct={slutligPct}
+            done={slutligDoneCount}
+            total={reportedCount}
+            boxClassName="mx-auto w-fit rounded-md border border-slate-700 bg-slate-900/90 shadow-lg"
+            textClassName="px-4 py-1.5 text-sm text-slate-100"
+          />
           </div>
         )}
       </div>
