@@ -35,6 +35,9 @@ export function AreaSummary({
   const { partyRef } = useResults()
   const isPrompt = area.level !== 'riket' && area.code == null
   const pct = av.pct
+  // Döljer den PRELIMINÄRA rapporteringsbaren/-pillen vid 100 % + pågående sluträkning
+  // (handover 14 sep, uppföljning) — se samma resonemang i ResultPanel.tsx.
+  const hidePrel = pct >= 100 && av.slutligState !== 'preliminar'
 
   return (
     <div className="flex h-full flex-col gap-2 overflow-hidden">
@@ -83,7 +86,7 @@ export function AreaSummary({
             <ResultTable
               title={`${ELECTION[valtyp]} — ${av.areaName}`}
               statusTag={av.statusTag}
-              subtitle={`${av.reported.toLocaleString('sv-SE')}/${av.total.toLocaleString('sv-SE')} distrikt (${pct} %)${av.uppTotal > 0 ? `, varav ${av.uppTotal.toLocaleString('sv-SE')} uppsamling` : ''}`}
+              subtitle={hidePrel ? undefined : `${av.reported.toLocaleString('sv-SE')}/${av.total.toLocaleString('sv-SE')} distrikt (${pct} %)${av.uppTotal > 0 ? `, varav ${av.uppTotal.toLocaleString('sv-SE')} uppsamling` : ''}`}
               slutligState={av.slutligState}
               slutligPct={av.slutligPct}
               slutligDone={av.slutligDone}
@@ -94,7 +97,7 @@ export function AreaSummary({
                   : `${av.turnout.toLocaleString('sv-SE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} % röstade`
               }
               turnoutTitle={av.turnoutTitle}
-              reportPct={av.total > 0 ? (av.reported / av.total) * 100 : 0}
+              reportPct={hidePrel ? undefined : av.total > 0 ? (av.reported / av.total) * 100 : 0}
               display={av.display}
               giltiga={av.giltiga}
               sparr={sparrFor(valtyp, area.level, area.code)}

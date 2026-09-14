@@ -192,6 +192,10 @@ export function DepartureBoard({ valtyp, onRowSelect, fill, fullWidth, emphasize
   // Sluträkningsgrad — EGEN, samtidig bar (handover 14 sep, Val ANALYSIS), riksomfattande
   // som denna tavlas befintliga reported/total ovan (samma princip som DistrictMap.tsx:s HUD).
   const { state: slutligState } = deriveSlutligState(store.slutligDoneCount, store.reportedCount)
+  // Döljer "P:"-räknaren helt vid 100 % + pågående sluträkning (handover 14 sep,
+  // uppföljning: "om PREL 100% och SLUT t.ex. 4%, visa bara SLUT 4%").
+  const reportPct = total > 0 ? Math.round((reported / total) * 100) : 0
+  const hidePrel = reportPct >= 100 && slutligState !== 'preliminar'
 
   // Namn-uppslag + hierarki-sökväg för DENNA tavlas valtyp (kan skilja sig från aktiv).
   const kommunName = useMemo(() => new Map(kommuner.map((k) => [k.code, k.name])), [kommuner])
@@ -236,8 +240,16 @@ export function DepartureBoard({ valtyp, onRowSelect, fill, fullWidth, emphasize
             // (till skillnad från kartans HUD-badge, som får växa fritt) — tooltip i stället.
             title={uppRegistry.length > 0 ? `Varav ${uppRegistry.length.toLocaleString('sv-SE')} uppsamlingsdistrikt` : undefined}
           >
-            {VALTYP_LABEL[valtyp]} · P: {reported.toLocaleString('sv-SE')}
-            {total ? ` / ${total.toLocaleString('sv-SE')}` : ''}
+            {VALTYP_LABEL[valtyp]}
+            {/* "P: X / Y" döljs helt vid 100 % + pågående sluträkning (hidePrel, handover
+                14 sep, uppföljning: "om PREL 100% och SLUT t.ex. 4%, visa bara SLUT 4%") —
+                valtyp-etiketten ovan stannar kvar så tavlan ändå kan identifieras. */}
+            {!hidePrel && (
+              <>
+                {' '}· P: {reported.toLocaleString('sv-SE')}
+                {total ? ` / ${total.toLocaleString('sv-SE')}` : ''}
+              </>
+            )}
           </span>
           {/* Sluträkningsgrad (handover 14 sep) — SAMMA rad, SAMMA stil som raden ovan (bara
               en färgad "S:"-prefix i stället för ett eget ord/badge — Lars, local dev: "för
@@ -246,6 +258,7 @@ export function DepartureBoard({ valtyp, onRowSelect, fill, fullWidth, emphasize
               valnatten) — syns först när sluträkningen faktiskt börjar. */}
           {slutligState !== 'preliminar' && (
             <span className={`text-[11px] tabular-nums ${SLUTLIG_TEXT_TONE[slutligState]}`}>
+              {hidePrel && '· '}
               S: {store.slutligDoneCount.toLocaleString('sv-SE')} / {store.reportedCount.toLocaleString('sv-SE')}
             </span>
           )}
