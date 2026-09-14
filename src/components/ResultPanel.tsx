@@ -4,7 +4,7 @@
 // <ResultTable>. Områdesväljaren styr delad `selectedArea` (kartklick → drilldown).
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { VALTYP_LABEL, type Valtyp } from '@/lib/results'
-import { comparisonFor, mergeVotes, sparrFor, uppsamlingCountsForArea, uppsamlingRowFor, type Level } from '@/lib/aggregate'
+import { comparisonFor, formatMarginalSeat, mergeVotes, sparrFor, uppsamlingCountsForArea, uppsamlingRowFor, type Level } from '@/lib/aggregate'
 import { RIKET, useResults } from '@/components/ResultsProvider'
 import { ResultTable } from '@/components/ResultTable'
 import { MandatBars } from '@/components/MandatBars'
@@ -68,6 +68,7 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
     const vd = turnout.toLocaleString('sv-SE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
     return compact ? `${vd} % röstade` : `Valdeltagande ${vd} %`
   }
+
 
   // Röster/mandat/valdeltagande/blockvy för valt område — delad ren beräkning
   // (src/lib/areaView.ts) via useAreaView, samma logik som förut men nu återanvänd
@@ -354,6 +355,11 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
                   Inga resultat inrapporterade för {VALTYP_LABEL[valtyp].toLowerCase()} i {av.areaName} än.
                 </p>
               ))}
+            {av.marginalSeat && (
+              <p className="mt-2 text-xs text-slate-400">
+                {formatMarginalSeat(av.marginalSeat, av.totalMandat, compact, (kod) => partyRef.current.get(kod)?.forkortning ?? kod)}
+              </p>
+            )}
           </>
         )}
         {/* "Bryt ner" renders OBEROENDE av isPrompt (se kommentar vid `drill` ovan) —
