@@ -11,7 +11,8 @@ import {
   SWEDEN_BOUNDS,
   VALKRETS_RD_BOUNDARIES_URL,
 } from '@/lib/geometry'
-import { GROUP_LEVEL_LABEL, VALTYPER, VALTYP_LABEL, slutligTag, type ColorMode, type ColorScheme, type DistrictOutcome, type Valtyp } from '@/lib/results'
+import { deriveSlutligState, GROUP_LEVEL_LABEL, VALTYPER, VALTYP_LABEL, type ColorMode, type ColorScheme, type DistrictOutcome, type SlutligState, type Valtyp } from '@/lib/results'
+import { SlutligBar } from '@/components/SlutligBar'
 import { RIKET_BLOCKS } from '@/lib/soffa'
 import { applyComparison, buildRows, collapseForDisplay, districtsInArea, sparrFor, type Level } from '@/lib/aggregate'
 import { ancestorsOf } from '@/lib/hierarchy'
@@ -25,6 +26,15 @@ import { PlaceLabels } from '@/components/PlaceLabels'
 // Exporterade så partilegenden speglar exakt samma färger (en sanningskälla).
 export const REPORTED_NEUTRAL = '#64748b'
 export const UNREPORTED_FILL = '#334155'
+
+// Procentens färg i den rika slutlig-etiketten (labelNode, se HUD:en nedan) — samma
+// hue-familj som SlutligBar:s egen fyllningsfärg (amber/sky/emerald), i stället för
+// rapporteringsradens hårdkodade sky-300 (som inte har något "state"-begrepp att spegla).
+const SLUTLIG_PCT_TONE: Record<SlutligState, string> = {
+  preliminar: 'text-amber-300',
+  slutraknas: 'text-sky-300',
+  slutlig: 'text-emerald-300',
+}
 
 // Kartfärgläge 'block' (RD-only, se ColorScheme/RIKET_BLOCKS): block A (V+S+MP+C) röd,
 // block B (L+KD+M+SD) blå — Lars beslut (handover). Kulörerna är MEDVETET inte S:s eller
@@ -197,6 +207,10 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
   }, [mapReady])
 
   const [reportedCount, setReportedCount] = useState(0)
+  // Riksomfattande slutlig-räkning (handover 14 sep, Val ANALYSIS) — synkas i LOCKSTEG med
+  // reportedCount ovan (samma call sites, samma store), egen useState av samma skäl (undvik
+  // att läsa ur en ref direkt i render — matchar det etablerade mönstret här).
+  const [slutligDoneCount, setSlutligDoneCount] = useState(0)
   const [lastUpdated, setLastUpdated] = useState<string | null>(null) // HH:MM:SS för senaste dataändring
 
   // Valtyp-medveten hierarki för hover-rutan (rad 2): det hovrade distriktets FÖRÄLDRAR
@@ -546,6 +560,7 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
         pendingRef.current.clear()
         const n = storesRef.current[activeValtypRef.current].reportedCount
         setReportedCount(n)
+        setSlutligDoneCount(storesRef.current[activeValtypRef.current].slutligDoneCount)
         setLastUpdated(hhmmss())
         ;(window as unknown as { __reportedCount?: number }).__reportedCount = n
       })
@@ -811,6 +826,7 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
     })
 
     setReportedCount(storesRef.current[activeValtypRef.current].reportedCount)
+    setSlutligDoneCount(storesRef.current[activeValtypRef.current].slutligDoneCount)
 
     return () => {
       unsubscribe()
@@ -832,6 +848,7 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
     recolorRef.current?.()
     const n = storesRef.current[activeValtypRef.current].reportedCount
     setReportedCount(n)
+    setSlutligDoneCount(storesRef.current[activeValtypRef.current].slutligDoneCount)
     if (n > 0) setLastUpdated(hhmmss())
   }, [snapshotVersion, storesRef])
 
@@ -842,6 +859,7 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
       ;(window as unknown as { __valtyp?: Valtyp }).__valtyp = valtyp
     }
     setReportedCount(storesRef.current[valtyp].reportedCount)
+    setSlutligDoneCount(storesRef.current[valtyp].slutligDoneCount)
     recolorRef.current?.()
     // Hover-rutans mini-tabell räknar om via hoverRows (nyckel: valtyp + revision).
   }, [valtyp, storesRef])
@@ -1023,13 +1041,14 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
   const total = totalByValtyp[valtyp] + uppRegistry.length
   const reportedCombined = reportedCount + uppRegistry.reduce((n, e) => n + (uppReportedSet.has(e.kod) ? 1 : 0), 0)
   const reportedPct = total > 0 ? Math.round((reportedCombined / total) * 100) : 0
-  // Slutresultat-läge PER VALTYP ur result.status i denna valtyps store: preliminärt →
-  // sluträknas · X % (onsdagsräkningen pågår, distrikt för distrikt) → slutgiltigt (alla
-  // distrikt slutligt räknade). RD kan vara preliminär medan RF/KF sluträknas. "X av 6312
-  // valdistrikt" mäter distriktens preliminärräkning — sena röster + personröster
-  // tillkommer vid sluträkningen.
-  const prog = storesRef.current[valtyp].slutligProgress()
-  const { tone: tagTone, label: tagLabel, title: tagTitle } = slutligTag(prog)
+  // Slutresultat-läge PER VALTYP (handover 14 sep, Val ANALYSIS: EGEN, samtidig bar i
+  // stället för bara en badge — se SlutligBar nedan). RIKSOMFATTANDE, precis som denna
+  // HUD:s befintliga rapporteringstal (samma val vid klargörande fråga: samma skopning som
+  // den redan riksomfattande rapporteringsbaren i just DENNA HUD, till skillnad från
+  // ResultPanel/MandatBars som är områdesskopade). RD kan vara preliminär medan RF/KF
+  // sluträknas. Denominatorn (reportedCount) är GEOGRAFISK ENDAST — uppsamlingsdistrikt
+  // saknar egen slutlig-spårning (se areaView.ts för samma princip områdesskopat).
+  const { state: slutligState, pct: slutligPct } = deriveSlutligState(slutligDoneCount, reportedCount)
 
   // Distriktets mini-resultat (namn + hierarki + andel/±2022) — delas av desktop-hover-rutan
   // och mobilens tapp-sheet så det bara finns EN presentation av samma hoverRows.
@@ -1177,13 +1196,8 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
         <ValtypSelector showColorMode />
         <ColorSchemeSelector />
         {total > 0 && (
+          <div className="mx-auto w-fit space-y-1">
           <div className="pointer-events-none mx-auto flex w-fit items-center gap-2 whitespace-nowrap rounded-md border border-slate-700 bg-slate-900/90 px-4 py-1.5 text-sm text-slate-100 shadow-lg">
-            <span
-              className={`rounded px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${tagTone}`}
-              title={tagTitle}
-            >
-              {tagLabel}
-            </span>
             <span>
               <span className="font-mono text-base font-semibold tabular-nums">{reportedCombined}</span>
               <span className="text-slate-400"> av {total.toLocaleString('sv-SE')}</span>
@@ -1214,6 +1228,31 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
                 · <span className="text-sm font-medium tabular-nums text-slate-300">{lastUpdated}</span>
               </span>
             )}
+          </div>
+          {/* Sluträkningsgrad — EGEN, samtidig bar (handover 14 sep), riksomfattande som
+              rapporteringstalen ovan (samma HUD, samma skopning — se klargörande fråga till
+              Lars). Ersätter den tidigare kompakta tag-chippen (Preliminärt/Sluträknas/
+              Slutgiltigt) med en riktig progress-bar, prominent placerad direkt under.
+              box-/textClassName OCH labelNode matchar EXAKT raden ovanför — inte bara
+              lådans stil (rounded-md/border-slate-700/bg-slate-900/90/shadow-lg) utan även
+              den BLANDADE typografin (fet mono-siffra + dämpad "av X"-text + färgad
+              procent) i stället för SlutligBar:s egen platta enfärgade standardtext —
+              Lars påpekade båda avvikelserna i local dev. */}
+          <SlutligBar
+            state={slutligState}
+            pct={slutligPct}
+            done={slutligDoneCount}
+            total={reportedCount}
+            boxClassName="mx-auto w-fit rounded-md border border-slate-700 bg-slate-900/90 shadow-lg"
+            textClassName="px-4 py-1.5 text-sm text-slate-100"
+            labelNode={
+              <>
+                <span className="font-mono text-base font-semibold tabular-nums">{slutligDoneCount}</span>
+                <span className="text-slate-400"> av {reportedCount.toLocaleString('sv-SE')} slutgiltigt räknade</span>
+                <span className={`ml-2 text-xs ${SLUTLIG_PCT_TONE[slutligState]}`}>({slutligPct}%)</span>
+              </>
+            }
+          />
           </div>
         )}
       </div>

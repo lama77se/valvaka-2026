@@ -71,7 +71,7 @@ function DesktopApp() {
             höger, --panel-w-breda, delen). Komponenterna delas med mobil —
             extraherade ur MobileChrome.tsx i denna fix-våg. */}
         {view === 'dashboard' && (
-          <div className="absolute left-0 top-0 z-20 flex h-11 items-center gap-3 overflow-hidden px-4">
+          <div className="absolute left-0 top-0 z-20 flex h-[var(--dashboard-header-h)] items-center gap-3 overflow-hidden px-4">
             {dataset?.test && <TestdataBanner genrep={dataset.source === 'genrep2026'} />}
             {/* En status-badge PER valtyp (inte bara den globalt aktiva) — Dashboard-vyns
                 fyra rutor kan visa alla tre valen samtidigt, så en enda global indikator

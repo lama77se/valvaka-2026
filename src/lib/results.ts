@@ -41,6 +41,16 @@ export const GROUP_LEVEL_LABEL: Record<Valtyp, string> = {
 // pågår, distrikt för distrikt) → slutgiltigt (alla distrikt slutligt räknade).
 export type SlutligState = 'preliminar' | 'slutraknas' | 'slutlig'
 
+// Delad state-/pct-härledning ur RÅA {done,total}-tal — EN regel, återanvänd av både
+// ResultStore.slutligProgress() (riksomfattande) och areaView.ts (omrädesskopat, handover
+// 14 sep). `total` här är RAPPORTERADE distrikt (nämnaren `slutligProgress()` redan använder),
+// inte alla distrikt i valtypen/området.
+export function deriveSlutligState(done: number, total: number): { state: SlutligState; pct: number } {
+  if (total === 0 || done === 0) return { state: 'preliminar', pct: 0 }
+  if (done >= total) return { state: 'slutlig', pct: 100 }
+  return { state: 'slutraknas', pct: Math.round((done / total) * 100) }
+}
+
 // Badge för `SlutligState` — DELAD mellan kartvyns statustagg och resultatpanelen så
 // båda alltid visar samma färg/etikett/förklaring för samma fas (annars kan de driva isär).
 export function slutligTag(prog: { state: SlutligState; pct: number }): { tone: string; label: string; title: string } {
@@ -131,11 +141,7 @@ export class ResultStore {
   // (ALLA rapporterade distrikt slutligt räknade → siffrorna låsta). Sluträkningen kommer
   // distrikt för distrikt över flera dagar, därav mellanläget med andel (pct).
   slutligProgress(): { state: SlutligState; pct: number } {
-    const total = this.byDistrict.size
-    const done = this.slutligDistrikt.size
-    if (total === 0 || done === 0) return { state: 'preliminar', pct: 0 }
-    if (done >= total) return { state: 'slutlig', pct: 100 }
-    return { state: 'slutraknas', pct: Math.round((done / total) * 100) }
+    return deriveSlutligState(this.slutligDistrikt.size, this.byDistrict.size)
   }
 
   outcome(valdistriktskod: string): DistrictOutcome {
@@ -181,6 +187,15 @@ export class ResultStore {
 
   get reportedCount(): number {
     return this.byDistrict.size
+  }
+
+  // Antal RAPPORTERADE distrikt som är slutligt räknade (samma mängd `slutligProgress()`
+  // summerar) — exponerad rått (utan pct/state) så anroparen kan bygga en EGEN, skopad
+  // {done,total}-bar (t.ex. per område, se areaView.ts) i stället för bara den riksomfattande
+  // `slutligProgress()`. Handover 14 sep (Val ANALYSIS): dagens badge blandar riksnivån in i
+  // ett specifikt områdes vy, missvisande så fort man tittar på ett redan-klart område.
+  get slutligDoneCount(): number {
+    return this.slutligDistrikt.size
   }
 }
 

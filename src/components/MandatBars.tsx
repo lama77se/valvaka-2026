@@ -8,6 +8,7 @@
 import type { ReactNode } from 'react'
 import type { OvrigaRow, PartyRow } from '@/lib/aggregate'
 import { spectrumRank, type BlockConfig } from '@/lib/soffa'
+import type { SlutligState } from '@/lib/results'
 
 const NEUTRAL = '#64748b'
 
@@ -81,11 +82,22 @@ export interface MandatBarsProps {
   giltiga: number // 2026 giltiga röster; 0 → inga staplar (2022 visas aldrig som egen huvudstapel)
   sparr: number // riksspärr (0..1) för valtypen — partier under lämnas ur röstandelsstapeln
   reportPct?: number | null
+  // Slutgiltig-status FÖR DET VISADE OMRÅDET (handover 14 sep, Val ANALYSIS) — egen, samtidig
+  // indikator bredvid "Prognos · X %" (som bara handlar om RAPPORTERINGSGRAD, inte
+  // sluträkning). Valfria — utelämnas → ingen pill (t.ex. preliminär/0 %, inget att visa).
+  slutligState?: SlutligState | null
+  slutligPct?: number | null
   blocks?: BlockConfig // tvåblocksvyn under staplarna (riksblock ELLER regionstyre-vs-opposition — se soffa.ts/regionBlocks.ts)
   compact?: boolean // mobil: kortare siffror/etiketter i blockrutorna, se nedan
 }
 
-export function MandatBars({ shown, ovriga, totalMandat, giltiga, sparr, reportPct, blocks, compact }: MandatBarsProps) {
+const SLUTLIG_PILL_TONE: Record<SlutligState, string> = {
+  preliminar: 'border-amber-500/60 text-amber-400',
+  slutraknas: 'border-sky-500/60 text-sky-400',
+  slutlig: 'border-emerald-500/60 text-emerald-400',
+}
+
+export function MandatBars({ shown, ovriga, totalMandat, giltiga, sparr, reportPct, slutligState, slutligPct, blocks, compact }: MandatBarsProps) {
   const live = giltiga > 0
   const parties = [...shown].sort((a, b) => spectrumRank(a.forkortning) - spectrumRank(b.forkortning))
 
@@ -163,6 +175,17 @@ export function MandatBars({ shown, ovriga, totalMandat, giltiga, sparr, reportP
             {prognos && (
               <span className="rounded-full border border-amber-500/60 px-1.5 text-[12px] font-semibold uppercase tracking-wide text-amber-400">
                 Prognos · {reportPct} %
+              </span>
+            )}
+            {/* Sluträkningsgrad — EGEN, samtidig pill (handover 14 sep), skild från "Prognos"
+                ovan (som bara handlar om rapporteringsgrad). Visas bara när det finns något att
+                säga (slutraknas/slutlig) — döljs i preliminär-läget som gäller hela valnatten,
+                annars syns en tom/intetsägande pill nästan alltid. */}
+            {slutligState && slutligState !== 'preliminar' && (
+              <span
+                className={`rounded-full border px-1.5 text-[12px] font-semibold uppercase tracking-wide ${SLUTLIG_PILL_TONE[slutligState]}`}
+              >
+                {slutligState === 'slutlig' ? 'Slutgiltigt' : `Sluträknas · ${slutligPct} %`}
               </span>
             )}
             <span className="text-[12px] text-slate-400">50 % av rösterna</span>

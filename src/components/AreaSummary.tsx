@@ -73,6 +73,8 @@ export function AreaSummary({
                   giltiga={av.giltiga}
                   sparr={sparrFor(valtyp, area.level, area.code)}
                   reportPct={pct}
+                  slutligState={av.slutligState}
+                  slutligPct={av.slutligPct}
                   blocks={av.blocks}
                   compact
                 />
@@ -82,6 +84,10 @@ export function AreaSummary({
               title={`${ELECTION[valtyp]} — ${av.areaName}`}
               statusTag={av.statusTag}
               subtitle={`${av.reported.toLocaleString('sv-SE')}/${av.total.toLocaleString('sv-SE')} distrikt (${pct} %)${av.uppTotal > 0 ? `, varav ${av.uppTotal.toLocaleString('sv-SE')} uppsamling` : ''}`}
+              slutligState={av.slutligState}
+              slutligPct={av.slutligPct}
+              slutligDone={av.slutligDone}
+              slutligTotal={av.slutligTotal}
               turnoutLabel={
                 av.turnout == null
                   ? undefined

@@ -11,7 +11,16 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useResults } from '@/components/ResultsProvider'
 import { ancestorsOf } from '@/lib/hierarchy'
 import { onDark } from '@/lib/colors'
-import { VALTYP_LABEL, type Valtyp } from '@/lib/results'
+import { deriveSlutligState, VALTYP_LABEL, type SlutligState, type Valtyp } from '@/lib/results'
+
+// "S:"-prefixets färg (handover 14 sep) — samma hue-familj som SlutligBar (amber/sky/
+// emerald), men bara sky/emerald behövs här: `preliminar` visas aldrig (se gaten nedan,
+// döljer hela raden tills sluträkningen faktiskt börjar).
+const SLUTLIG_TEXT_TONE: Record<SlutligState, string> = {
+  preliminar: 'text-amber-300',
+  slutraknas: 'text-sky-300',
+  slutlig: 'text-emerald-300',
+}
 
 const NEUTRAL = '#64748b'
 const VISIBLE = 20 // hur många rader som visas (20 senaste inrapporterade per tavla)
@@ -180,6 +189,9 @@ export function DepartureBoard({ valtyp, onRowSelect, fill, fullWidth, emphasize
   const uppReportedSet = uppsamlingRegistryReportedRef.current[valtyp]
   const reported = store.reportedCount + uppRegistry.reduce((n, e) => n + (uppReportedSet.has(e.kod) ? 1 : 0), 0)
   const total = totalByValtyp[valtyp] + uppRegistry.length
+  // Sluträkningsgrad — EGEN, samtidig bar (handover 14 sep, Val ANALYSIS), riksomfattande
+  // som denna tavlas befintliga reported/total ovan (samma princip som DistrictMap.tsx:s HUD).
+  const { state: slutligState } = deriveSlutligState(store.slutligDoneCount, store.reportedCount)
 
   // Namn-uppslag + hierarki-sökväg för DENNA tavlas valtyp (kan skilja sig från aktiv).
   const kommunName = useMemo(() => new Map(kommuner.map((k) => [k.code, k.name])), [kommuner])
@@ -209,18 +221,35 @@ export function DepartureBoard({ valtyp, onRowSelect, fill, fullWidth, emphasize
     <div className={`pointer-events-auto ${fullWidth ? 'w-full' : 'w-[var(--boards-w)]'} overflow-hidden rounded-lg border border-slate-700 bg-slate-950/85 shadow-2xl backdrop-blur ${fill ? `flex min-h-0 ${emphasized ? 'flex-[2]' : 'flex-1'} flex-col transition-[flex-grow] duration-300` : ''}`}>
       <div className="flex items-center justify-between border-b border-slate-800 px-3 py-2">
         <div className="flex items-center gap-2">
-          <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
-          <span className="text-xs font-semibold uppercase tracking-widest text-slate-300">Senaste rapporterat</span>
+          <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-emerald-400" />
+          {/* Förkortat "Senaste rapporterat" → "Senaste" (handover 14 sep, se P:/S:-
+              prefixen nedan) — raden var redan trång vid --boards-w (315px) UTAN dem;
+              "Senaste rapporterat" (tracking-widest gör den bredare än bokstäverna själva)
+              fick INTE plats bredvid "Riksdag · P: 6 273 / 6 626" utan att radbryta
+              (Lars, local dev: "tar upp för mkt plats"). */}
+          <span className="whitespace-nowrap text-xs font-semibold uppercase tracking-wide text-slate-300">Senaste</span>
         </div>
-        <span
-          className="text-[11px] tabular-nums text-slate-400"
-          // Fast bredd (--boards-w) → ingen plats för synlig "varav X uppsamling"-text
-          // (till skillnad från kartans HUD-badge, som får växa fritt) — tooltip i stället.
-          title={uppRegistry.length > 0 ? `Varav ${uppRegistry.length.toLocaleString('sv-SE')} uppsamlingsdistrikt` : undefined}
-        >
-          {VALTYP_LABEL[valtyp]} · {reported.toLocaleString('sv-SE')}
-          {total ? ` / ${total.toLocaleString('sv-SE')}` : ''}
-        </span>
+        <div className="flex items-center gap-1.5">
+          <span
+            className="text-[11px] tabular-nums text-slate-400"
+            // Fast bredd (--boards-w) → ingen plats för synlig "varav X uppsamling"-text
+            // (till skillnad från kartans HUD-badge, som får växa fritt) — tooltip i stället.
+            title={uppRegistry.length > 0 ? `Varav ${uppRegistry.length.toLocaleString('sv-SE')} uppsamlingsdistrikt` : undefined}
+          >
+            {VALTYP_LABEL[valtyp]} · P: {reported.toLocaleString('sv-SE')}
+            {total ? ` / ${total.toLocaleString('sv-SE')}` : ''}
+          </span>
+          {/* Sluträkningsgrad (handover 14 sep) — SAMMA rad, SAMMA stil som raden ovan (bara
+              en färgad "S:"-prefix i stället för ett eget ord/badge — Lars, local dev: "för
+              göra det kortare"). Ingen % här — DepartureBoard har aldrig visat procent för
+              rapporteringen ovan heller (bara "X / Y"). Döljs helt under `preliminar` (hela
+              valnatten) — syns först när sluträkningen faktiskt börjar. */}
+          {slutligState !== 'preliminar' && (
+            <span className={`text-[11px] tabular-nums ${SLUTLIG_TEXT_TONE[slutligState]}`}>
+              S: {store.slutligDoneCount.toLocaleString('sv-SE')} / {store.reportedCount.toLocaleString('sv-SE')}
+            </span>
+          )}
+        </div>
       </div>
 
       {rows.length === 0 ? (

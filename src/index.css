@@ -78,6 +78,11 @@
   /* Avgångstavlornas bredd — delad källa (som --panel-w) så kartans/väljarens centrering
      kan reservera vänsterkolumnen och landa på samma mittlinje. Ändra bredden HÄR. */
   --boards-w: 315px;
+  /* Dashboard-lägets vänstra header-chrome (App.tsx) — EN källa delad med DashboardGrid.tsx:s
+     top-offset (handover 14 sep: ReportingStatus fick en andra rad, tvårading text-sm ≈
+     2×20px + 2px mellanrum + lite padding), så headern och rutnätet aldrig kan hamna i
+     otakt (rutnätet startar för högt/lågt) om någon av dem ändras för sig. Ändra höjden HÄR. */
+  --dashboard-header-h: 3.75rem;
 }
 .maplibregl-ctrl-bottom-right {
   margin-right: calc(var(--panel-w) + 16px); /* skjut zoom-kontrollen vänster om panelen */

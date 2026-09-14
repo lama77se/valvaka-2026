@@ -323,6 +323,8 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
                   giltiga={av.giltiga}
                   sparr={sparrFor(valtyp, selectedArea.level, selectedArea.code)}
                   reportPct={pct}
+                  slutligState={av.slutligState}
+                  slutligPct={av.slutligPct}
                   blocks={av.blocks}
                   compact={compact}
                 />
@@ -332,6 +334,10 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
               title={`${ELECTION[valtyp]} — ${av.areaName}`}
               statusTag={av.statusTag}
               subtitle={subtitle(av.reported, av.total, pct, av.uppTotal)}
+              slutligState={av.slutligState}
+              slutligPct={av.slutligPct}
+              slutligDone={av.slutligDone}
+              slutligTotal={av.slutligTotal}
               turnoutLabel={turnoutLabel(av.turnout)}
               turnoutTitle={av.turnoutTitle}
               reportPct={av.total > 0 ? (av.reported / av.total) * 100 : 0}

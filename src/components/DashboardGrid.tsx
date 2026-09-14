@@ -10,7 +10,7 @@ import type { Valtyp } from '@/lib/results'
 export function DashboardGrid() {
   const { dashboardBoxes, setDashboardBox } = useResults()
   return (
-    <div className="absolute inset-0 top-11 grid grid-cols-2 grid-rows-2 gap-3 bg-[#0b1020] p-3">
+    <div className="absolute inset-0 top-[var(--dashboard-header-h)] grid grid-cols-2 grid-rows-2 gap-3 bg-[#0b1020] p-3">
       {dashboardBoxes.map((box, i) => (
         <div
           key={i}
