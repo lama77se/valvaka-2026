@@ -51,13 +51,16 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
 
   // Undertexten är samtidigt progress-baren, så varje tecken kostar höjd: spricker den
   // till två rader blir baren dubbelt så hög. Mobilvarianten kortar ner den ("av" → "/",
-  // "valdistrikt räknade" → "distrikt"). Valdeltagandet bor INTE här längre — det flyttade
-  // till den annars tomma ytan ovanför Parti/Röster i tabellhuvudet (se `turnoutLabel`).
-  const subtitle = (reported: number, total: number, pct: number) => {
+  // "valdistrikt räknade" → "distrikt") — och utelämnar därför medvetet uppsamlings-
+  // tillägget (samma höjd-känslighet); desktop har gott om bredd för det. Valdeltagandet
+  // bor INTE här längre — det flyttade till den annars tomma ytan ovanför Parti/Röster i
+  // tabellhuvudet (se `turnoutLabel`).
+  const subtitle = (reported: number, total: number, pct: number, uppTotal = 0) => {
     const r = reported.toLocaleString('sv-SE')
     const t = total.toLocaleString('sv-SE')
     if (compact) return `${r}/${t} distrikt (${pct} %)`
-    return `${r} av ${t} valdistrikt räknade (${pct} %)`
+    const varavUpp = uppTotal > 0 ? `, varav ${uppTotal.toLocaleString('sv-SE')} uppsamling` : ''
+    return `${r} av ${t} valdistrikt räknade (${pct} %)${varavUpp}`
   }
 
   // Samma yta i tabellhuvudet oavsett layout — mobilen kortar bara ordvalet.
@@ -188,7 +191,7 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
       let topA = 0
       for (const [f, a] of Object.entries(src)) if (a > topA) { topA = a; leadFork = f }
       const leadFarg = leadFork ? forkFarg.get(leadFork) ?? REPORTED_NEUTRAL : reported > 0 ? REPORTED_NEUTRAL : UNREPORTED_FILL
-      return { level: g.level, code: g.code, reported, total: districtCount, live, a26, a22, leadFarg }
+      return { level: g.level, code: g.code, reported, total: districtCount, uppTotal: uppCounts.total, live, a26, a22, leadFarg }
     })
     const anyLive = items.some((it) => it.live) // finns 2026-röster alls? annars visas 2022
     // Uppsamlingsröster som INTE redan nestades i ett valkrets-barns egen rad ovan → en
@@ -328,7 +331,7 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
             <ResultTable
               title={`${ELECTION[valtyp]} — ${av.areaName}`}
               statusTag={av.statusTag}
-              subtitle={subtitle(av.reported, av.total, pct)}
+              subtitle={subtitle(av.reported, av.total, pct, av.uppTotal)}
               turnoutLabel={turnoutLabel(av.turnout)}
               turnoutTitle={av.turnoutTitle}
               reportPct={av.total > 0 ? (av.reported / av.total) * 100 : 0}
@@ -443,7 +446,7 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
                             // som distriktsradernas bock.
                             <span
                               className={it.total > 0 && it.reported === it.total ? 'text-emerald-400' : ''}
-                              title={`${it.reported} av ${it.total} distrikt räknade`}
+                              title={`${it.reported} av ${it.total} distrikt räknade${it.uppTotal > 0 ? ` (varav ${it.uppTotal} uppsamling)` : ''}`}
                             >
                               {it.total > 0 && it.reported === it.total && <span className="mr-0.5">✓</span>}
                               {it.reported}/{it.total}

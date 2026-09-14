@@ -1188,6 +1188,13 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
               <span className="font-mono text-base font-semibold tabular-nums">{reportedCombined}</span>
               <span className="text-slate-400"> av {total.toLocaleString('sv-SE')}</span>
               <span className="ml-2 text-xs text-sky-300">{reportedPct}%</span>
+              {/* whitespace-nowrap på badgen ovan → pillen bara växer, ingen radbrytnings-
+                  risk (till skillnad från ResultPanel.tsx:s smala undertext-bar). */}
+              {uppRegistry.length > 0 && (
+                <span className="ml-1.5 text-xs text-slate-500" title="Uppsamlingsdistrikt: sena/olösta röster utan egen geometri, ingår i både täljare och nämnare (som val.se/SVT)">
+                  (varav {uppRegistry.length.toLocaleString('sv-SE')} uppsamling)
+                </span>
+              )}
             </span>
             {/* Egen liten avdelare mot Live-gruppen — samma rad nu (rymdes gott om
                 bredd över, se rad-1 vs rad-2 innan), i stället för en egen rad. */}

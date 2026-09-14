@@ -212,7 +212,12 @@ export function DepartureBoard({ valtyp, onRowSelect, fill, fullWidth, emphasize
           <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
           <span className="text-xs font-semibold uppercase tracking-widest text-slate-300">Senaste rapporterat</span>
         </div>
-        <span className="text-[11px] tabular-nums text-slate-400">
+        <span
+          className="text-[11px] tabular-nums text-slate-400"
+          // Fast bredd (--boards-w) → ingen plats för synlig "varav X uppsamling"-text
+          // (till skillnad från kartans HUD-badge, som får växa fritt) — tooltip i stället.
+          title={uppRegistry.length > 0 ? `Varav ${uppRegistry.length.toLocaleString('sv-SE')} uppsamlingsdistrikt` : undefined}
+        >
           {VALTYP_LABEL[valtyp]} · {reported.toLocaleString('sv-SE')}
           {total ? ` / ${total.toLocaleString('sv-SE')}` : ''}
         </span>

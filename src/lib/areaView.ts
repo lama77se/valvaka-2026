@@ -98,6 +98,7 @@ export interface AreaViewResult {
   has2022: boolean
   reported: number
   total: number
+  uppTotal: number // hur många av `total` som är uppsamlingsdistrikt (icke-geografiska, se uppsamlingCountsForArea) — för "varav X uppsamling"-texten i UI:t
   turnout: number | null
   turnoutTitle: string | undefined
   invalidVotes: {
@@ -272,6 +273,7 @@ export function computeAreaView(p: AreaViewParams): AreaViewResult {
     has2022,
     reported,
     total,
+    uppTotal: uppCounts.total,
     turnout,
     // De absoluta talen bakom valdeltagande-%:en (val.se visar dem själva: "Räknade röster" /
     // "Röstberättigade") — hover-tooltip på samma etikett i stället för egen rad, för att inte

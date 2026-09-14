@@ -79,7 +79,7 @@ export function AreaSummary({
             <ResultTable
               title={`${ELECTION[valtyp]} — ${av.areaName}`}
               statusTag={av.statusTag}
-              subtitle={`${av.reported.toLocaleString('sv-SE')}/${av.total.toLocaleString('sv-SE')} distrikt (${pct} %)`}
+              subtitle={`${av.reported.toLocaleString('sv-SE')}/${av.total.toLocaleString('sv-SE')} distrikt (${pct} %)${av.uppTotal > 0 ? `, varav ${av.uppTotal.toLocaleString('sv-SE')} uppsamling` : ''}`}
               turnoutLabel={
                 av.turnout == null
                   ? undefined
