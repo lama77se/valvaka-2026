@@ -36,10 +36,16 @@ create index uppsamling_personroster_kretskod_idx
 
 -- Fullständig kolumnjämförelse från start (lärdomen från ikväll, se personroster-migrationen
 -- och 20260914090000_fix_turnout_bump_trigger.sql) — jämför ALLA icke-nyckel-kolumner.
+-- (Val OPS, granskning av denna PR: den ursprungliga versionen glömde kommunkod/lankod trots
+-- kommentarens påstående — samma bugmönster som turnout-triggern, fast på dessa två kolumner.
+-- Praktisk risk låg — kod = kommunkod+löpnummer strukturellt, se uppsamling_result — men fixat
+-- ändå: kommentaren ska vara bokstavligt sann, inte "nästan".)
 create or replace function public.bump_uppsamling_personroster_updated_at() returns trigger
   language plpgsql set search_path = '' as $$
 begin
-  if (old.kretskod, old.namn, old.antal_personroster, old.status) is not distinct from (new.kretskod, new.namn, new.antal_personroster, new.status) then
+  if (old.kommunkod, old.lankod, old.kretskod, old.namn, old.antal_personroster, old.status)
+     is not distinct from
+     (new.kommunkod, new.lankod, new.kretskod, new.namn, new.antal_personroster, new.status) then
     return null;
   end if;
   new.updated_at := now();
