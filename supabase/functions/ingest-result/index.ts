@@ -150,6 +150,16 @@ function mandatRowsFromPartiLista(
 // mandatMode styr ENDAST den helt separata, isolerade mandat-sektionen längre ned — se dess
 // egen kommentar. Röstvägen ovan/nedan är HELT OFÖRÄNDRAD av mandatMode.
 async function processFile(url: string, districtSet: Set<string>, partySet: Set<string>, supabase: SupabaseClient, probe: boolean, mandatMode: MandatMode): Promise<FileResult> {
+  // DIAGNOSTIK (handover 14 sep, Val ANALYSIS) — REN instrumentering, ingen logikändring.
+  // Ska hjälpa spåra ett olöst mysterium: en konsekvent delmängd (~24 %) av redan rapporterade
+  // RD-distrikt får aldrig sin turnout-rad omskriven (roster_paverkar_mandat stannar null) trots
+  // upprepade "lyckade" (status 200) körningar av samma riksfil. Misstanke: en tyst, icke-
+  // kastande isolat-avbrytning mitt i en körning (samma riskklass som PR F:s CPU-tak-incident
+  // 5 sep — nu ev. relevant igen då riks-RD:s uppackade JSON är uppe i ~34,5 MB). Om isolatet
+  // dödas tyst syns GAPET i checkpoint-tidslinjen (senaste loggraden före tystnaden) även om
+  // själva dödandet aldrig loggar sig självt. Ta bort denna instrumentering igen när mysteriet
+  // är löst — inte tänkt att stanna permanent.
+  const t0 = performance.now()
   let res: Response
   try {
     res = await fetch(url, { signal: AbortSignal.timeout(20_000) })
@@ -193,6 +203,7 @@ async function processFile(url: string, districtSet: Set<string>, partySet: Set<
     if (!name) return { status: names.length ? 'nodata' : 'incomplete', bytes }
     const text = new TextDecoder().decode(unz[name])
     j = JSON.parse(text)
+    console.log('[ingest-result] checkpoint:parse', url, `${(performance.now() - t0).toFixed(0)}ms`)
     if (mandatMode !== 'av') {
       const mandatName = names.find((n) => /mandatfordelning.*\.json$/i.test(n))
       if (mandatName) {
@@ -292,6 +303,14 @@ async function processFile(url: string, districtSet: Set<string>, partySet: Set<
       rows.push({ valtyp, valdistriktskod: kod, partikod: p.partikod, roster: p.antalRoster, status, rapporteringstid })
     }
   }
+  // DIAGNOSTIK (se kommentar vid processFile-signaturen): valdistrikt.length sparas HÄR, FÖRE
+  // j-nollningen nedan, så vi ser om build-loopen fick FULL indata varje gång (eller om den
+  // redan tappar poster innan upsertarna ens börjar).
+  const totalValdistrikt = Array.isArray(j.valdistrikt) ? j.valdistrikt.length : 0
+  console.log(
+    '[ingest-result] checkpoint:build', url, `${(performance.now() - t0).toFixed(0)}ms`,
+    JSON.stringify({ valdistrikt: totalValdistrikt, rows: rows.length, turnout: turnout.length, upp: upp.length, registry: registry.length }),
+  )
   j = null // objektträdet kan GC:as innan upsertarna
 
   // Stora klungor → få PostgREST-anrop (riks-RD: 50k rader → 26 anrop à 2000 i stället för 51).
@@ -300,6 +319,12 @@ async function processFile(url: string, districtSet: Set<string>, partySet: Set<
       if (probe) continue
       const { error } = await supabase.from(table).upsert(arr.slice(i, i + size), { onConflict })
       if (error) throw new Error(`upsert ${table}: ${error.message}`)
+      // DIAGNOSTIK: en rad PER LYCKAD CHUNK — visar exakt hur långt en körning kommer innan
+      // ev. tystnad/avbrott, chunk för chunk (se processFile-kommentaren).
+      console.log(
+        '[ingest-result] checkpoint:chunk', url, table, `i=${i}`, `chunkLen=${Math.min(size, arr.length - i)}`,
+        `${(performance.now() - t0).toFixed(0)}ms`,
+      )
     }
   }
   try {
@@ -309,6 +334,7 @@ async function processFile(url: string, districtSet: Set<string>, partySet: Set<
   } catch (e) {
     return { status: 'dberror', error: (e as Error).message, bytes }
   }
+  console.log('[ingest-result] checkpoint:upserts-done', url, `${(performance.now() - t0).toFixed(0)}ms`)
 
   // --- UPPSAMLINGSDISTRIKT-REGISTRET (handover 13 sep, självuppdaterande variant) --------
   // 🔴 ISOLERINGSKRAV: röster/turnout/uppsamling_result är REDAN upserterade ovan. Detta är
