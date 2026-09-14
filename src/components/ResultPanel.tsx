@@ -14,6 +14,7 @@ import { ancestorsOf, childGroupsOf, childLevelOf } from '@/lib/hierarchy'
 import { REPORTED_NEUTRAL, UNREPORTED_FILL } from '@/components/DistrictMap'
 import { useAreaView } from '@/components/useAreaView'
 import { AreaSelect } from '@/components/AreaSelect'
+import { PersonrosterPanel } from '@/components/PersonrosterPanel'
 
 const CHILD_LABEL: Record<string, string> = { valkrets: 'Valkretsar', region: 'Län', kommun: 'Kommuner', distrikt: 'Distrikt' }
 
@@ -527,6 +528,7 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
                 </table>
               </div>
         )}
+        {!isPrompt && <PersonrosterPanel valtyp={valtyp} area={selectedArea} parties={partyRef.current} compact={compact} />}
       </div>
     </div>
   )
