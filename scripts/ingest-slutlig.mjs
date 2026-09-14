@@ -101,6 +101,7 @@ async function processFile(f, sets) {
   const uppRows = []
   const turnoutRows = []
   const registryRows = []
+  const personrosterRows = []
   for (const vd of j.valdistrikt ?? []) {
     const kod = vd.valdistriktskod
     if (vd.valdistriktstyp === 'uppsamlingsdistrikt') {
@@ -150,10 +151,27 @@ async function processFile(f, sets) {
     for (const p of vd.rostfordelning?.rosterPaverkaMandat?.partiRoster ?? []) {
       if (!sets.partySet.has(p.partikod)) continue
       rows.push({ valtyp: j.valtyp, valdistriktskod: kod, partikod: p.partikod, roster: p.antalRoster, status: rakstatus, rapporteringstid })
+      // Personröster (handover 14 sep, Lars/Val ANALYSIS) — REDAN i samma rostfordelning-JSON,
+      // ingen extra fil. Bara summeradePersonroster (redan summerat över partiets ev. flera
+      // listor i distriktet) — ingen listRoster[].personroster[]-sublistedetalj, se
+      // migrationens kommentar. kandidatnummer är den enda stabila nyckeln (namnstavning kan
+      // skilja mellan sublistor/summering inom SAMMA fil) — namn är ren visningstext här.
+      for (const kp of p.summeradePersonroster ?? []) {
+        if (typeof kp.kandidatnummer !== 'number' || typeof kp.namn !== 'string' || typeof kp.antalPersonroster !== 'number') continue
+        personrosterRows.push({
+          valtyp: j.valtyp,
+          valdistriktskod: kod,
+          partikod: p.partikod,
+          kandidatnummer: kp.kandidatnummer,
+          namn: kp.namn,
+          antal_personroster: kp.antalPersonroster,
+          status: rakstatus,
+        })
+      }
     }
   }
   const geoDistricts = new Set(rows.map((r) => r.valdistriktskod)).size
-  log(`  byggt: ${rows.length} result-rader (${geoDistricts} distrikt) · ${uppRows.length} uppsamling-rader · ${turnoutRows.length} valdeltagande-rader — upsertar…`)
+  log(`  byggt: ${rows.length} result-rader (${geoDistricts} distrikt) · ${uppRows.length} uppsamling-rader · ${turnoutRows.length} valdeltagande-rader · ${personrosterRows.length} personröst-rader — upsertar…`)
 
   // Slutligt → 1000 rader/upsert (Realtime behövs ej ons–fre; klienten läser via snapshot).
   for (let i = 0; i < rows.length; i += 1000) {
@@ -173,6 +191,15 @@ async function processFile(f, sets) {
   for (let i = 0; i < registryRows.length; i += 1000) {
     const { error } = await db.from('uppsamlingsdistrikt_registry').upsert(registryRows.slice(i, i + 1000), { onConflict: 'valtyp,kod' })
     if (error) console.error(`  uppsamlingsdistrikt_registry upsert (icke-kritiskt): ${error.message}`)
+  }
+  // Personröster — samma isoleringsprincip (icke-kritiskt, kan aldrig göra en annars lyckad
+  // sluträkning "misslyckad"): röster/turnout/uppsamling/register är redan upserterade ovan.
+  // `break` (till skillnad från registret ovan, som loggar per chunk och fortsätter) — denna
+  // tabell kan växa till tiotusentals rader/kandidater i den fulla riks-RD-filen, ett strukturellt
+  // fel (t.ex. tabellen saknas än) skulle annars spamma samma felrad hundratals gånger.
+  for (let i = 0; i < personrosterRows.length; i += 2000) {
+    const { error } = await db.from('personroster').upsert(personrosterRows.slice(i, i + 2000), { onConflict: 'valtyp,valdistriktskod,partikod,kandidatnummer' })
+    if (error) { console.error(`  personroster upsert (icke-kritiskt): ${error.message}`); break }
   }
   // --- MANDAT (Valmyndighetens EGEN mandatfördelning, handover 13/14 sep) -----------------
   // 🔴 ISOLERINGSKRAV: röster/turnout/uppsamling/register är REDAN upserterade ovan. Ett fel
@@ -205,7 +232,7 @@ async function processFile(f, sets) {
       console.error(`  mandat_valse upsert (isolerat — resultatet ovan OPÅVERKAT): ${e.message}`)
     }
   }
-  log(`  klart: ${rows.length} result · ${uppRows.length} uppsamling · ${turnoutRows.length} valdeltagande · ${registryRows.length} uppsamlingsdistrikt-register · ${mandatUp} mandat_valse`)
+  log(`  klart: ${rows.length} result · ${uppRows.length} uppsamling · ${turnoutRows.length} valdeltagande · ${registryRows.length} uppsamlingsdistrikt-register · ${mandatUp} mandat_valse · ${personrosterRows.length} personroster`)
   return true
 }
 
