@@ -487,17 +487,18 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
                         })}
                         <td className="whitespace-nowrap py-0.5 pl-1 text-right align-top leading-tight text-slate-500">
                           {it.level === 'distrikt' ? (
-                            // Enskilt distrikt: skilj slutgiltigt (grön) från bara preliminärt
-                            // inrapporterat (himmelsblå, samma ton som Sluträknas-badgen) från
-                            // ej alls räknat (·) — samma tre-läges-princip som gruppraderna nedan,
-                            // fast som EN bock i stället för en andra rad (inget "X/Y" att dela upp).
-                            it.slutlig > 0 ? (
-                              <span className="text-emerald-400" title="slutgiltigt räknat">✓</span>
-                            ) : it.reported > 0 ? (
-                              <span className="text-sky-400" title="preliminärt räknat">✓</span>
-                            ) : (
-                              <span title="ej räknat">·</span>
-                            )
+                            // Enskilt distrikt: Lars önskemål 14 sep — samma två-rader-mönster
+                            // som gruppraderna nedan (rad 1 = preliminärt, rad 2 = slutgiltigt),
+                            // fast som två BOCKAR i stället för X/Y (ett enda distrikt har inget
+                            // kvottal att visa). Rad 2 döljs helt förrän distriktet är slutgiltigt.
+                            <>
+                              <div className={it.reported > 0 ? 'text-sky-400' : ''} title={it.reported > 0 ? 'preliminärt räknat' : 'ej räknat'}>
+                                {it.reported > 0 ? '✓' : '·'}
+                              </div>
+                              {it.slutlig > 0 && (
+                                <div className="text-[12px] leading-none text-emerald-400" title="slutgiltigt räknat">✓</div>
+                              )}
+                            </>
                           ) : (
                             <>
                               {/* Preliminärt inrapporterat — färdigräknat område (alla distrikt
