@@ -25,9 +25,15 @@
 // (extraVotes i computeAssembly) — utan detta gav Uppsala RF fel C/MP-totaler; (2)
 // uppsamlingsdistrikt som FAKTISKT har en kretskod (Blekinge/Ronneby) ska räknas till DEN
 // valkretsen, inte klumpas ihop organvitt — en förhastad generalisering av fix (1) gav
-// annars fel KD/V-fasta i Ronneby. De 2 kvarvarande fallen är oförklarade efter denna
-// utredning — misstänkt en verklig (ovanlig) Valmyndighets-särregel eller ett fåtal
-// omräknade röster efter offentliggörandet, inte reproducerbart ur rösterna allena.
+// annars fel KD/V-fasta i Ronneby.
+//
+// UPPDATERING (14 sep, handover Val ANALYSIS/OPS): de 2 kvarvarande fallen VAR FÖRKLARADE
+// efter allt — samma "återföring av överskjutande fasta mandat"-bugg som computeAssemblys
+// fullyLevels-gren hade (se kommentaren där): Kalmar/Emmaboda-Nybro-Torsås och Västra
+// Götaland/Göteborg hade VAR SIN 2022-överhängssituation (ett parti med fler fasta
+// valkretsmandat än sin proportionella andel), som drabbades av precis samma
+// fixedByConstituencyParty-inkonsekvens. Efter återförings-fixen: 679/679, RF 11/11, KF
+// 17/17 — FULL match, inga kvarvarande avvikelser.
 import { readFileSync, readdirSync } from 'node:fs'
 import XLSX from 'xlsx'
 import { unzipSync } from 'fflate'
