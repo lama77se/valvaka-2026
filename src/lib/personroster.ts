@@ -77,9 +77,11 @@ export async function fetchPersonrosterTop(
   return mapRows(data)
 }
 
-// Namnsökning — komplement till topplistan (Lars beslut 4), prefix-ILIKE (v1, räcker
-// enligt spec). Samma områdesskopning som toppristan — söker aldrig hela riket-tabellen
-// rått, alltid begränsat till det VISADE området.
+// Namnsökning — komplement till topplistan (Lars beslut 4). Substräng-ILIKE (INTE bara
+// prefix — Val ANALYSIS granskning av personroster_search: ren prefix mot HELA "Förnamn
+// Efternamn"-fältet missar efternamnssökning helt, "Åkes" gav 0 träffar för "Jimmie
+// Åkesson"). Samma områdesskopning som toppristan — söker aldrig hela riket-tabellen rått,
+// alltid begränsat till det VISADE området, så substräng kostar inget extra i praktiken.
 export async function searchPersonroster(valtyp: Valtyp, area: Area, query: string, limit = 20): Promise<PersonrosterEntry[]> {
   const q = query.trim()
   if (!q) return []
@@ -90,7 +92,7 @@ export async function searchPersonroster(valtyp: Valtyp, area: Area, query: stri
       .select('partikod,kandidatnummer,namn,antal_personroster')
       .eq('valtyp', valtyp)
       .eq('valdistriktskod', area.code)
-      .ilike('namn', `${q}%`)
+      .ilike('namn', `%${q}%`)
       .order('antal_personroster', { ascending: false })
       .limit(limit)
     if (error) throw error

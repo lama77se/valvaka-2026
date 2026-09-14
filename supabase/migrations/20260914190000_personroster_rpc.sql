@@ -10,17 +10,23 @@
 -- ingen anledning att köra med förhöjd behörighet.
 --
 -- Områdesupplösning SPEGLAR districtsInArea (aggregate.ts) EXAKT, inte district-tabellens
--- egna lanskod/kommunkod-kolumner: de kolumnerna saknar (bekräftat 14 sep) sina inledande
--- nollor ("3"/"380" i stället för "03"/"0380") — en tyst datakvalitetslucka som ALDRIG
--- syntes förut eftersom klienten redan undviker dem (region/kommun härleds ur
--- valdistriktskodens EGNA, garanterat rättpaddade 2/4 första tecken; bara valkrets-nivån
--- litar på en district-kolumn, och då vk_rd/vk_rf/vk_kf — som ANVÄNDS konsekvent
--- opaddade genomgående, självkonsekvent med hur klienten redan populerar sina egna
--- valkrets-kodlistor ur SAMMA kolumner). Samma mönster återanvänds här:
+-- egna lanskod/kommunkod/vk_rd/vk_rf/vk_kf-kolumner rått: de saknar (bekräftat 14 sep)
+-- sina inledande nollor i DB ("3"/"380"/"9" i stället för "03"/"0380"/"09"). Region/kommun
+-- kringgår detta helt genom att härleda koden ur valdistriktskodens EGNA, garanterat
+-- rättpaddade 2/4 första tecken (samma som districtsInArea gör) — aldrig district-
+-- kolumnerna. Valkrets MÅSTE dock läsa vk_rd/vk_rf/vk_kf (ingen substrings-genväg finns),
+-- och klienten (ResultsProvider.tsx, laddningen av `meta`/areaIndex) paddar UTTRYCKLIGEN
+-- dessa till 2/4/6 siffror innan den bygger sina egna valkrets-kodlistor — `area.code`
+-- (RPC:ns p_omradeskod) är alltså ALLTID paddat när den kommer från klienten.
+-- 🔴 (Val OPS, granskning: en första version av denna migration jämförde d.vk_rd/vk_rf/
+-- vk_kf RÅTT mot p_omradeskod, utan lpad — matchade 0 träffar för ~40 % av alla
+-- valkretsar i ett stickprov, varje kod kortare än sin fulla bredd, t.ex. Gotlands RD-
+-- valkrets "9" mot klientens "09". Tyst fel, inget kastat undantag — bara en tom lista.
+-- Fixat: lpad(d.vk_rd,2,'0') osv nedan.) Samma mönster genomgående:
 --   'riket'    → alla distrikt (bara RD, ingen riksnivå för RF/KF — Lars beslut 2)
 --   'region'   → left(valdistriktskod, 2) = områdeskod
 --   'kommun'   → left(valdistriktskod, 4) = områdeskod
---   'valkrets' → district.vk_rd/vk_rf/vk_kf = områdeskod (beroende på valtyp)
+--   'valkrets' → lpad(district.vk_rd/vk_rf/vk_kf, 2/4/6, '0') = områdeskod (beroende på valtyp)
 --
 -- Uppsamling vägs in enligt SAMMA princip som uppsamlingForArea/UppsamlingBuckets
 -- (aggregate.ts) redan använder för röster (handover 14 sep, Lars förtydligande: gäller
@@ -37,8 +43,9 @@
 -- personroster_search filtrerar på namn, kan resultatets antal_personroster undervärdera
 -- kandidatens verkliga totalsumma något (bara rader vars stavning matchar sökningen
 -- räknas in) — kandidaten missas dock aldrig helt så länge MINST en stavning matchar.
--- Accepterat för v1 (Val ANALYSIS/Lars, "prefix-/enkel ILIKE räcker") — en tvåstegs
--- match-sedan-summera-fullt-variant kan läggas till om det visar sig behövas.
+-- Accepterat för v1 (Val ANALYSIS/Lars, "enkel ILIKE räcker" — sedan justerat till
+-- substräng, se personroster_search nedan) — en tvåstegs match-sedan-summera-fullt-
+-- variant kan läggas till om det visar sig behövas.
 --
 -- ⚠️ Kryssspärr (Lars beslut 3) byggs INTE här — bekräftat 14 sep (Lars, exempel Jimmie
 -- Åkesson i data) att en kandidat kan stå på FLERA valkretsars listor samtidigt (t.ex.
@@ -77,9 +84,9 @@ as $$
         or (p_niva = 'region' and left(pr.valdistriktskod, 2) = p_omradeskod)
         or (p_niva = 'kommun' and left(pr.valdistriktskod, 4) = p_omradeskod)
         or (p_niva = 'valkrets' and (
-          (p_valtyp = 'RD' and d.vk_rd = p_omradeskod)
-          or (p_valtyp = 'RF' and d.vk_rf = p_omradeskod)
-          or (p_valtyp = 'KF' and d.vk_kf = p_omradeskod)
+          (p_valtyp = 'RD' and lpad(d.vk_rd, 2, '0') = p_omradeskod)
+          or (p_valtyp = 'RF' and lpad(d.vk_rf, 4, '0') = p_omradeskod)
+          or (p_valtyp = 'KF' and lpad(d.vk_kf, 6, '0') = p_omradeskod)
         ))
       )
   ),
@@ -105,6 +112,12 @@ $$;
 -- Samma områdes-/uppsamlingsupplösning som personroster_top, plus ett namnfilter. Prefix-
 -- ILIKE (v1, se Val ANALYSIS beslut 4) — räcker gott: scopat till ETT område (aldrig hela
 -- tabellen), så prestanda är aldrig en fråga oavsett indexläge.
+--
+-- (Val ANALYSIS, granskning: ren PREFIX mot HELA namn-fältet — "Förnamn Efternamn" — missar
+-- den absolut vanligaste sökningen, efternamnet ("Åkes" gav noll träffar för "Jimmie
+-- Åkesson"). Bytt till substräng (ilike '%'||p_query||'%') i båda CTE:erna nedan —
+-- prestandaresonemanget för prefix (områdesskopat, aldrig hela tabellen) gäller lika mycket
+-- för substräng.)
 create or replace function public.personroster_search(
   p_valtyp text,
   p_niva text,
@@ -128,15 +141,15 @@ as $$
     from public.personroster pr
     left join public.district d on d.valdistriktskod = pr.valdistriktskod and p_niva = 'valkrets'
     where pr.valtyp = p_valtyp
-      and pr.namn ilike p_query || '%'
+      and pr.namn ilike '%' || p_query || '%'
       and (
         (p_niva = 'riket' and p_valtyp = 'RD')
         or (p_niva = 'region' and left(pr.valdistriktskod, 2) = p_omradeskod)
         or (p_niva = 'kommun' and left(pr.valdistriktskod, 4) = p_omradeskod)
         or (p_niva = 'valkrets' and (
-          (p_valtyp = 'RD' and d.vk_rd = p_omradeskod)
-          or (p_valtyp = 'RF' and d.vk_rf = p_omradeskod)
-          or (p_valtyp = 'KF' and d.vk_kf = p_omradeskod)
+          (p_valtyp = 'RD' and lpad(d.vk_rd, 2, '0') = p_omradeskod)
+          or (p_valtyp = 'RF' and lpad(d.vk_rf, 4, '0') = p_omradeskod)
+          or (p_valtyp = 'KF' and lpad(d.vk_kf, 6, '0') = p_omradeskod)
         ))
       )
   ),
@@ -144,7 +157,7 @@ as $$
     select up.partikod, up.kandidatnummer, up.namn, up.antal_personroster
     from public.uppsamling_personroster up
     where up.valtyp = p_valtyp
-      and up.namn ilike p_query || '%'
+      and up.namn ilike '%' || p_query || '%'
       and (
         (p_niva = 'riket' and p_valtyp = 'RD')
         or (p_niva = 'region' and up.lankod = p_omradeskod)
