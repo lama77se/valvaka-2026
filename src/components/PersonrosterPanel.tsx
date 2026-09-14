@@ -1,8 +1,10 @@
 // Personröster — handover 14 sep (Lars, spec via Val ANALYSIS). Längst ner i
 // ResultPanel.tsx (mobil+desktop, INTE Dashboard-vyn — AreaSummary.tsx importerar den
-// inte). Standard: topp-10 blandade partier. Partidropdown → topp-10 filtrerat på ETT
-// parti (ingen paginering, Lars förenklade specen 14 sep — bara LIMIT 10, ingen offset).
-// Namnsökfält som komplement till topplistan.
+// inte). Standard: topp-10 blandade partier, med sidbläddring (Lars, 14 sep: v1 hade
+// bara topp 10 utan väg vidare — se personroster.ts/20260914200000_personroster_top_
+// pagination.sql). Partidropdown → samma topplista filtrerad på ETT parti, egen
+// sidräkning. Namnsökfält som komplement till topplistan — INTE paginerad (en ny
+// sökning är redan sin egen "omstart", se personroster.ts).
 //
 // ⚠️ Ingen kryssspärr-badge än (Lars beslut 3) — se personroster.ts/migrationens
 // kommentar: en kandidat kan stå på FLERA valkretsars listor (rikslistekandidater,
@@ -27,8 +29,10 @@ export function PersonrosterPanel({
   parties: Map<string, PartyMeta>
   compact?: boolean
 }) {
+  const PAGE_SIZE = 10
   const [partikod, setPartikod] = useState<string | null>(null)
   const [query, setQuery] = useState('')
+  const [page, setPage] = useState(0)
   const [entries, setEntries] = useState<PersonrosterEntry[]>([])
   const [searchEntries, setSearchEntries] = useState<PersonrosterEntry[] | null>(null)
   const [loading, setLoading] = useState(false)
@@ -36,20 +40,27 @@ export function PersonrosterPanel({
 
   const supported = personrosterLevelSupported(valtyp, area.level) && (area.level === 'riket' || !!area.code)
 
-  // Nollställ filter/sökning på områdesbyte — annars kan ett parti/sökord från ETT
-  // område av misstag följa med och ge en tom (eller vilseledande) lista i nästa.
+  // Nollställ filter/sökning/sida på områdesbyte — annars kan ett parti/sökord/sida från
+  // ETT område av misstag följa med och ge en tom (eller vilseledande) lista i nästa.
   useEffect(() => {
     setPartikod(null)
     setQuery('')
     setSearchEntries(null)
+    setPage(0)
   }, [valtyp, area.level, area.code])
+
+  // Bytt parti-filter → tillbaka till sida 1 (annars kan man landa på en sida som är
+  // tom för det NYA partiet men bara fanns för det gamla).
+  useEffect(() => {
+    setPage(0)
+  }, [partikod])
 
   useEffect(() => {
     if (!supported) return
     let cancelled = false
     setLoading(true)
     setFailed(false)
-    fetchPersonrosterTop(valtyp, area, partikod)
+    fetchPersonrosterTop(valtyp, area, partikod, PAGE_SIZE, page * PAGE_SIZE)
       .then((rows) => { if (!cancelled) setEntries(rows) })
       .catch(() => { if (!cancelled) setFailed(true) })
       .finally(() => { if (!cancelled) setLoading(false) })
@@ -57,7 +68,7 @@ export function PersonrosterPanel({
     // area.level/area.code (inte hela `area`-objektet, ny referens varje render) — undviker
     // ett extra onödigt anrop per föräldra-render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [valtyp, area.level, area.code, partikod, supported])
+  }, [valtyp, area.level, area.code, partikod, page, supported])
 
   // Debounce (300 ms) — annars ett RPC-anrop per tangenttryck.
   useEffect(() => {
@@ -135,9 +146,12 @@ export function PersonrosterPanel({
         <ol className="space-y-0.5 text-[13px] tabular-nums">
           {shown.map((e, i) => {
             const p = parties.get(e.partikod)
+            // Radnumret fortsätter över sidor (11, 12, … på sida 2) — bara för topplistan
+            // (shown===entries); sökträffar har ingen sida att räkna från.
+            const rank = shown === entries ? i + 1 + page * PAGE_SIZE : i + 1
             return (
               <li key={`${e.partikod}-${e.kandidatnummer}`} className="flex items-center gap-2">
-                <span className="w-4 shrink-0 text-right text-slate-500">{i + 1}</span>
+                <span className="w-6 shrink-0 text-right text-slate-500">{rank}</span>
                 <span className="w-8 shrink-0 font-bold" style={{ color: onDark(p?.farg ?? '#94a3b8') }}>{p?.forkortning ?? e.partikod}</span>
                 <span className="min-w-0 flex-1 truncate text-slate-200">{e.namn}</span>
                 <span className="shrink-0 font-semibold text-slate-100">{e.antalPersonroster.toLocaleString('sv-SE')}</span>
@@ -146,9 +160,35 @@ export function PersonrosterPanel({
           })}
         </ol>
       )}
+      {/* Sidbläddring — bara för topplistan, inte namnsökningen (searchEntries, alltid
+          en enda platt topp-20 utan sidor, se personroster.ts). "Nästa" inaktiveras när
+          sidan gav färre rader än PAGE_SIZE (sista sidan) — inget separat totalt-antal
+          hämtas, samma "räkna raderna"-heuristik som redan gäller på andra ställen i
+          appen. Döljs helt på sida 1 UTAN nästa sida (inget att bläddra i alls). */}
+      {searchEntries == null && (page > 0 || entries.length === PAGE_SIZE) && (
+        <div className="mt-1.5 flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={() => setPage((p) => Math.max(0, p - 1))}
+            disabled={page === 0 || loading}
+            className="rounded border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            ← Föregående
+          </button>
+          <span className="text-[11px] text-slate-500">Sida {page + 1}</span>
+          <button
+            type="button"
+            onClick={() => setPage((p) => p + 1)}
+            disabled={entries.length < PAGE_SIZE || loading}
+            className="rounded border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Nästa →
+          </button>
+        </div>
+      )}
       {!compact && (
         <p className="mt-1.5 text-[11px] text-slate-600">
-          Topp {shown === entries ? 10 : shown.length}, {partikod ? partyLabel(partikod, parties.get(partikod) ?? { forkortning: null, farg: null }) : 'alla partier'}.
+          Visar {shown === entries ? `${page * PAGE_SIZE + 1}–${page * PAGE_SIZE + shown.length}` : shown.length}, {partikod ? partyLabel(partikod, parties.get(partikod) ?? { forkortning: null, farg: null }) : 'alla partier'}.
         </p>
       )}
     </div>
