@@ -172,15 +172,17 @@ export function MandatBars({ shown, ovriga, totalMandat, giltiga, sparr, reportP
         <div className="mb-1 flex items-baseline justify-between gap-2">
           <span className="text-[13px] font-semibold uppercase tracking-wide text-slate-300">Röstandel 2026</span>
           <div className="flex items-baseline gap-2">
-            {prognos && (
+            {/* Sluträkningen har hunnit igång (slutraknas/slutlig) → visa BARA den pillen,
+                samma "en badge i taget"-princip som ResultTable.tsx:s statusTag redan
+                använder (Preliminärt → Sluträknas · X % → Slutgiltigt, aldrig två samtidigt).
+                "Prognos" (bara rapporteringsgrad) tappar sin mening när sluträkningen redan
+                ger ett mer specifikt, färskare tal — Lars fynd 14 sep: de visades tidigare
+                bredvid varandra här, till skillnad från tabellen längre ner. */}
+            {prognos && (!slutligState || slutligState === 'preliminar') && (
               <span className="rounded-full border border-amber-500/60 px-1.5 text-[12px] font-semibold uppercase tracking-wide text-amber-400">
                 Prognos · {reportPct} %
               </span>
             )}
-            {/* Sluträkningsgrad — EGEN, samtidig pill (handover 14 sep), skild från "Prognos"
-                ovan (som bara handlar om rapporteringsgrad). Visas bara när det finns något att
-                säga (slutraknas/slutlig) — döljs i preliminär-läget som gäller hela valnatten,
-                annars syns en tom/intetsägande pill nästan alltid. */}
             {slutligState && slutligState !== 'preliminar' && (
               <span
                 className={`rounded-full border px-1.5 text-[12px] font-semibold uppercase tracking-wide ${SLUTLIG_PILL_TONE[slutligState]}`}
