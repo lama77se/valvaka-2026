@@ -48,10 +48,18 @@ export function ReportingStatus({ valtyp: valtypProp, large = false }: { valtyp?
           den globalt aktiva valtypen syns redan i chromen intill. */}
       {valtypProp && <span className="font-semibold uppercase tracking-wide text-slate-400">{valtypProp}</span>}
       <span className={`rounded font-semibold uppercase tracking-wide ${tone} ${large ? 'px-2 py-1' : 'px-1.5 py-0.5'}`}>{label}</span>
-      <span className="tabular-nums">
+      <span
+        className="tabular-nums"
+        // `large` (Dashboard, gott om bredd) → synlig text; kompakt (mobil) → bara tooltip,
+        // samma avvägning som DepartureBoard.tsx:s fasta-bredd-kolumn.
+        title={!large && uppRegistry.length > 0 ? `Varav ${uppRegistry.length.toLocaleString('sv-SE')} uppsamlingsdistrikt` : undefined}
+      >
         <span className="font-semibold text-slate-100">{reported.toLocaleString('sv-SE')}</span>
         <span className="text-slate-500"> / {total.toLocaleString('sv-SE')}</span>
         <span className="ml-1 text-sky-300">{pct}%</span>
+        {large && uppRegistry.length > 0 && (
+          <span className="ml-1 text-slate-500">(varav {uppRegistry.length.toLocaleString('sv-SE')} uppsamling)</span>
+        )}
       </span>
       <span
         className={`rounded-full ${large ? 'h-2 w-2' : 'h-1.5 w-1.5'} ${realtimeConnected ? 'animate-pulse bg-emerald-400' : pollError ? 'bg-amber-400' : 'bg-slate-500'}`}
