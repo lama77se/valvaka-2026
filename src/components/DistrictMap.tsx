@@ -14,7 +14,7 @@ import {
 import { deriveSlutligState, GROUP_LEVEL_LABEL, VALTYPER, VALTYP_LABEL, type ColorMode, type ColorScheme, type DistrictOutcome, type SlutligState, type Valtyp } from '@/lib/results'
 import { SlutligBar } from '@/components/SlutligBar'
 import { RIKET_BLOCKS } from '@/lib/soffa'
-import { applyComparison, buildRows, collapseForDisplay, districtsInArea, sparrFor, type Level } from '@/lib/aggregate'
+import { applyComparison, buildRows, collapseForDisplay, districtsInArea, sparrFor, uppsamlingSuffix, type Level } from '@/lib/aggregate'
 import { ancestorsOf } from '@/lib/hierarchy'
 import { defaultAreaFor, useResults } from '@/components/ResultsProvider'
 import { ValtypSelector } from '@/components/ValtypSelector'
@@ -1038,9 +1038,12 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
   // geografiska + 314 uppsamling). Se ReportingStatus.tsx för samma mönster/motivering.
   const uppRegistry = uppsamlingRegistryRef.current[valtyp]
   const uppReportedSet = uppsamlingRegistryReportedRef.current[valtyp]
+  const uppReportedCount = uppRegistry.reduce((n, e) => n + (uppReportedSet.has(e.kod) ? 1 : 0), 0)
   const total = totalByValtyp[valtyp] + uppRegistry.length
-  const reportedCombined = reportedCount + uppRegistry.reduce((n, e) => n + (uppReportedSet.has(e.kod) ? 1 : 0), 0)
+  const reportedCombined = reportedCount + uppReportedCount
   const reportedPct = total > 0 ? Math.round((reportedCombined / total) * 100) : 0
+  // "Bara uppsamling kvar" (handover 14 sep, Lars) — se uppsamlingSuffix (aggregate.ts).
+  const upp = uppsamlingSuffix(reportedCombined, total, uppRegistry.length, uppReportedCount)
   // Slutresultat-läge PER VALTYP (handover 14 sep, Val ANALYSIS: EGEN, samtidig bar i
   // stället för bara en badge — se SlutligBar nedan). RIKSOMFATTANDE, precis som denna
   // HUD:s befintliga rapporteringstal (samma val vid klargörande fråga: samma skopning som
@@ -1240,7 +1243,9 @@ export function DistrictMap({ variant = 'desktop', active = true, onOpenResult }
                   risk (till skillnad från ResultPanel.tsx:s smala undertext-bar). */}
               {uppRegistry.length > 0 && (
                 <span className="ml-1.5 text-xs text-slate-500" title="Uppsamlingsdistrikt: sena/olösta röster utan egen geometri, ingår i både täljare och nämnare (som val.se/SVT)">
-                  (varav {uppRegistry.length.toLocaleString('sv-SE')} uppsamling)
+                  {upp.onlyUppLeft
+                    ? `(endast ${upp.uppRemaining.toLocaleString('sv-SE')} uppsamling återstår)`
+                    : `(varav ${uppRegistry.length.toLocaleString('sv-SE')} uppsamling)`}
                 </span>
               )}
             </span>

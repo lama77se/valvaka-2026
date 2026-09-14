@@ -8,6 +8,7 @@
 // som faktiskt syns på skärmen). Extraherad härifrån (ursprungligen mobil-lokal) i
 // samband med finalgranskningens fix-våg.
 import { useResults } from '@/components/ResultsProvider'
+import { uppsamlingSuffix } from '@/lib/aggregate'
 import { deriveSlutligState, type SlutligState, type Valtyp } from '@/lib/results'
 
 // Samma hue-familj som SlutligBar:s fyllningsfärg (amber/sky/emerald) — för procent-
@@ -43,10 +44,13 @@ export function ReportingStatus({ valtyp: valtypProp, large = false }: { valtyp?
   // uppsamling). Se uppsamlingsdistrikt_registry/aggregate.ts.
   const uppRegistry = uppsamlingRegistryRef.current[valtyp]
   const uppReportedSet = uppsamlingRegistryReportedRef.current[valtyp]
-  const reported = store.reportedCount + uppRegistry.reduce((n, e) => n + (uppReportedSet.has(e.kod) ? 1 : 0), 0)
+  const uppReportedCount = uppRegistry.reduce((n, e) => n + (uppReportedSet.has(e.kod) ? 1 : 0), 0)
+  const reported = store.reportedCount + uppReportedCount
   const total = totalByValtyp[valtyp] + uppRegistry.length
   if (total === 0) return null
   const pct = Math.round((reported / total) * 100)
+  // "Bara uppsamling kvar" (handover 14 sep, Lars) — se uppsamlingSuffix (aggregate.ts).
+  const upp = uppsamlingSuffix(reported, total, uppRegistry.length, uppReportedCount)
   // Slutgiltig-räkningens EGEN, samtidiga progress (handover 14 sep, Val ANALYSIS) —
   // ersätter den tidigare enda tone/label-chippen (Prel./X %/Slutgiltigt). Riksomfattande,
   // geografiskt (ingen uppsamling — se DistrictMap.tsx/areaView.ts för samma princip).
@@ -85,7 +89,11 @@ export function ReportingStatus({ valtyp: valtypProp, large = false }: { valtyp?
               <span className="text-slate-500"> / {total.toLocaleString('sv-SE')}</span>
               <span className="ml-1 text-sky-300">{pct}%</span>
               {uppRegistry.length > 0 && (
-                <span className="ml-1 text-slate-500">(varav {uppRegistry.length.toLocaleString('sv-SE')} uppsamling)</span>
+                <span className="ml-1 text-slate-500">
+                  {upp.onlyUppLeft
+                    ? `(endast ${upp.uppRemaining.toLocaleString('sv-SE')} uppsamling återstår)`
+                    : `(varav ${uppRegistry.length.toLocaleString('sv-SE')} uppsamling)`}
+                </span>
               )}
             </span>
             {liveDot}
@@ -121,7 +129,13 @@ export function ReportingStatus({ valtyp: valtypProp, large = false }: { valtyp?
         <>
           <span
             className={`${BADGE_BASE} bg-slate-700/50 text-slate-300`}
-            title={`${reported.toLocaleString('sv-SE')} / ${total.toLocaleString('sv-SE')} rapporterade${uppRegistry.length > 0 ? ` (varav ${uppRegistry.length.toLocaleString('sv-SE')} uppsamlingsdistrikt)` : ''}`}
+            title={`${reported.toLocaleString('sv-SE')} / ${total.toLocaleString('sv-SE')} rapporterade${
+              upp.onlyUppLeft
+                ? ` (endast ${upp.uppRemaining.toLocaleString('sv-SE')} uppsamlingsdistrikt återstår)`
+                : uppRegistry.length > 0
+                  ? ` (varav ${uppRegistry.length.toLocaleString('sv-SE')} uppsamlingsdistrikt)`
+                  : ''
+            }`}
           >
             Prel
           </span>

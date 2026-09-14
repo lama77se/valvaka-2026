@@ -11,6 +11,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useResults } from '@/components/ResultsProvider'
 import { ancestorsOf } from '@/lib/hierarchy'
 import { onDark } from '@/lib/colors'
+import { uppsamlingSuffix } from '@/lib/aggregate'
 import { deriveSlutligState, VALTYP_LABEL, type SlutligState, type Valtyp } from '@/lib/results'
 
 // "S:"-prefixets färg (handover 14 sep) — samma hue-familj som SlutligBar (amber/sky/
@@ -187,8 +188,11 @@ export function DepartureBoard({ valtyp, onRowSelect, fill, fullWidth, emphasize
   // ReportingStatus.tsx för samma mönster/motivering.
   const uppRegistry = uppsamlingRegistryRef.current[valtyp]
   const uppReportedSet = uppsamlingRegistryReportedRef.current[valtyp]
-  const reported = store.reportedCount + uppRegistry.reduce((n, e) => n + (uppReportedSet.has(e.kod) ? 1 : 0), 0)
+  const uppReportedCount = uppRegistry.reduce((n, e) => n + (uppReportedSet.has(e.kod) ? 1 : 0), 0)
+  const reported = store.reportedCount + uppReportedCount
   const total = totalByValtyp[valtyp] + uppRegistry.length
+  // "Bara uppsamling kvar" (handover 14 sep, Lars) — se uppsamlingSuffix (aggregate.ts).
+  const upp = uppsamlingSuffix(reported, total, uppRegistry.length, uppReportedCount)
   // Sluträkningsgrad — EGEN, samtidig bar (handover 14 sep, Val ANALYSIS), riksomfattande
   // som denna tavlas befintliga reported/total ovan (samma princip som DistrictMap.tsx:s HUD).
   const { state: slutligState } = deriveSlutligState(store.slutligDoneCount, store.reportedCount)
@@ -238,7 +242,13 @@ export function DepartureBoard({ valtyp, onRowSelect, fill, fullWidth, emphasize
             className="text-[11px] tabular-nums text-slate-400"
             // Fast bredd (--boards-w) → ingen plats för synlig "varav X uppsamling"-text
             // (till skillnad från kartans HUD-badge, som får växa fritt) — tooltip i stället.
-            title={uppRegistry.length > 0 ? `Varav ${uppRegistry.length.toLocaleString('sv-SE')} uppsamlingsdistrikt` : undefined}
+            title={
+              uppRegistry.length === 0
+                ? undefined
+                : upp.onlyUppLeft
+                  ? `Endast ${upp.uppRemaining.toLocaleString('sv-SE')} uppsamlingsdistrikt återstår`
+                  : `Varav ${uppRegistry.length.toLocaleString('sv-SE')} uppsamlingsdistrikt`
+            }
           >
             {VALTYP_LABEL[valtyp]}
             {/* "P: X / Y" döljs helt vid 100 % + pågående sluträkning (hidePrel, handover

@@ -4,7 +4,7 @@
 // <ResultTable>. Områdesväljaren styr delad `selectedArea` (kartklick → drilldown).
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { VALTYP_LABEL, type Valtyp } from '@/lib/results'
-import { comparisonFor, formatMarginalSeat, mergeVotes, sparrFor, uppsamlingCountsForArea, uppsamlingRowFor, type Level } from '@/lib/aggregate'
+import { comparisonFor, formatMarginalSeat, mergeVotes, sparrFor, uppsamlingCountsForArea, uppsamlingRowFor, uppsamlingSuffix, type Level } from '@/lib/aggregate'
 import { RIKET, useResults } from '@/components/ResultsProvider'
 import { ResultTable } from '@/components/ResultTable'
 import { MandatBars } from '@/components/MandatBars'
@@ -54,11 +54,27 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
   // "valdistrikt räknade" → "distrikt", "uppsamling" → "upps.") av samma skäl.
   // Valdeltagandet bor INTE här längre — det flyttade till den annars tomma ytan ovanför
   // Parti/Röster i tabellhuvudet (se `turnoutLabel`).
-  const subtitle = (reported: number, total: number, pct: number, uppTotal = 0) => {
+  const subtitle = (reported: number, total: number, pct: number, uppTotal = 0, uppReported = 0) => {
     const r = reported.toLocaleString('sv-SE')
     const t = total.toLocaleString('sv-SE')
-    if (compact) return `${r}/${t} distrikt (${pct} %)${uppTotal > 0 ? `, varav ${uppTotal.toLocaleString('sv-SE')} upps.` : ''}`
-    const varavUpp = uppTotal > 0 ? `, varav ${uppTotal.toLocaleString('sv-SE')} uppsamling` : ''
+    // "Bara uppsamling kvar" (handover 14 sep, Lars: "gör det tydligt när preliminärt når
+    // den punkten att BARA uppsamling är det enda som är kvar att räkna") — ersätter den
+    // annars missvisande "varav X uppsamling" (som inte skiljer på redan räknad vs.
+    // kvarstående) med en explicit "återstår"-text när det verkligen är det enda kvar.
+    const { uppRemaining, onlyUppLeft } = uppsamlingSuffix(reported, total, uppTotal, uppReported)
+    if (compact) {
+      const suffix = onlyUppLeft
+        ? `, ${uppRemaining.toLocaleString('sv-SE')} upps. återstår`
+        : uppTotal > 0
+          ? `, varav ${uppTotal.toLocaleString('sv-SE')} upps.`
+          : ''
+      return `${r}/${t} distrikt (${pct} %)${suffix}`
+    }
+    const varavUpp = onlyUppLeft
+      ? `, varav endast ${uppRemaining.toLocaleString('sv-SE')} uppsamling återstår`
+      : uppTotal > 0
+        ? `, varav ${uppTotal.toLocaleString('sv-SE')} uppsamling`
+        : ''
     return `${r} av ${t} valdistrikt räknade (${pct} %)${varavUpp}`
   }
 
@@ -198,7 +214,7 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
       let topA = 0
       for (const [f, a] of Object.entries(src)) if (a > topA) { topA = a; leadFork = f }
       const leadFarg = leadFork ? forkFarg.get(leadFork) ?? REPORTED_NEUTRAL : reported > 0 ? REPORTED_NEUTRAL : UNREPORTED_FILL
-      return { level: g.level, code: g.code, reported, total: districtCount, uppTotal: uppCounts.total, live, a26, a22, leadFarg }
+      return { level: g.level, code: g.code, reported, total: districtCount, uppTotal: uppCounts.total, uppReported: uppCounts.reported, live, a26, a22, leadFarg }
     })
     const anyLive = items.some((it) => it.live) // finns 2026-röster alls? annars visas 2022
     // Uppsamlingsröster som INTE redan nestades i ett valkrets-barns egen rad ovan → en
@@ -340,7 +356,7 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
             <ResultTable
               title={`${ELECTION[valtyp]} — ${av.areaName}`}
               statusTag={av.statusTag}
-              subtitle={hidePrel ? undefined : subtitle(av.reported, av.total, pct, av.uppTotal)}
+              subtitle={hidePrel ? undefined : subtitle(av.reported, av.total, pct, av.uppTotal, av.uppReported)}
               slutligState={av.slutligState}
               slutligPct={av.slutligPct}
               slutligDone={av.slutligDone}
@@ -422,6 +438,12 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
                       // Hela "Bryt ner" bygger på 2026: sektionen finns bara när någon rad är
                       // live, en rad utan egna 2026-röster visar '·' (aldrig 2022), och 2022
                       // syns enbart som diff (▲/▼) UNDER ett faktiskt 2026-tal.
+                      const upp = uppsamlingSuffix(it.reported, it.total, it.uppTotal, it.uppReported)
+                      const uppTitleSuffix = upp.onlyUppLeft
+                        ? ` (endast ${upp.uppRemaining} uppsamling återstår)`
+                        : it.uppTotal > 0
+                          ? ` (varav ${it.uppTotal} uppsamling)`
+                          : ''
                       return (
                       <tr
                         key={it.code}
@@ -464,7 +486,7 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
                             // som distriktsradernas bock.
                             <span
                               className={it.total > 0 && it.reported === it.total ? 'text-emerald-400' : ''}
-                              title={`${it.reported} av ${it.total} distrikt räknade${it.uppTotal > 0 ? ` (varav ${it.uppTotal} uppsamling)` : ''}`}
+                              title={`${it.reported} av ${it.total} distrikt räknade${uppTitleSuffix}`}
                             >
                               {it.total > 0 && it.reported === it.total && <span className="mr-0.5">✓</span>}
                               {it.reported}/{it.total}

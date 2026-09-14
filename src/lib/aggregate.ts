@@ -221,6 +221,27 @@ export function uppsamlingCountsForArea(
   return { total, reported }
 }
 
+// "Varav X uppsamling"-texten (flera UI-ytor, se t.ex. ResultPanel.tsx/AreaSummary.tsx/
+// ReportingStatus.tsx) blev missvisande när uppsamling är det ENDA som återstår för att nå
+// 100 % (handover 14 sep, Lars: "gör det tydligt när preliminärt når den punkten att BARA
+// uppsamling är det enda som är kvar att räkna") — talet syftade tidigare bara på hur MÅNGA
+// av de redan itemiserade distrikten som är uppsamling, oavsett om de redan räknats in eller
+// inte, så en läsare kunde inte se skillnad mellan "1 av 20 är uppsamling, redan räknad" och
+// "1 av 20 är uppsamling, DET är vad som fattas". Ren beslutslogik, delad av alla ytor —
+// varje yta behåller sin egen ordval/interpunktion, bara TALET+villkoret är gemensamt.
+export function uppsamlingSuffix(
+  reported: number,
+  total: number,
+  uppTotal: number,
+  uppReported: number,
+): { uppRemaining: number; onlyUppLeft: boolean } {
+  const uppRemaining = uppTotal - uppReported
+  const remaining = total - reported
+  // "Bara uppsamling kvar" = ALLA kvarvarande (ej rapporterade) distrikt i nämnaren är
+  // uppsamlingsdistrikt — dvs. varje geografiskt distrikt är redan inne.
+  return { uppRemaining, onlyUppLeft: uppTotal > 0 && remaining > 0 && remaining === uppRemaining }
+}
+
 // --- Områdesfiltrering (klientsida, ur distriktsmetadata) ----------------------
 // Områdeskod härleds ur den 8-siffriga valdistriktskoden (stabil): län = 2 första,
 // kommun = 4 första. Valkrets slås upp per valtyp i metadatan.
