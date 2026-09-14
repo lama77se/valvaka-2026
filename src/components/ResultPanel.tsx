@@ -51,14 +51,13 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
 
   // Undertexten är samtidigt progress-baren, så varje tecken kostar höjd: spricker den
   // till två rader blir baren dubbelt så hög. Mobilvarianten kortar ner den ("av" → "/",
-  // "valdistrikt räknade" → "distrikt") — och utelämnar därför medvetet uppsamlings-
-  // tillägget (samma höjd-känslighet); desktop har gott om bredd för det. Valdeltagandet
-  // bor INTE här längre — det flyttade till den annars tomma ytan ovanför Parti/Röster i
-  // tabellhuvudet (se `turnoutLabel`).
+  // "valdistrikt räknade" → "distrikt", "uppsamling" → "upps.") av samma skäl.
+  // Valdeltagandet bor INTE här längre — det flyttade till den annars tomma ytan ovanför
+  // Parti/Röster i tabellhuvudet (se `turnoutLabel`).
   const subtitle = (reported: number, total: number, pct: number, uppTotal = 0) => {
     const r = reported.toLocaleString('sv-SE')
     const t = total.toLocaleString('sv-SE')
-    if (compact) return `${r}/${t} distrikt (${pct} %)`
+    if (compact) return `${r}/${t} distrikt (${pct} %)${uppTotal > 0 ? `, varav ${uppTotal.toLocaleString('sv-SE')} upps.` : ''}`
     const varavUpp = uppTotal > 0 ? `, varav ${uppTotal.toLocaleString('sv-SE')} uppsamling` : ''
     return `${r} av ${t} valdistrikt räknade (${pct} %)${varavUpp}`
   }
