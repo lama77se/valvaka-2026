@@ -40,6 +40,29 @@ if (!url || !keyKey) {
 const db = createClient(url, keyKey, { auth: { persistSession: false } })
 const log = (m) => console.log(`[slutlig-lokalt] ${m}`)
 
+// Bygger mandat_valse-rader ur EN partiLista (organ- eller valkretsnivå) — SPEGLAR
+// mandatRowsFromPartiLista i ingest-result/index.ts (PR #166) exakt, bara utan TS-typer.
+// Ren, defensiv (kastar ALDRIG: ogiltiga/okända fält hoppas bara över).
+function mandatRowsFromPartiLista(partiLista, valtyp, niva, omradeskod, status, partySet) {
+  if (!Array.isArray(partiLista)) return []
+  const out = []
+  for (const p of partiLista) {
+    if (!p || typeof p.partikod !== 'string' || !partySet.has(p.partikod)) continue
+    if (typeof p.antalMandat !== 'number') continue
+    out.push({
+      valtyp,
+      niva,
+      omradeskod,
+      partikod: p.partikod,
+      antal_mandat: p.antalMandat,
+      antal_fasta_mandat: typeof p.antalFastaMandat === 'number' ? p.antalFastaMandat : null,
+      antal_utjamningsmandat: typeof p.antalUtjamningsmandat === 'number' ? p.antalUtjamningsmandat : null,
+      status,
+    })
+  }
+  return out
+}
+
 // FK-set (result→district / →party). En gång, delas av alla filer.
 async function loadFkSets() {
   const districtSet = new Set()
@@ -61,6 +84,15 @@ async function processFile(f, sets) {
   const name = Object.keys(unz).find((n) => /rostfordelning.*\.json$/i.test(n))
   if (!name) { console.error(`  ingen rostfordelning i ${f.rel} — hoppar (markerar EJ done).`); return false }
   const j = JSON.parse(new TextDecoder().decode(unz[name]))
+  // Mandatfilens RÅA text (ingen JSON.parse än) — ur SAMMA redan uppackade zip, ingen extra
+  // nedladdning. Speglar ingest-result/index.ts (PR #166); handover 14 sep (Val ANALYSIS) —
+  // detta skript saknade helt mandat_valse-fångst, vilket gjorde mandat_kalla='aktiv' verkningslöst
+  // för sluträkningen (ingen färsk data skulle någonsin nå tabellen). Parsas/upsertas LÄNGRE NER
+  // i EGET try/catch — fångas ovillkorligt HÄR (till skillnad från edge, som gate:ar bakom
+  // mandat_kalla för att spara CPU på den LIVE, frekvent körda funktionen; det skälet gäller
+  // inte detta manuellt körda Node-skript, se handoverns motivering).
+  const mandatName = Object.keys(unz).find((n) => /mandatfordelning.*\.json$/i.test(n))
+  const mandatText = mandatName ? new TextDecoder().decode(unz[mandatName]) : null
   // Skiftlägesokänslig (val.se kan skriva "Preliminär"); detta skript tar bara /s/ → default slutlig är rätt här.
   const rakstatus = /^prelimin/i.test(String(j.rakningstillfalle ?? '')) ? 'preliminar' : 'slutlig'
   log(`  ${j.valtyp} · räkning "${j.rakningstillfalle}" → status ${rakstatus} · uppackad ${(unz[name].byteLength / 1048576).toFixed(0)} MB · ${j.valdistrikt?.length} distrikt`)
@@ -142,7 +174,38 @@ async function processFile(f, sets) {
     const { error } = await db.from('uppsamlingsdistrikt_registry').upsert(registryRows.slice(i, i + 1000), { onConflict: 'valtyp,kod' })
     if (error) console.error(`  uppsamlingsdistrikt_registry upsert (icke-kritiskt): ${error.message}`)
   }
-  log(`  klart: ${rows.length} result · ${uppRows.length} uppsamling · ${turnoutRows.length} valdeltagande · ${registryRows.length} uppsamlingsdistrikt-register`)
+  // --- MANDAT (Valmyndighetens EGEN mandatfördelning, handover 13/14 sep) -----------------
+  // 🔴 ISOLERINGSKRAV: röster/turnout/uppsamling/register är REDAN upserterade ovan. Ett fel
+  // här (JSON.parse, oväntad form, DB-fel) fångas och loggas HÄR och kan ALDRIG göra att en
+  // annars lyckad sluträkning räknas som misslyckad (se `return false`-vägarna ovan, som denna
+  // sektion aldrig når).
+  let mandatUp = 0
+  if (mandatText) {
+    try {
+      const m = JSON.parse(mandatText)
+      const vo = m.valomrade
+      const mandatRows = []
+      if (vo) {
+        // RD:s organnivå (riket) har ingen meningsfull områdeskod i filen → fast sentinel,
+        // symmetrisk med edge-versionen och klientens egen 'riket'-nivå (areaView.ts MANDAT_LEVELS).
+        const organKod = j.valtyp === 'RD' ? 'riket' : (typeof vo.kod === 'string' ? vo.kod : null)
+        if (organKod) mandatRows.push(...mandatRowsFromPartiLista(vo.mandatfordelning?.partiLista, j.valtyp, 'organ', organKod, rakstatus, sets.partySet))
+        for (const vk of (Array.isArray(vo.valkretsLista) ? vo.valkretsLista : [])) {
+          if (vk && typeof vk.kod === 'string') {
+            mandatRows.push(...mandatRowsFromPartiLista(vk.mandatfordelning?.partiLista, j.valtyp, 'valkrets', vk.kod, rakstatus, sets.partySet))
+          }
+        }
+      }
+      for (let i = 0; i < mandatRows.length; i += 2000) {
+        const { error } = await db.from('mandat_valse').upsert(mandatRows.slice(i, i + 2000), { onConflict: 'valtyp,niva,omradeskod,partikod' })
+        if (error) throw new Error(error.message)
+      }
+      mandatUp = mandatRows.length
+    } catch (e) {
+      console.error(`  mandat_valse upsert (isolerat — resultatet ovan OPÅVERKAT): ${e.message}`)
+    }
+  }
+  log(`  klart: ${rows.length} result · ${uppRows.length} uppsamling · ${turnoutRows.length} valdeltagande · ${registryRows.length} uppsamlingsdistrikt-register · ${mandatUp} mandat_valse`)
   return true
 }
 
