@@ -32,6 +32,7 @@ import {
 import { RIKET_BLOCKS, type BlockConfig } from './soffa'
 import { REGION_STYRE_BLOCKS } from './regionBlocks'
 import { KOMMUN_STYRE_BLOCKS } from './kommunBlocks'
+import { marginalSeatInfo, type MarginalSeatInfo } from './mandate'
 import type { AreaIndex } from './hierarchy'
 import type { Area, NamedCode } from './area'
 
@@ -46,6 +47,12 @@ const MANDAT_LEVELS: Record<Valtyp, Level[]> = {
   RF: ['region', 'valkrets'],
   KF: ['kommun', 'valkrets'],
 }
+
+// Organets EGEN nivå (delmängden av MANDAT_LEVELS ovan som INTE är valkrets) — marginalmandat-
+// analysen (handover 14 sep) visas BARA här, aldrig på valkretsnivå: "marginalmandat" är på
+// valkretsnivå ett mycket krångligare begrepp (utjämningsplaceringen är i grunden nationell,
+// inte lokal per valkrets, se placeLevelingSeats i mandate.ts) och skulle bli missvisande.
+const ORGAN_LEVEL: Record<Valtyp, Level> = { RD: 'riket', RF: 'region', KF: 'kommun' }
 
 // Döljer mandatberäkningarnas VISNING (inte själva beräkningen — den körs som idag)
 // tills minst denna andel av valdistrikten i det VISADE området är räknade. Svensk
@@ -110,6 +117,10 @@ export interface AreaViewResult {
   } | null
   blocks: BlockConfig | undefined
   showMandat: boolean
+  // Marginalmandat-analysen (handover 14 sep, Val ANALYSIS) — bara organets EGEN nivå (RD/riket,
+  // RF/region, KF/kommun), aldrig valkrets, och bara när showMandat redan är sant (samma
+  // 10 %-rapporteringsgräns). null annars — döljer raden i UI:t helt.
+  marginalSeat: MarginalSeatInfo | null
   areaName: string
   pct: number
   statusTag: ReturnType<typeof slutligTag>
@@ -233,10 +244,22 @@ export function computeAreaView(p: AreaViewParams): AreaViewResult {
     if (rpm == null) return sum
     return sum + Math.max(0, rpm - store.outcome(vd).total)
   }, 0)
+  const sparr = sparrFor(valtyp, area.level, area.code)
   let areaResult = applyMandate(
-    buildRows(votes, party, sparrFor(valtyp, area.level, area.code), ovrigaGiltigaRoster),
+    buildRows(votes, party, sparr, ovrigaGiltigaRoster),
     valseMandate ?? mandate ?? (valkretsMandate && { seatsByParty: valkretsMandate.seatsByParty, totalMandat: valkretsMandate.totalSeats }),
   )
+  // Marginalmandat-analysen (handover 14 sep, Val ANALYSIS) — HELT SEPARAT, parallell körning
+  // av samma jämkade uddatalsmetod (mandate.ts:marginalSeatInfo), matar ALDRIG tillbaka in i
+  // `mandate`/`areaResult` ovan. Bara organets EGEN nivå (ORGAN_LEVEL, aldrig valkrets) och bara
+  // när mandat redan visas (mandatReported, samma 10 %-gräns) — annars null (raden döljs i UI:t).
+  // `votes` (organ-nivåns röster, uppsamling redan invägd) och `sparr` är EXAKT samma indata
+  // computeMandate/buildRows redan använder för denna yta, så marginalanalysen är konsistent
+  // med de mandatsiffror som faktiskt visas.
+  const marginalSeat =
+    mandatReported && area.level === ORGAN_LEVEL[valtyp] && mandate
+      ? marginalSeatInfo(votes, mandate.totalMandat, 1.2, sparr)
+      : null
   const districtLeaf =
     area.level === 'distrikt' && area.code ? (district2022.get(`${valtyp}:${area.code}`) ?? null) : null
   areaResult = applyComparison(areaResult, valtyp, area.level, area.code, comparison, party, districtLeaf)
@@ -282,6 +305,7 @@ export function computeAreaView(p: AreaViewParams): AreaViewResult {
     invalidVotes,
     blocks,
     showMandat,
+    marginalSeat,
     areaName,
     pct,
     statusTag,

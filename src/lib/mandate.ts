@@ -73,6 +73,74 @@ export function modifiedSainteLague(
   return awarded
 }
 
+export interface MarginalSeatChallenger {
+  party: string // partikod
+  nextQuotient: number // partiets NÄSTA jämförelsetal (deras aktuella bud på nästa mandat)
+  votesNeeded: number // extra röster (heltal, ≥0) som skulle krävts för att STRIKT överstiga marginalmandatets jämförelsetal
+}
+export interface MarginalSeatInfo {
+  marginalParty: string // partikod som vann DEN SISTA platsen (lägsta vinnande jämförelsetal)
+  marginalQuotient: number
+  challengers: MarginalSeatChallenger[] // alla ANDRA kvalificerade partier, sorterade NÄRMAST FÖRST (lägst votesNeeded)
+}
+
+// VISNINGSENDAST (handover 14 sep, Val ANALYSIS) — matar ALDRIG tillbaka in i de faktiska
+// mandatsiffrorna. modifiedSainteLague/computeAssembly ovan är MEDVETET ORÖRDA (verifierade mot
+// 2022-facit hela kvällen: 232/232 RD-valkretsmandat, 100 % KF, 677/679 RF) — denna funktion är
+// en HELT SEPARAT, parallell körning av samma jämkade uddatalsmetod (samma spärr-filtrering,
+// samma divisor 1,2/3/5…) som dessutom sparar jämförelsetalshistoriken: vilket parti+jämförelsetal
+// avgjorde SISTA platsen (marginalmandatet), och för varje ANNAT kvalificerat parti deras NÄSTA
+// jämförelsetal + hur många extra röster (heltal) som skulle krävts för att nå/överstiga
+// marginalen. `votesNeeded`-formeln (+1 efter uppåtavrundning) garanterar en STRIKT vinst, inte
+// bara ett lika jämförelsetal (som avgörs av tie-break-regeln, inte röstantal) — handräknad och
+// verifierad av Val ANALYSIS mot skarp data (Hudiksvall KF, Gävleborg RF) hela kvällen 13 sep.
+//
+// Returnerar null när marginalanalysen saknar mening: färre än två kvalificerade partier, eller
+// inga platser att fördela (`seats <= 0`) — samma spärr (`sparr`) som resten av vyn (t.ex.
+// `sparrFor` i aggregate.ts) MÅSTE skickas in redan tillämpad korrekt av anroparen; denna
+// funktion filtrerar bara på den, den känner inte till per-kommun-tröskelns källa.
+export function marginalSeatInfo(votes: PartyVotes, seats: number, firstDivisor: number, sparr: number): MarginalSeatInfo | null {
+  const total = Object.values(votes).reduce((a, b) => a + b, 0)
+  if (total === 0 || seats <= 0) return null
+  const qualified = Object.keys(votes).filter((p) => votes[p] / total >= sparr)
+  if (qualified.length < 2) return null
+
+  const awarded: Record<string, number> = Object.fromEntries(qualified.map((p) => [p, 0]))
+  const divisorFor = (n: number) => (n === 0 ? firstDivisor : 2 * n + 1)
+  const quotient = (p: string) => votes[p] / divisorFor(awarded[p])
+
+  let marginalParty: string | null = null
+  let marginalQuotient = -Infinity
+  for (let s = 0; s < seats; s++) {
+    let best: string | null = null
+    let bestQ = -Infinity
+    for (const p of qualified) {
+      const q = quotient(p)
+      if (q > bestQ || (q === bestQ && best !== null && p < best)) {
+        bestQ = q
+        best = p
+      }
+    }
+    if (best === null) break
+    awarded[best]++
+    marginalParty = best
+    marginalQuotient = bestQ
+  }
+  if (marginalParty === null) return null
+
+  const challengers: MarginalSeatChallenger[] = qualified
+    .filter((p) => p !== marginalParty)
+    .map((p) => {
+      const divisor = divisorFor(awarded[p])
+      const nextQuotient = votes[p] / divisor
+      const votesNeeded = Math.max(0, Math.ceil(marginalQuotient * divisor - votes[p]) + 1)
+      return { party: p, nextQuotient, votesNeeded }
+    })
+    .sort((a, b) => a.votesNeeded - b.votesNeeded)
+
+  return { marginalParty, marginalQuotient, challengers }
+}
+
 function sumVotes(cv: ConstituencyVotes): PartyVotes {
   const total: PartyVotes = {}
   for (const party of Object.values(cv))

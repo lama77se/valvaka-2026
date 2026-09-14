@@ -5,6 +5,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { VALTYP_LABEL, type Valtyp } from '@/lib/results'
 import { comparisonFor, mergeVotes, sparrFor, uppsamlingCountsForArea, uppsamlingRowFor, type Level } from '@/lib/aggregate'
+import type { MarginalSeatInfo } from '@/lib/mandate'
 import { RIKET, useResults } from '@/components/ResultsProvider'
 import { ResultTable } from '@/components/ResultTable'
 import { MandatBars } from '@/components/MandatBars'
@@ -67,6 +68,20 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
     if (turnout == null) return undefined
     const vd = turnout.toLocaleString('sv-SE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
     return compact ? `${vd} % röstade` : `Valdeltagande ${vd} %`
+  }
+
+  // Marginalmandat-raden (handover 14 sep, Val ANALYSIS) — bara DEN NÄRMASTE utmanaren (lägst
+  // votesNeeded, redan sorterad så i mandate.ts:marginalSeatInfo), en rad text, inte en tabell.
+  const marginalSeatText = (m: MarginalSeatInfo, totalMandat: number | null) => {
+    const top = m.challengers[0]
+    if (!top) return null
+    const nameOf = (kod: string) => partyRef.current.get(kod)?.forkortning ?? kod
+    const marginalName = nameOf(m.marginalParty)
+    const challengerName = nameOf(top.party)
+    const votes = top.votesNeeded.toLocaleString('sv-SE')
+    return compact
+      ? `Sista mandatet: ${marginalName}. ${challengerName} närmast (~${votes} röster).`
+      : `Sista mandatet${totalMandat != null ? ` (#${totalMandat})` : ''} innehas av ${marginalName}. ${challengerName} ligger närmast och skulle behöva ~${votes} fler röster för att ta det.`
   }
 
   // Röster/mandat/valdeltagande/blockvy för valt område — delad ren beräkning
@@ -354,6 +369,9 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
                   Inga resultat inrapporterade för {VALTYP_LABEL[valtyp].toLowerCase()} i {av.areaName} än.
                 </p>
               ))}
+            {av.marginalSeat && (
+              <p className="mt-2 text-xs text-slate-400">{marginalSeatText(av.marginalSeat, av.totalMandat)}</p>
+            )}
           </>
         )}
         {/* "Bryt ner" renders OBEROENDE av isPrompt (se kommentar vid `drill` ovan) —
