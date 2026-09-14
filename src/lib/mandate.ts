@@ -201,11 +201,80 @@ export function computeAssembly(
   // Region/kommun: fullständig utjämning → totalen ÄR den proportionella (nationalTarget),
   // inget överskott behålls (Vallag 14 kap.). Fasta valkretsmandaten avgör bara VAR
   // mandaten sitter, inte partitotalen. Verifierat mot 2022-facit (RF 20/20, KF 290/290)
-  // i scripts/verify-overhang.ts. Utan detta ger riksdagens överhängsgren fel RF/KF-totaler.
+  // i scripts/verify-overhang.ts.
+  //
+  // 🔴 ÅTERFÖRING (handover 14 sep, Val ANALYSIS/OPS — bekräftad bugg, rotorsaks-lokaliserad):
+  // om ett parti fick FLER fasta mandat (steg B, per-valkrets jämkad uddatalsmetod) än sitt
+  // proportionella mål (nationalTarget) — ett äkta överhäng — klampade den gamla koden bara
+  // levelingByParty till 0 och satte den RAPPORTERADE totalen till nationalTarget direkt.
+  // Men fixedByConstituencyParty/fixedByParty (redan beräknade) behöll partiets FULLA fasta
+  // mandat — placeLevelingSeats (aggregate.ts) ADDERAR bara utjämning, tar ALDRIG bort, så
+  // valkretsvyernas summa för det partiet blev 1 mandat FÖR MYCKET (bevisat: RF Stockholm
+  // V 18 fasta mot mål 17; samma mönster Kalmar C+KD, Örebro V).
+  //
+  // Valmyndighetens EGEN manual (V785, "Mandatfördelning — regler och räkneexempel", avsnitt
+  // 3.2 Steg 3 + Exempel 5) beskriver den KORREKTA — och den skiljer sig från riksdagens
+  // överhängsgren nedan (som LÅTER partiet behålla överskottet och omfördelar bara den
+  // KVARVARANDE utjämningspoolen proportionellt): för region/kommun ska det ÖVERSKJUTANDE
+  // fasta mandatet i stället ÅTERFÖRAS — fysiskt tas bort från den VALKRETS där partiet tog
+  // sitt SVAGASTE fasta mandat (lägst jämförelsetal) — och samma mandat, i SAMMA valkrets,
+  // TILLDELAS det parti (bland dem som ännu INTE nått sin proportionella andel) som har
+  // HÖGST NÄSTA jämförelsetal DÄR. Ett mandat i taget, upprepas tills inget överskott kvarstår
+  // (samma "en i taget, till stabilt"-princip som riksdagens loop nedan, men en annan
+  // KORRIGERINGSMEKANISM — att generalisera/återanvända riksdagens loop rakt av hade fixat
+  // organtotalen fel väg: rapporterad total hade blivit fixedByParty (18) i stället för
+  // nationalTarget (17), alltså bytt ETT fel mot motsatsen).
   if (config.fullyLevels) {
+    const constituencies = Object.keys(votesByConstituency)
+    const divisorFor = (n: number) => (n === 0 ? config.firstDivisor : 2 * n + 1)
+    // Muterbara kopior — steg 1:s "råa" fixedByConstituencyParty/fixedByParty (redan
+    // returnerade till ev. andra anropare om detta vore en delad referens) rörs inte.
+    const fcp: Record<string, Record<string, number>> = Object.fromEntries(
+      constituencies.map((vk) => [vk, { ...(fixedByConstituencyParty[vk] ?? {}) }]),
+    )
+    const fp: Record<string, number> = { ...fixedByParty }
+
+    for (;;) {
+      const overhung = qualified.find((p) => fp[p] > nationalTarget[p])
+      if (!overhung) break
+
+      // Valkretsen där partiet tog sitt SVAGASTE fasta mandat (lägst jämförelsetal bland
+      // dess EGNA vinnande mandat där — kvoten som vann dess n:e/sista mandat i valkretsen).
+      let weakestVk: string | null = null
+      let weakestQ = Infinity
+      for (const vk of constituencies) {
+        const n = fcp[vk]?.[overhung] ?? 0
+        if (n <= 0) continue
+        const q = (votesByConstituency[vk][overhung] ?? 0) / divisorFor(n - 1)
+        if (q < weakestQ || (q === weakestQ && weakestVk !== null && vk < weakestVk)) { weakestQ = q; weakestVk = vk }
+      }
+      if (weakestVk === null) break // kan inte hända: overhung har per definition ≥1 fast mandat
+
+      fcp[weakestVk][overhung] = (fcp[weakestVk][overhung] ?? 0) - 1
+      fp[overhung] -= 1
+
+      // Tilldela det återförda mandatet i SAMMA valkrets till det parti (bland dem som INTE
+      // nått sin proportionella andel) med högst NÄSTA jämförelsetal just DÄR.
+      let bestParty: string | null = null
+      let bestQ = -Infinity
+      for (const p of qualified) {
+        if (p === overhung || fp[p] >= nationalTarget[p]) continue
+        const votes = votesByConstituency[weakestVk][p] ?? 0
+        if (votes === 0) continue
+        const q = votes / divisorFor(fcp[weakestVk]?.[p] ?? 0)
+        if (q > bestQ || (q === bestQ && bestParty !== null && p < bestParty)) { bestQ = q; bestParty = p }
+      }
+      if (bestParty === null) break // inget kvalificerat parti kunde ta emot — bör vara omöjligt i praktiken
+      fcp[weakestVk][bestParty] = (fcp[weakestVk][bestParty] ?? 0) + 1
+      fp[bestParty] += 1
+    }
+
     const levelingByParty: Record<string, number> = {}
-    for (const p of qualified) levelingByParty[p] = Math.max(0, nationalTarget[p] - fixedByParty[p])
-    return { qualified, nationalVotes, seatsByParty: { ...nationalTarget }, nationalTarget, fixedByParty, fixedByConstituencyParty, levelingByParty, overhangParties: [] }
+    for (const p of qualified) levelingByParty[p] = Math.max(0, nationalTarget[p] - fp[p])
+    return {
+      qualified, nationalVotes, seatsByParty: { ...nationalTarget }, nationalTarget,
+      fixedByParty: fp, fixedByConstituencyParty: fcp, levelingByParty, overhangParties: [],
+    }
   }
 
   // Steg D (riksdag) — utjämning: target − fasta per parti. Överhäng (fasta > target)
