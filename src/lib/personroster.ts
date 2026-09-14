@@ -51,18 +51,28 @@ const mapRows = (rows: RawRow[] | null): PersonrosterEntry[] =>
   (rows ?? []).map((r) => ({ partikod: r.partikod, kandidatnummer: r.kandidatnummer, namn: r.namn, antalPersonroster: r.antal_personroster }))
 
 // Toppristan (default: blandade partier: p_partikod=null; ELLER filtrerad på ETT parti).
-// Ingen paginering (Lars, förenklad spec 14 sep) — bara LIMIT 10 (konstant), ingen offset.
+// Sidbläddring (offset, default 0) tillagd 14 sep (20260914200000_personroster_top_
+// pagination.sql) — v1 hade bara LIMIT 10 (Lars förenklade specen), men Lars efterfrågade
+// sedan faktisk paginering i UI:t (bara topp 10 syntes, ingen väg vidare). Stabil
+// sortering (antal_personroster desc, partikod, kandidatnummer i RPC:n) håller sidorna
+// icke-överlappande även vid lika röstetal.
 export async function fetchPersonrosterTop(
   valtyp: Valtyp,
   area: Area,
   partikod: string | null,
   limit = 10,
+  offset = 0,
 ): Promise<PersonrosterEntry[]> {
   if (area.level === 'distrikt') {
     if (!area.code) return []
     let q = supabase.from('personroster').select('partikod,kandidatnummer,namn,antal_personroster').eq('valtyp', valtyp).eq('valdistriktskod', area.code)
     if (partikod) q = q.eq('partikod', partikod)
-    const { data, error } = await q.order('antal_personroster', { ascending: false }).limit(limit)
+    // .range är inklusivt i båda ändar (PostgREST/supabase-js) — sista index är offset+limit-1.
+    // Samma stabila tie-break som RPC:n (kandidatnummer i sig är redan unikt per parti här).
+    const { data, error } = await q
+      .order('antal_personroster', { ascending: false })
+      .order('kandidatnummer', { ascending: true })
+      .range(offset, offset + limit - 1)
     if (error) throw error
     return mapRows(data)
   }
@@ -72,6 +82,7 @@ export async function fetchPersonrosterTop(
     p_omradeskod: area.level === 'riket' ? null : area.code,
     p_partikod: partikod,
     p_limit: limit,
+    p_offset: offset,
   })
   if (error) throw error
   return mapRows(data)
