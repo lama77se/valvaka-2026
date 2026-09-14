@@ -14,6 +14,7 @@ import type { Valtyp } from '@/lib/results'
 import { onDark } from '@/lib/colors'
 import { fetchPersonrosterTop, personrosterLevelSupported, searchPersonroster, type PersonrosterEntry } from '@/lib/personroster'
 import type { PartyMeta } from '@/lib/aggregate'
+import { spectrumRank } from '@/lib/soffa'
 
 export function PersonrosterPanel({
   valtyp,
@@ -77,7 +78,24 @@ export function PersonrosterPanel({
   if (!supported) return null
 
   const shown = searchEntries ?? entries
-  const partyOptions = [...parties.entries()].sort((a, b) => (a[1].forkortning ?? a[0]).localeCompare(b[1].forkortning ?? b[0], 'sv'))
+  // Namn: förkortning finns bara för partier med en officiell sådan (riksdagspartierna +
+  // en del större lokala) — resten (de flesta av de ~80 småpartierna) saknar helt
+  // förkortning i party-tabellen. Föll tidigare tillbaka direkt på den råa 4-siffriga
+  // partikoden ("1902") i stället för det fullständiga namnet ("Alternativ Sanning"),
+  // som redan finns i beteckning (samma fält 2022-jämförelsen joinar på).
+  const partyLabel = (kod: string, p: PartyMeta) => p.forkortning ?? p.beteckning ?? kod
+  // De 8 riksdagspartierna (SPECTRUM, samma vänster→höger-ordning som Bryt ner-kolumnerna
+  // och MandatBars) överst, i EN egen optgroup — resten (spectrumRank===8, "okända sist")
+  // alfabetiskt i en andra optgroup. Native <optgroup> ger både gruppering OCH en synlig
+  // avdelare gratis, ingen egen CSS/JS-lösning behövs.
+  const partyOptions = [...parties.entries()].sort((a, b) => {
+    const ra = spectrumRank(a[1].forkortning)
+    const rb = spectrumRank(b[1].forkortning)
+    if (ra !== rb) return ra - rb
+    return partyLabel(a[0], a[1]).localeCompare(partyLabel(b[0], b[1]), 'sv')
+  })
+  const majorOptions = partyOptions.filter(([, p]) => spectrumRank(p.forkortning) < 8)
+  const minorOptions = partyOptions.filter(([, p]) => spectrumRank(p.forkortning) === 8)
 
   return (
     <div className="mt-3 border-t border-slate-800 pt-3">
@@ -89,9 +107,16 @@ export function PersonrosterPanel({
           onChange={(e) => setPartikod(e.target.value || null)}
         >
           <option value="">Alla partier</option>
-          {partyOptions.map(([kod, p]) => (
-            <option key={kod} value={kod}>{p.forkortning ?? kod}</option>
-          ))}
+          <optgroup label="Riksdagspartier">
+            {majorOptions.map(([kod, p]) => (
+              <option key={kod} value={kod}>{partyLabel(kod, p)}</option>
+            ))}
+          </optgroup>
+          <optgroup label="Övriga partier">
+            {minorOptions.map(([kod, p]) => (
+              <option key={kod} value={kod}>{partyLabel(kod, p)}</option>
+            ))}
+          </optgroup>
         </select>
         <input
           type="text"
@@ -121,7 +146,11 @@ export function PersonrosterPanel({
           })}
         </ol>
       )}
-      {!compact && <p className="mt-1.5 text-[11px] text-slate-600">Topp {shown === entries ? 10 : shown.length}, {partikod ? (parties.get(partikod)?.forkortning ?? partikod) : 'alla partier'}.</p>}
+      {!compact && (
+        <p className="mt-1.5 text-[11px] text-slate-600">
+          Topp {shown === entries ? 10 : shown.length}, {partikod ? partyLabel(partikod, parties.get(partikod) ?? { forkortning: null, farg: null }) : 'alla partier'}.
+        </p>
+      )}
     </div>
   )
 }
