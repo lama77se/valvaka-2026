@@ -9,16 +9,21 @@
 // samband med finalgranskningens fix-våg.
 import { useResults } from '@/components/ResultsProvider'
 import { deriveSlutligState, type SlutligState, type Valtyp } from '@/lib/results'
-import { SlutligBar } from '@/components/SlutligBar'
 
-// Samma hue-familj som SlutligBar:s fyllningsfärg (amber/sky/emerald) — för rad 2:s
-// procent-span i `large`-läget (Dashboard-headern), som speglar rad 1:s sky-300-procent
-// men färgkodad efter SlutligState i stället för alltid sky.
+// Samma hue-familj som SlutligBar:s fyllningsfärg (amber/sky/emerald) — för procent-
+// spannen (båda lägena), färgkodad efter SlutligState i stället för alltid sky.
 const SLUTLIG_PCT_TONE: Record<SlutligState, string> = {
   preliminar: 'text-amber-300',
   slutraknas: 'text-sky-300',
   slutlig: 'text-emerald-300',
 }
+// "Slut"-badgens bakgrund (mobil-läget, se nedan) — samma tre toner.
+const SLUT_BADGE_TONE: Record<SlutligState, string> = {
+  preliminar: 'bg-amber-500/15 text-amber-300',
+  slutraknas: 'bg-sky-500/15 text-sky-300',
+  slutlig: 'bg-emerald-500/15 text-emerald-300',
+}
+const BADGE_BASE = 'shrink-0 whitespace-nowrap rounded px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide'
 
 // `large` (valfri, default false): mobilens enda instans behåller den ursprungliga
 // kompakta 11px-storleken (oförändrat beteende). Dashboard-lägets tre instanser
@@ -90,20 +95,31 @@ export function ReportingStatus({ valtyp: valtypProp, large = false }: { valtyp?
     )
   }
 
-  // Mobil (kompakt, `!large`): oförändrad enrads-layout + en liten SlutligBar-badge
-  // (`short` — bara "Z %", fast bredd) i stället för den tidigare enda tone/label-chippen.
+  // Mobil (kompakt, `!large`): TVÅ badge+procent-par, SAMMA layout på båda ("Prel"/"Slut"
+  // + en siffra) — Lars, local dev 14 sep: den tidigare ihoppressade "Z %"-badgen (utan
+  // egen etikett) var inkonsekvent mot rapporteringstalets fulla "X / Y Z %"-format. Men
+  // FULLA "X / Y Z %" på BÅDA (försökt först) klämde ut breadcrumb-områdesnamnet i
+  // MobileChrome.tsx (samma rad, `flex-1 truncate` — "Hudiksvall" blev "H…") eftersom
+  // raden delar utrymme med bredkrumen + "Hela Sverige"-knappen, till skillnad från
+  // Dashboard-headerns EGEN, dedikerade rad (`large` ovan). Kompromiss: bara procenten
+  // efter varje badge här — de fulla talen finns ändå i tooltipen (title på "Prel").
   return (
-    <div className="flex shrink-0 items-center gap-1.5 text-[11px] text-slate-300">
+    <div className="flex shrink-0 items-center gap-1 text-[11px] text-slate-300">
       {valtypProp && <span className="font-semibold uppercase tracking-wide text-slate-400">{valtypProp}</span>}
       <span
-        className="tabular-nums"
-        title={uppRegistry.length > 0 ? `Varav ${uppRegistry.length.toLocaleString('sv-SE')} uppsamlingsdistrikt` : undefined}
+        className={`${BADGE_BASE} bg-slate-700/50 text-slate-300`}
+        title={`${reported.toLocaleString('sv-SE')} / ${total.toLocaleString('sv-SE')} rapporterade${uppRegistry.length > 0 ? ` (varav ${uppRegistry.length.toLocaleString('sv-SE')} uppsamlingsdistrikt)` : ''}`}
       >
-        <span className="font-semibold text-slate-100">{reported.toLocaleString('sv-SE')}</span>
-        <span className="text-slate-500"> / {total.toLocaleString('sv-SE')}</span>
-        <span className="ml-1 text-sky-300">{pct}%</span>
+        Prel
       </span>
-      <SlutligBar state={slutligState} pct={slutligPct} done={store.slutligDoneCount} total={store.reportedCount} short />
+      <span className="tabular-nums text-sky-300">{pct}%</span>
+      <span
+        className={`${BADGE_BASE} ${SLUT_BADGE_TONE[slutligState]}`}
+        title={`${store.slutligDoneCount.toLocaleString('sv-SE')} / ${store.reportedCount.toLocaleString('sv-SE')} slutgiltigt räknade`}
+      >
+        Slut
+      </span>
+      <span className={`tabular-nums ${SLUTLIG_PCT_TONE[slutligState]}`}>{slutligPct}%</span>
       {liveDot}
     </div>
   )

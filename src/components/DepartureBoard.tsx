@@ -11,8 +11,16 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useResults } from '@/components/ResultsProvider'
 import { ancestorsOf } from '@/lib/hierarchy'
 import { onDark } from '@/lib/colors'
-import { deriveSlutligState, VALTYP_LABEL, type Valtyp } from '@/lib/results'
-import { SlutligBar } from '@/components/SlutligBar'
+import { deriveSlutligState, VALTYP_LABEL, type SlutligState, type Valtyp } from '@/lib/results'
+
+// "S:"-prefixets färg (handover 14 sep) — samma hue-familj som SlutligBar (amber/sky/
+// emerald), men bara sky/emerald behövs här: `preliminar` visas aldrig (se gaten nedan,
+// döljer hela raden tills sluträkningen faktiskt börjar).
+const SLUTLIG_TEXT_TONE: Record<SlutligState, string> = {
+  preliminar: 'text-amber-300',
+  slutraknas: 'text-sky-300',
+  slutlig: 'text-emerald-300',
+}
 
 const NEUTRAL = '#64748b'
 const VISIBLE = 20 // hur många rader som visas (20 senaste inrapporterade per tavla)
@@ -183,7 +191,7 @@ export function DepartureBoard({ valtyp, onRowSelect, fill, fullWidth, emphasize
   const total = totalByValtyp[valtyp] + uppRegistry.length
   // Sluträkningsgrad — EGEN, samtidig bar (handover 14 sep, Val ANALYSIS), riksomfattande
   // som denna tavlas befintliga reported/total ovan (samma princip som DistrictMap.tsx:s HUD).
-  const { state: slutligState, pct: slutligPct } = deriveSlutligState(store.slutligDoneCount, store.reportedCount)
+  const { state: slutligState } = deriveSlutligState(store.slutligDoneCount, store.reportedCount)
 
   // Namn-uppslag + hierarki-sökväg för DENNA tavlas valtyp (kan skilja sig från aktiv).
   const kommunName = useMemo(() => new Map(kommuner.map((k) => [k.code, k.name])), [kommuner])
@@ -214,11 +222,11 @@ export function DepartureBoard({ valtyp, onRowSelect, fill, fullWidth, emphasize
       <div className="flex items-center justify-between border-b border-slate-800 px-3 py-2">
         <div className="flex items-center gap-2">
           <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-emerald-400" />
-          {/* Förkortat "Senaste rapporterat" → "Senaste" (handover 14 sep, se
-              SlutligBar-badgen nedan) — raden var redan trång vid --boards-w (315px) UTAN
-              badgen; med den fick "Senaste rapporterat" (tracking-widest gör den bredare
-              än bokstäverna själva) INTE plats bredvid "Riksdag · 6 273 / 6 626 [X %]"
-              utan att radbryta (Lars, local dev: "tar upp för mkt plats"). */}
+          {/* Förkortat "Senaste rapporterat" → "Senaste" (handover 14 sep, se P:/S:-
+              prefixen nedan) — raden var redan trång vid --boards-w (315px) UTAN dem;
+              "Senaste rapporterat" (tracking-widest gör den bredare än bokstäverna själva)
+              fick INTE plats bredvid "Riksdag · P: 6 273 / 6 626" utan att radbryta
+              (Lars, local dev: "tar upp för mkt plats"). */}
           <span className="whitespace-nowrap text-xs font-semibold uppercase tracking-wide text-slate-300">Senaste</span>
         </div>
         <div className="flex items-center gap-1.5">
@@ -228,14 +236,19 @@ export function DepartureBoard({ valtyp, onRowSelect, fill, fullWidth, emphasize
             // (till skillnad från kartans HUD-badge, som får växa fritt) — tooltip i stället.
             title={uppRegistry.length > 0 ? `Varav ${uppRegistry.length.toLocaleString('sv-SE')} uppsamlingsdistrikt` : undefined}
           >
-            {VALTYP_LABEL[valtyp]} · {reported.toLocaleString('sv-SE')}
+            {VALTYP_LABEL[valtyp]} · P: {reported.toLocaleString('sv-SE')}
             {total ? ` / ${total.toLocaleString('sv-SE')}` : ''}
           </span>
-          {/* Sluträkningsgrad (handover 14 sep) — SAMMA rad som rapporteringstalen, inte en
-              egen rad: tre smala tavlor staplade i vänsterkolumnen har inte utrymme att
-              lägga på en extra rad per tavla (Lars, local dev: "tar upp för mkt plats").
-              `short` → bara "Z %" i en liten fast bredd, fulla talen i tooltipen. */}
-          <SlutligBar state={slutligState} pct={slutligPct} done={store.slutligDoneCount} total={store.reportedCount} short />
+          {/* Sluträkningsgrad (handover 14 sep) — SAMMA rad, SAMMA stil som raden ovan (bara
+              en färgad "S:"-prefix i stället för ett eget ord/badge — Lars, local dev: "för
+              göra det kortare"). Ingen % här — DepartureBoard har aldrig visat procent för
+              rapporteringen ovan heller (bara "X / Y"). Döljs helt under `preliminar` (hela
+              valnatten) — syns först när sluträkningen faktiskt börjar. */}
+          {slutligState !== 'preliminar' && (
+            <span className={`text-[11px] tabular-nums ${SLUTLIG_TEXT_TONE[slutligState]}`}>
+              S: {store.slutligDoneCount.toLocaleString('sv-SE')} / {store.reportedCount.toLocaleString('sv-SE')}
+            </span>
+          )}
         </div>
       </div>
 
