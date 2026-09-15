@@ -51,14 +51,26 @@ export function PersonrosterPanel({
   // att bygga en egen andra polling-loop för en enda panel.
   const { revision } = useResults()
 
-  // Nollställ filter/sökning/sida på områdesbyte — annars kan ett parti/sökord/sida från
-  // ETT område av misstag följa med och ge en tom (eller vilseledande) lista i nästa.
+  // Nollställ sökning/sida på områdesbyte — annars kan ett sökord/sida från ETT område
+  // av misstag följa med och ge en tom (eller vilseledande) lista i nästa. Partifiltret
+  // rörs INTE här (Lars 15 sep: ska bete sig som andra vyinställningar och komma ihåg
+  // sig mellan områden man navigerar mellan) — se separat effekt nedan som bara
+  // nollställer det vid BYTE AV VALTYP (där ett partikod kan sluta existera helt).
   useEffect(() => {
-    setPartikod(null)
     setQuery('')
     setSearchEntries(null)
     setPage(0)
   }, [valtyp, area.level, area.code])
+
+  // Partifiltret nollställs bara vid valtyp-byte (RD/RF/KF) — en partikod kan vara
+  // giltig i EN valtyp men sakna motsvarighet i en annan (lokala KF-partier finns t.ex.
+  // aldrig i RD/RF), så att låta det följa med där hade kunnat ge en tom lista utan
+  // förklaring. Inom SAMMA valtyp (byte av område/nivå) är partikoden alltid giltig —
+  // partilistan (`parties`-propen) är densamma för hela valtypet, oavsett vilket område
+  // som råkar visas.
+  useEffect(() => {
+    setPartikod(null)
+  }, [valtyp])
 
   // Bytt parti-filter → tillbaka till sida 1 (annars kan man landa på en sida som är
   // tom för det NYA partiet men bara fanns för det gamla).
