@@ -49,22 +49,40 @@ export interface EgMPersonroster {
   slutligTotal: number
   slutligPct: number
   // Emelies plats bland M:s EGNA kandidater i SAMMA geografi (Gävleborg för RD/RF,
-  // Hudiksvall för KF), rangordnat efter personröster — handover 15 sep, Lars.
-  // null = hon (eller ALLA M-kandidater) har ännu inga personröster i området att
-  // rangordna mot (väntat tidigt i sluträkningen — se slutligPct ovan).
+  // Hudiksvall för KF), rangordnat efter personröster — handover 15 sep, Lars. null =
+  // ingen M-kandidat i området har personröster ännu (neighbors tom också — väntat
+  // tidigt i sluträkningen). Har HON specifikt 0 kryss men ANDRA M-kandidater redan har
+  // rader placeras hon INTE som null — hon sätts explicit sist, direkt efter kandidaten
+  // med minst kryss (Lars 15 sep, se fetchMRanking) — rankTotal räknar då med henne
+  // själv. (Bugfix samma dag: koden kollade tidigare bara hennes EGEN rad och dolde hela
+  // topplistan — inkl. ledaren — så fort bara HON saknade data.)
   rank: number | null
   rankTotal: number | null
-  // Ledaren (plats 1) + hennes närmaste grannar (plats-1/plats+1) — Lars, 15 sep:
-  // "vem som är 1'a ... och vem som är på platsen före/efter henne". Max 3 poster,
-  // dedupat (t.ex. om hon själv ligger på plats 2 ÄR "plats före" = ledaren, visas
-  // bara en gång; är hon 1:a själv IS hon "ledaren"-posten).
+  // Topp 3 + hennes närmaste grannar (plats-1/plats+1) — Lars, 15 sep: "vem som är 1'a
+  // ... och vem som är på platsen före/efter henne", uppföljning samma dag: "topp 3
+  // istället för topp 1 bara". Har hon 0 kryss (syntetisk sistaplats, se fetchMRanking)
+  // blir "plats före" = kandidaten med minst kryss i verkligheten. Max 5 poster,
+  // dedupat (t.ex. om hon själv ligger på plats 2 ÄR "plats före" redan med i topp 3,
+  // visas bara en gång; är hon 1:a-3:a själv ÄR hon en av topp 3-posterna).
   neighbors: RankEntry[]
+  // Nedbrytning per plats (Lars 15 sep: "en liten 'i'-knapp vid antalet kryss ... visa i
+  // vilket(a) distrikt det kom och hur många ... bara i distrikt där det inte är 0").
+  // Geografiska distrikt (namn från `district`) OCH ev. uppsamlingsdistrikt (namn från
+  // `uppsamlingsdistrikt_registry`) — samma två källor som `total` ovan summerar, bara
+  // onedbrutet i stället för summerat. Redan filtrerat till antal > 0 och fallande
+  // sorterat (se fetchEgMData) — en tom lista = hon har inga kryss alls i valet än.
+  breakdown: EgMBreakdownRow[]
 }
 
 export interface RankEntry {
   rank: number
   namn: string
   total: number
+}
+
+export interface EgMBreakdownRow {
+  plats: string
+  antal: number
 }
 
 interface PersonrosterRow { valtyp: string; antal_personroster: number }
@@ -135,26 +153,46 @@ async function fetchMRanking(
     const prev = names.get(r.kandidatnummer)
     if (prev == null || r.namn > prev) names.set(r.kandidatnummer, r.namn)
   }
-  if (!totals.has(KANDIDATNUMMER)) return { rank: null, rankTotal: null, neighbors: [] } // hon har (ännu) inga egna rader i området
+  // BUGFIX 15 sep (Lars): guarden kollade tidigare bara HENNES egen rad
+  // (`!totals.has(KANDIDATNUMMER)`), trots att kommentaren ovanför (EgMPersonroster.rank)
+  // alltid dokumenterat det bredare villkoret "hon ELLER ALLA M-kandidater saknar data".
+  // Konsekvens: val.se:s summeradePersonroster-listor verkar bara innehålla kandidater
+  // med ≥1 kryss — får hon 0 kryss i de första slutgiltigt räknade distrikten medan
+  // ANDRA M-kandidater redan har rader, dolde koden ändå HELA topplistan (även ledaren)
+  // i stället för att visa den utan att markera hennes egen plats. Rätt villkor: "finns
+  // det över huvud taget någon M-kandidat med personröster i området".
+  if (totals.size === 0) return { rank: null, rankTotal: null, neighbors: [] } // ingen M-kandidat alls har personröster i området än
 
   const sorted = [...totals.entries()]
     .sort((a, b) => b[1] - a[1])
     .map(([kandidatnummer, total], i): RankEntry & { kandidatnummer: number } => ({ rank: i + 1, kandidatnummer, namn: names.get(kandidatnummer) ?? '', total }))
-  const rank = sorted.findIndex((e) => e.kandidatnummer === KANDIDATNUMMER) + 1
+  const idx = sorted.findIndex((e) => e.kandidatnummer === KANDIDATNUMMER)
+  // Lars 15 sep: saknar hon en egen rad (0 kryss, ingen post i totals) placeras hon
+  // INTE som "ingen rank" — sätt henne explicit sist, direkt efter kandidaten med minst
+  // kryss i det valet. rankTotal räknar då med henne själv (sorted.length + 1) — hon är
+  // trots allt en av M:s kandidater i området, bara utan kryss ännu.
+  const rank = idx === -1 ? sorted.length + 1 : idx + 1
+  const rankTotal = idx === -1 ? sorted.length + 1 : sorted.length
 
-  // Ledaren (plats 1) + hennes grannar (plats-1/plats+1) — handover 15 sep, Lars:
-  // "vem som är 1'a ... och vem som är på platsen före/efter henne". En Set dedupar
-  // automatiskt (t.ex. plats 2 → "plats före" ÄR ledaren, visas bara en gång).
-  const wantedRanks = new Set([1, rank - 1, rank + 1].filter((r) => r >= 1 && r <= sorted.length))
+  // Topp 3 + hennes grannar (plats-1/plats+1) — Lars 15 sep uppföljning: "kan vi visa en
+  // topp 3 istället för topp 1 bara. och sedan plus den som ligger före/efter Emelie
+  // precis som nu". Hennes EGEN rad listas aldrig här specifikt (bara "runtomkring"
+  // henne) — UNDANTAGET är om hon själv råkar ligga inom topp 3 eller vara en av
+  // grannarna (se docstringen ovanför fältet). Är hon sist av alla (syntetisk sistaplats
+  // ovan) blir "plats före" = den riktiga kandidaten med minst kryss, och "plats efter"
+  // (rank+1) filtreras bort av `r <= sorted.length` (finns bara i `sorted`, de RIKTIGA
+  // raderna — hennes syntetiska sistaplats är aldrig med där). En Set dedupar
+  // automatiskt (t.ex. plats 2 → "plats före" ÄR redan med i topp 3, visas en gång).
+  const wantedRanks = new Set([1, 2, 3, rank - 1, rank + 1].filter((r) => r >= 1 && r <= sorted.length))
   const neighbors = sorted.filter((e) => wantedRanks.has(e.rank)).map(({ rank, namn, total }) => ({ rank, namn, total }))
 
-  return { rank, rankTotal: sorted.length, neighbors }
+  return { rank, rankTotal, neighbors }
 }
 
 export async function fetchEgMData(): Promise<EgMPersonroster[]> {
   const [pr, uppPr, gavleborgTotal, hudiksvallTotal, rdDone, rfDone, kfDone, rdRank, rfRank, kfRank] = await Promise.all([
-    supabase.from('personroster').select('valtyp,antal_personroster').eq('kandidatnummer', KANDIDATNUMMER).eq('partikod', PARTIKOD),
-    supabase.from('uppsamling_personroster').select('valtyp,antal_personroster').eq('kandidatnummer', KANDIDATNUMMER).eq('partikod', PARTIKOD),
+    supabase.from('personroster').select('valtyp,antal_personroster,valdistriktskod').eq('kandidatnummer', KANDIDATNUMMER).eq('partikod', PARTIKOD),
+    supabase.from('uppsamling_personroster').select('valtyp,antal_personroster,kod').eq('kandidatnummer', KANDIDATNUMMER).eq('partikod', PARTIKOD),
     fetchDistrictTotal(LANSKOD_GAVLEBORG),
     fetchDistrictTotal(KOMMUNKOD_HUDIKSVALL),
     fetchSlutligCount('RD', LANSKOD_GAVLEBORG),
@@ -167,8 +205,43 @@ export async function fetchEgMData(): Promise<EgMPersonroster[]> {
   if (pr.error) throw new Error(pr.error.message)
   if (uppPr.error) throw new Error(uppPr.error.message)
 
-  const all = [...((pr.data ?? []) as PersonrosterRow[]), ...((uppPr.data ?? []) as PersonrosterRow[])]
+  const prRows = (pr.data ?? []) as (PersonrosterRow & { valdistriktskod: string })[]
+  const uppRows = (uppPr.data ?? []) as (PersonrosterRow & { kod: string })[]
+  const all = [...prRows, ...uppRows]
   const sumBy = (valtyp: Valtyp) => all.filter((r) => r.valtyp === valtyp).reduce((a, r) => a + r.antal_personroster, 0)
+
+  // Nedbrytning per plats (Lars 15 sep) — bara raderna där hon FAKTISKT har kryss (>0);
+  // personroster/uppsamling_personroster kan i teorin ha en 0-rad (om val.se:s egen
+  // summeradePersonroster råkar lista henne ändå), men en sådan rad är aldrig intressant
+  // att visa i en "var kom rösterna ifrån"-lista. Två separata namnuppslag (distrikt
+  // respektive uppsamlingsdistrikt har olika registertabeller, se EgMBreakdownRow-
+  // docstringen) — batchade (ETT `.in()`-anrop vardera, inte N st) eftersom listan med
+  // <10 platser för en enskild kandidat annars ändå aldrig skulle bli stor nog för att
+  // pagineringsmönstret (fetchPaged) ovan ska behövas.
+  const positivePr = prRows.filter((r) => r.antal_personroster > 0)
+  const positiveUpp = uppRows.filter((r) => r.antal_personroster > 0)
+  const districtCodes = [...new Set(positivePr.map((r) => r.valdistriktskod))]
+  const uppCodes = [...new Set(positiveUpp.map((r) => r.kod))]
+  const [districtNamesRes, uppNamesRes] = await Promise.all([
+    districtCodes.length
+      ? supabase.from('district').select('valdistriktskod,namn').in('valdistriktskod', districtCodes)
+      : Promise.resolve({ data: [] as { valdistriktskod: string; namn: string }[], error: null }),
+    uppCodes.length
+      ? supabase.from('uppsamlingsdistrikt_registry').select('valtyp,kod,namn').in('kod', uppCodes)
+      : Promise.resolve({ data: [] as { valtyp: string; kod: string; namn: string | null }[], error: null }),
+  ])
+  if (districtNamesRes.error) throw new Error(districtNamesRes.error.message)
+  if (uppNamesRes.error) throw new Error(uppNamesRes.error.message)
+  const districtNameByCode = new Map((districtNamesRes.data ?? []).map((d) => [d.valdistriktskod, d.namn]))
+  // Nyckel valtyp+kod (INTE bara kod) — uppsamlingskoder är bara unika INOM en valtyp
+  // (registry-migrationens egen kommentar), samma princip som personroster.ts:s "namn-
+  // fälla" fast för PLATS-koder i stället för kandidatnamn.
+  const uppNameByKey = new Map((uppNamesRes.data ?? []).map((u) => [`${u.valtyp}:${u.kod}`, u.namn]))
+  const breakdownBy = (valtyp: Valtyp): EgMBreakdownRow[] => [
+    ...positivePr.filter((r) => r.valtyp === valtyp).map((r) => ({ plats: districtNameByCode.get(r.valdistriktskod) ?? r.valdistriktskod, antal: r.antal_personroster })),
+    ...positiveUpp.filter((r) => r.valtyp === valtyp).map((r) => ({ plats: uppNameByKey.get(`${valtyp}:${r.kod}`) ?? r.kod, antal: r.antal_personroster })),
+  ].sort((a, b) => b.antal - a.antal)
+
   // Lars, 15 sep: etiketten ska bära med sig geografin (samma som badgens nämnare
   // ovan) — "RIKSDAGSVALET GÄVLEBORG" osv, inte bara valtypens namn.
   const LABEL: Record<Valtyp, string> = { RD: 'Riksdagsvalet Gävleborg', RF: 'Regionvalet Gävleborg', KF: 'Kommunvalet Hudiksvall' }
@@ -189,6 +262,7 @@ export async function fetchEgMData(): Promise<EgMPersonroster[]> {
       rank: RANK[valtyp].rank,
       rankTotal: RANK[valtyp].rankTotal,
       neighbors: RANK[valtyp].neighbors,
+      breakdown: breakdownBy(valtyp),
     }
   })
 }
