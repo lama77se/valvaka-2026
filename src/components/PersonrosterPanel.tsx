@@ -17,6 +17,7 @@ import { onDark } from '@/lib/colors'
 import { fetchPersonrosterTop, personrosterLevelSupported, searchPersonroster, type PersonrosterEntry } from '@/lib/personroster'
 import type { PartyMeta } from '@/lib/aggregate'
 import { spectrumRank } from '@/lib/soffa'
+import { useResults } from '@/components/ResultsProvider'
 
 export function PersonrosterPanel({
   valtyp,
@@ -39,6 +40,16 @@ export function PersonrosterPanel({
   const [failed, setFailed] = useState(false)
 
   const supported = personrosterLevelSupported(valtyp, area.level) && (area.level === 'riket' || !!area.code)
+  // Lars fråga 15 sep: personröster uppdaterades aldrig efter första mount — personroster-
+  // tabellen har ingen egen poll/cursor i ResultsProvider (den hämtas direkt on-demand här,
+  // se personroster.ts), så det fanns ingen signal alls som sa "hämta om". `revision` är
+  // ResultsProviderns redan befintliga strypta (~750 ms) "något landade"-räknare — samma en
+  // ResultPanel.tsx redan nycklar sitt drilldown-omräkning på (`void revision` i dess
+  // useMemo-deps). Den bumpas visserligen av resultat/valdeltagande-pollen, inte av en egen
+  // personroster-cursor, men eftersom personröster-ingest sker i samma val.se-körningar som
+  // resultat är den en pålitlig, gratis "kolla om det finns nytt"-tick — mycket enklare än
+  // att bygga en egen andra polling-loop för en enda panel.
+  const { revision } = useResults()
 
   // Nollställ filter/sökning/sida på områdesbyte — annars kan ett parti/sökord/sida från
   // ETT område av misstag följa med och ge en tom (eller vilseledande) lista i nästa.
@@ -66,9 +77,12 @@ export function PersonrosterPanel({
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
     // area.level/area.code (inte hela `area`-objektet, ny referens varje render) — undviker
-    // ett extra onödigt anrop per föräldra-render.
+    // ett extra onödigt anrop per föräldra-render. revision sist — se kommentaren vid
+    // useResults() ovan: gör detta till ett periodiskt "hämta om", inte bara vid byte av
+    // område/parti/sida. Ingen loading-flimmer av det (Laddar…-texten nedan visas bara vid
+    // `shown.length === 0`, dvs. en redan fylld lista byts tyst ut i bakgrunden).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [valtyp, area.level, area.code, partikod, page, supported])
+  }, [valtyp, area.level, area.code, partikod, page, supported, revision])
 
   // Debounce (300 ms) — annars ett RPC-anrop per tangenttryck.
   useEffect(() => {
