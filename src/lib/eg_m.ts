@@ -49,15 +49,20 @@ export interface EgMPersonroster {
   slutligTotal: number
   slutligPct: number
   // Emelies plats bland M:s EGNA kandidater i SAMMA geografi (Gävleborg för RD/RF,
-  // Hudiksvall för KF), rangordnat efter personröster — handover 15 sep, Lars.
-  // null = hon (eller ALLA M-kandidater) har ännu inga personröster i området att
-  // rangordna mot (väntat tidigt i sluträkningen — se slutligPct ovan).
+  // Hudiksvall för KF), rangordnat efter personröster — handover 15 sep, Lars. null =
+  // ingen M-kandidat i området har personröster ännu (neighbors tom också — väntat
+  // tidigt i sluträkningen). Har HON specifikt 0 kryss men ANDRA M-kandidater redan har
+  // rader placeras hon INTE som null — hon sätts explicit sist, direkt efter kandidaten
+  // med minst kryss (Lars 15 sep, se fetchMRanking) — rankTotal räknar då med henne
+  // själv. (Bugfix samma dag: koden kollade tidigare bara hennes EGEN rad och dolde hela
+  // topplistan — inkl. ledaren — så fort bara HON saknade data.)
   rank: number | null
   rankTotal: number | null
-  // Ledaren (plats 1) + hennes närmaste grannar (plats-1/plats+1) — Lars, 15 sep:
-  // "vem som är 1'a ... och vem som är på platsen före/efter henne". Max 3 poster,
-  // dedupat (t.ex. om hon själv ligger på plats 2 ÄR "plats före" = ledaren, visas
-  // bara en gång; är hon 1:a själv IS hon "ledaren"-posten).
+  // Ledaren (plats 1) + hennes närmaste grannar (plats-1/plats+1) — Lars, 15 sep: "vem
+  // som är 1'a ... och vem som är på platsen före/efter henne". Har hon 0 kryss (syntetisk
+  // sistaplats, se fetchMRanking) blir "plats före" = kandidaten med minst kryss i
+  // verkligheten. Max 3 poster, dedupat (t.ex. om hon själv ligger på plats 2 ÄR "plats
+  // före" = ledaren, visas bara en gång; är hon 1:a själv IS hon "ledaren"-posten).
   neighbors: RankEntry[]
 }
 
@@ -135,20 +140,39 @@ async function fetchMRanking(
     const prev = names.get(r.kandidatnummer)
     if (prev == null || r.namn > prev) names.set(r.kandidatnummer, r.namn)
   }
-  if (!totals.has(KANDIDATNUMMER)) return { rank: null, rankTotal: null, neighbors: [] } // hon har (ännu) inga egna rader i området
+  // BUGFIX 15 sep (Lars): guarden kollade tidigare bara HENNES egen rad
+  // (`!totals.has(KANDIDATNUMMER)`), trots att kommentaren ovanför (EgMPersonroster.rank)
+  // alltid dokumenterat det bredare villkoret "hon ELLER ALLA M-kandidater saknar data".
+  // Konsekvens: val.se:s summeradePersonroster-listor verkar bara innehålla kandidater
+  // med ≥1 kryss — får hon 0 kryss i de första slutgiltigt räknade distrikten medan
+  // ANDRA M-kandidater redan har rader, dolde koden ändå HELA topplistan (även ledaren)
+  // i stället för att visa den utan att markera hennes egen plats. Rätt villkor: "finns
+  // det över huvud taget någon M-kandidat med personröster i området".
+  if (totals.size === 0) return { rank: null, rankTotal: null, neighbors: [] } // ingen M-kandidat alls har personröster i området än
 
   const sorted = [...totals.entries()]
     .sort((a, b) => b[1] - a[1])
     .map(([kandidatnummer, total], i): RankEntry & { kandidatnummer: number } => ({ rank: i + 1, kandidatnummer, namn: names.get(kandidatnummer) ?? '', total }))
-  const rank = sorted.findIndex((e) => e.kandidatnummer === KANDIDATNUMMER) + 1
+  const idx = sorted.findIndex((e) => e.kandidatnummer === KANDIDATNUMMER)
+  // Lars 15 sep: saknar hon en egen rad (0 kryss, ingen post i totals) placeras hon
+  // INTE som "ingen rank" — sätt henne explicit sist, direkt efter kandidaten med minst
+  // kryss i det valet. rankTotal räknar då med henne själv (sorted.length + 1) — hon är
+  // trots allt en av M:s kandidater i området, bara utan kryss ännu.
+  const rank = idx === -1 ? sorted.length + 1 : idx + 1
+  const rankTotal = idx === -1 ? sorted.length + 1 : sorted.length
 
-  // Ledaren (plats 1) + hennes grannar (plats-1/plats+1) — handover 15 sep, Lars:
-  // "vem som är 1'a ... och vem som är på platsen före/efter henne". En Set dedupar
-  // automatiskt (t.ex. plats 2 → "plats före" ÄR ledaren, visas bara en gång).
+  // Ledaren (plats 1) + hennes grannar (plats-1/plats+1) — handover 15 sep, Lars: "vem
+  // som är 1'a ... och vem som är på platsen före/efter henne". Hennes EGEN rad listas
+  // aldrig här (bara "runtomkring" henne) — UNDANTAGET är när hon själv är 1:a, då ÄR
+  // ledarposten henne (se docstringen ovanför fältet). Är hon sist av alla (syntetisk
+  // sistaplats ovan) blir "plats före" = den riktiga kandidaten med minst kryss, och
+  // "plats efter" (rank+1) filtreras bort av `r <= sorted.length` (finns bara i
+  // `sorted`, de RIKTIGA raderna — hennes syntetiska sistaplats är aldrig med där).
+  // En Set dedupar automatiskt (t.ex. plats 2 → "plats före" ÄR ledaren, visas en gång).
   const wantedRanks = new Set([1, rank - 1, rank + 1].filter((r) => r >= 1 && r <= sorted.length))
   const neighbors = sorted.filter((e) => wantedRanks.has(e.rank)).map(({ rank, namn, total }) => ({ rank, namn, total }))
 
-  return { rank, rankTotal: sorted.length, neighbors }
+  return { rank, rankTotal, neighbors }
 }
 
 export async function fetchEgMData(): Promise<EgMPersonroster[]> {
