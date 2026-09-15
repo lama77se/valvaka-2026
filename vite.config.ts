@@ -80,10 +80,14 @@ export default defineConfig({
     rollupOptions: {
       // eg_m.html (handover 14/15 sep) — en helt egen, isolerad sida (src/eg_m/),
       // aldrig länkad från huvudappens routing/meny. Vites multi-page-läge: ett extra
-      // HTML-entry byggs till en egen dist/eg_m.html + egna JS/CSS-tillgångar, Vercels
-      // statiska hosting serverar den på /eg_m automatiskt (exakt filnamnsmatchning,
-      // ingen vercel.json-rewrite behövs) utan att på något sätt röra huvudsidans
-      // (index.html) egna bygge/bundle.
+      // HTML-entry byggs till en egen dist/eg_m.html + egna JS/CSS-tillgångar.
+      // 🔴 (Val ANALYSIS, granskning): ett tidigare påstående här — att Vercel serverar
+      // /eg_m från eg_m.html "automatiskt, ingen vercel.json-rewrite behövs" — stämde
+      // INTE. Vercels egen dokumentation: `cleanUrls` (som styr just detta, .html-fri
+      // path → matchande .html-fil) är AV som default; utan `"cleanUrls": true` i
+      // vercel.json (rotnivå, se den filen) hade /eg_m sannolikt 404:at trots att både
+      // middleware.ts:s matcher och byggets eg_m.html vore korrekta. Rör aldrig
+      // huvudsidans (index.html) eget bygge/bundle — verifierat oförändrad.
       input: {
         main: path.resolve(__dirname, 'index.html'),
         eg_m: path.resolve(__dirname, 'eg_m.html'),
