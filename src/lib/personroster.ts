@@ -31,8 +31,18 @@ export interface PersonrosterEntry {
 // nivå till). RF/KF saknar 'riket' av samma skäl som mandat: ingen riksnivå-fråga
 // existerar för dem (Lars beslut 2 — löser även oron om ackumulering över flera
 // organ-filer, ingen nivå vi behöver spänner någonsin över mer än ETT organ).
+//
+// RD har DÄREMOT även 'kommun' (Lars 15 sep: "det är väl hierarkiskt inte en riktig
+// nivå men vi har ju ändå valt visa resultat på den nivån") — kommun är RD:s egen
+// mellannivå mellan valkrets och distrikt (HIERARCHY.RD i hierarchy.ts, kommunen
+// byggs alltid av HELA valkretsar där, till skillnad från RF där en kommun kan delas
+// tvärs valkretsgränser). "Ett organ"-regeln ovan bryts inte: RD:s enda organ är
+// riket självt, så en kommun-nivå ligger fortfarande helt inuti det. personroster_top/
+// personroster_search (20260914190000_personroster_rpc.sql) hanterar redan p_niva=
+// 'kommun' helt valtyp-agnostiskt (left(valdistriktskod,4) = p_omradeskod, samma för
+// RD/RF/KF) — inget migrationsbehov, bara denna klient-gate som saknade RD.
 const PERSONROSTER_LEVELS: Record<Valtyp, Level[]> = {
-  RD: ['riket', 'valkrets', 'distrikt'],
+  RD: ['riket', 'valkrets', 'kommun', 'distrikt'],
   RF: ['region', 'valkrets', 'distrikt'],
   KF: ['kommun', 'valkrets', 'distrikt'],
 }
