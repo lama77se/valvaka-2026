@@ -65,12 +65,24 @@ export interface EgMPersonroster {
   // dedupat (t.ex. om hon själv ligger på plats 2 ÄR "plats före" redan med i topp 3,
   // visas bara en gång; är hon 1:a-3:a själv ÄR hon en av topp 3-posterna).
   neighbors: RankEntry[]
+  // Nedbrytning per plats (Lars 15 sep: "en liten 'i'-knapp vid antalet kryss ... visa i
+  // vilket(a) distrikt det kom och hur många ... bara i distrikt där det inte är 0").
+  // Geografiska distrikt (namn från `district`) OCH ev. uppsamlingsdistrikt (namn från
+  // `uppsamlingsdistrikt_registry`) — samma två källor som `total` ovan summerar, bara
+  // onedbrutet i stället för summerat. Redan filtrerat till antal > 0 och fallande
+  // sorterat (se fetchEgMData) — en tom lista = hon har inga kryss alls i valet än.
+  breakdown: EgMBreakdownRow[]
 }
 
 export interface RankEntry {
   rank: number
   namn: string
   total: number
+}
+
+export interface EgMBreakdownRow {
+  plats: string
+  antal: number
 }
 
 interface PersonrosterRow { valtyp: string; antal_personroster: number }
@@ -179,8 +191,8 @@ async function fetchMRanking(
 
 export async function fetchEgMData(): Promise<EgMPersonroster[]> {
   const [pr, uppPr, gavleborgTotal, hudiksvallTotal, rdDone, rfDone, kfDone, rdRank, rfRank, kfRank] = await Promise.all([
-    supabase.from('personroster').select('valtyp,antal_personroster').eq('kandidatnummer', KANDIDATNUMMER).eq('partikod', PARTIKOD),
-    supabase.from('uppsamling_personroster').select('valtyp,antal_personroster').eq('kandidatnummer', KANDIDATNUMMER).eq('partikod', PARTIKOD),
+    supabase.from('personroster').select('valtyp,antal_personroster,valdistriktskod').eq('kandidatnummer', KANDIDATNUMMER).eq('partikod', PARTIKOD),
+    supabase.from('uppsamling_personroster').select('valtyp,antal_personroster,kod').eq('kandidatnummer', KANDIDATNUMMER).eq('partikod', PARTIKOD),
     fetchDistrictTotal(LANSKOD_GAVLEBORG),
     fetchDistrictTotal(KOMMUNKOD_HUDIKSVALL),
     fetchSlutligCount('RD', LANSKOD_GAVLEBORG),
@@ -193,8 +205,43 @@ export async function fetchEgMData(): Promise<EgMPersonroster[]> {
   if (pr.error) throw new Error(pr.error.message)
   if (uppPr.error) throw new Error(uppPr.error.message)
 
-  const all = [...((pr.data ?? []) as PersonrosterRow[]), ...((uppPr.data ?? []) as PersonrosterRow[])]
+  const prRows = (pr.data ?? []) as (PersonrosterRow & { valdistriktskod: string })[]
+  const uppRows = (uppPr.data ?? []) as (PersonrosterRow & { kod: string })[]
+  const all = [...prRows, ...uppRows]
   const sumBy = (valtyp: Valtyp) => all.filter((r) => r.valtyp === valtyp).reduce((a, r) => a + r.antal_personroster, 0)
+
+  // Nedbrytning per plats (Lars 15 sep) — bara raderna där hon FAKTISKT har kryss (>0);
+  // personroster/uppsamling_personroster kan i teorin ha en 0-rad (om val.se:s egen
+  // summeradePersonroster råkar lista henne ändå), men en sådan rad är aldrig intressant
+  // att visa i en "var kom rösterna ifrån"-lista. Två separata namnuppslag (distrikt
+  // respektive uppsamlingsdistrikt har olika registertabeller, se EgMBreakdownRow-
+  // docstringen) — batchade (ETT `.in()`-anrop vardera, inte N st) eftersom listan med
+  // <10 platser för en enskild kandidat annars ändå aldrig skulle bli stor nog för att
+  // pagineringsmönstret (fetchPaged) ovan ska behövas.
+  const positivePr = prRows.filter((r) => r.antal_personroster > 0)
+  const positiveUpp = uppRows.filter((r) => r.antal_personroster > 0)
+  const districtCodes = [...new Set(positivePr.map((r) => r.valdistriktskod))]
+  const uppCodes = [...new Set(positiveUpp.map((r) => r.kod))]
+  const [districtNamesRes, uppNamesRes] = await Promise.all([
+    districtCodes.length
+      ? supabase.from('district').select('valdistriktskod,namn').in('valdistriktskod', districtCodes)
+      : Promise.resolve({ data: [] as { valdistriktskod: string; namn: string }[], error: null }),
+    uppCodes.length
+      ? supabase.from('uppsamlingsdistrikt_registry').select('valtyp,kod,namn').in('kod', uppCodes)
+      : Promise.resolve({ data: [] as { valtyp: string; kod: string; namn: string | null }[], error: null }),
+  ])
+  if (districtNamesRes.error) throw new Error(districtNamesRes.error.message)
+  if (uppNamesRes.error) throw new Error(uppNamesRes.error.message)
+  const districtNameByCode = new Map((districtNamesRes.data ?? []).map((d) => [d.valdistriktskod, d.namn]))
+  // Nyckel valtyp+kod (INTE bara kod) — uppsamlingskoder är bara unika INOM en valtyp
+  // (registry-migrationens egen kommentar), samma princip som personroster.ts:s "namn-
+  // fälla" fast för PLATS-koder i stället för kandidatnamn.
+  const uppNameByKey = new Map((uppNamesRes.data ?? []).map((u) => [`${u.valtyp}:${u.kod}`, u.namn]))
+  const breakdownBy = (valtyp: Valtyp): EgMBreakdownRow[] => [
+    ...positivePr.filter((r) => r.valtyp === valtyp).map((r) => ({ plats: districtNameByCode.get(r.valdistriktskod) ?? r.valdistriktskod, antal: r.antal_personroster })),
+    ...positiveUpp.filter((r) => r.valtyp === valtyp).map((r) => ({ plats: uppNameByKey.get(`${valtyp}:${r.kod}`) ?? r.kod, antal: r.antal_personroster })),
+  ].sort((a, b) => b.antal - a.antal)
+
   // Lars, 15 sep: etiketten ska bära med sig geografin (samma som badgens nämnare
   // ovan) — "RIKSDAGSVALET GÄVLEBORG" osv, inte bara valtypens namn.
   const LABEL: Record<Valtyp, string> = { RD: 'Riksdagsvalet Gävleborg', RF: 'Regionvalet Gävleborg', KF: 'Kommunvalet Hudiksvall' }
@@ -215,6 +262,7 @@ export async function fetchEgMData(): Promise<EgMPersonroster[]> {
       rank: RANK[valtyp].rank,
       rankTotal: RANK[valtyp].rankTotal,
       neighbors: RANK[valtyp].neighbors,
+      breakdown: breakdownBy(valtyp),
     }
   })
 }

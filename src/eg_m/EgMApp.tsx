@@ -4,6 +4,7 @@
 // för varför resultat-/mandatdelen medvetet togs bort).
 import { useEffect, useRef, useState } from 'react'
 import { fetchEgMData, RESYNC_MAX_MS, RESYNC_MIN_MS, type EgMPersonroster } from '@/lib/eg_m'
+import type { Valtyp } from '@/lib/results'
 
 const nf = new Intl.NumberFormat('sv-SE')
 
@@ -11,6 +12,11 @@ export function EgMApp() {
   const [data, setData] = useState<EgMPersonroster[] | null>(null)
   const [failed, setFailed] = useState(false)
   const aliveRef = useRef(true)
+  // Nedbrytnings-tabellen (Lars 15 sep: "en liten 'i'-knapp ... visa i vilket(a)
+  // distrikt det kom och hur många") — vilket VALTYP-kort som just nu har sin tabell
+  // öppen, om något. Ett enda state räcker (bara tre kort, aldrig mer än en öppen
+  // åt gången är ett medvetet enkelt val för denna lilla sidan).
+  const [openBreakdown, setOpenBreakdown] = useState<Valtyp | null>(null)
 
   useEffect(() => {
     aliveRef.current = true
@@ -80,7 +86,34 @@ export function EgMApp() {
               </span>
               <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">{p.label}</p>
               <p className="mt-2 text-5xl font-bold tabular-nums text-slate-100">{nf.format(p.total)}</p>
-              <p className="mt-1 text-sm text-slate-500">personröster</p>
+              <div className="mt-1 flex items-center justify-center gap-1">
+                <p className="text-sm text-slate-500">personröster</p>
+                {/* "i"-knapp (Lars 15 sep) — bara synlig när det finns något att visa
+                    (breakdown redan filtrerad till antal > 0 i lib/eg_m.ts). Togglar en
+                    liten tabell i stället för hover (pekskärm — sidan är byggd mobilfirst,
+                    se rot-divens max-w-sm). */}
+                {p.breakdown.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setOpenBreakdown((v) => (v === p.valtyp ? null : p.valtyp))}
+                    aria-label="Visa fördelning per plats"
+                    aria-expanded={openBreakdown === p.valtyp}
+                    className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-slate-600 text-[10px] font-semibold leading-none text-slate-400 hover:border-sky-500 hover:text-sky-300"
+                  >
+                    i
+                  </button>
+                )}
+              </div>
+              {openBreakdown === p.valtyp && p.breakdown.length > 0 && (
+                <div className="mt-2 space-y-0.5 border-t border-slate-800 pt-2 text-left">
+                  {p.breakdown.map((b, i) => (
+                    <div key={i} className="flex items-center gap-1.5 text-[11px] tabular-nums text-slate-400">
+                      <span className="min-w-0 flex-1 truncate">{b.plats}</span>
+                      <span className="shrink-0 text-slate-300">{nf.format(b.antal)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               {/* Plats bland M:s egna kandidater i samma geografi (handover 15 sep,
                   Lars) — döljs helt tills hon (eller någon annan M-kandidat) faktiskt
                   har personröster i området att rangordna mot, se lib/eg_m.ts. */}
