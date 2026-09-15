@@ -101,7 +101,9 @@ export async function fetchEgMData(): Promise<EgMPersonroster[]> {
 
   const all = [...((pr.data ?? []) as PersonrosterRow[]), ...((uppPr.data ?? []) as PersonrosterRow[])]
   const sumBy = (valtyp: Valtyp) => all.filter((r) => r.valtyp === valtyp).reduce((a, r) => a + r.antal_personroster, 0)
-  const LABEL: Record<Valtyp, string> = { RD: 'Riksdagsvalet', RF: 'Regionvalet', KF: 'Kommunvalet' }
+  // Lars, 15 sep: etiketten ska bära med sig geografin (samma som badgens nämnare
+  // ovan) — "RIKSDAGSVALET GÄVLEBORG" osv, inte bara valtypens namn.
+  const LABEL: Record<Valtyp, string> = { RD: 'Riksdagsvalet Gävleborg', RF: 'Regionvalet Gävleborg', KF: 'Kommunvalet Hudiksvall' }
   const TOTAL: Record<Valtyp, number> = { RD: gavleborgTotal, RF: gavleborgTotal, KF: hudiksvallTotal }
   const DONE: Record<Valtyp, number> = { RD: rdDone, RF: rfDone, KF: kfDone }
 
