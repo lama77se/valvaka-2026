@@ -62,6 +62,14 @@ export function EgMApp() {
               <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">{p.label}</p>
               <p className="mt-2 text-5xl font-bold tabular-nums text-slate-100">{nf.format(p.total)}</p>
               <p className="mt-1 text-sm text-slate-500">personröster</p>
+              {/* Plats bland M:s egna kandidater i samma geografi (handover 15 sep,
+                  Lars) — döljs helt tills hon (eller någon annan M-kandidat) faktiskt
+                  har personröster i området att rangordna mot, se lib/eg_m.ts. */}
+              {p.rank != null && (
+                <p className="mt-1 text-xs tabular-nums text-sky-300">
+                  Plats {p.rank} av {p.rankTotal} (M)
+                </p>
+              )}
             </div>
           ))}
         </div>
