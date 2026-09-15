@@ -4,10 +4,11 @@
 // <ResultTable>. Områdesväljaren styr delad `selectedArea` (kartklick → drilldown).
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { VALTYP_LABEL, type Valtyp } from '@/lib/results'
-import { comparisonFor, formatMarginalSeat, mergeVotes, sparrFor, uppsamlingCountsForArea, uppsamlingEntriesFor, uppsamlingRowFor, uppsamlingSuffix, type Level } from '@/lib/aggregate'
+import { comparisonFor, mergeVotes, sparrFor, uppsamlingCountsForArea, uppsamlingEntriesFor, uppsamlingRowFor, uppsamlingSuffix, type Level } from '@/lib/aggregate'
 import { RIKET, useResults } from '@/components/ResultsProvider'
 import { ResultTable } from '@/components/ResultTable'
 import { MandatBars } from '@/components/MandatBars'
+import { MarginalSeatChips } from '@/components/MarginalSeatChips'
 import { SPECTRUM } from '@/lib/soffa'
 import { onDark } from '@/lib/colors'
 import { ancestorsOf, childGroupsOf, childLevelOf } from '@/lib/hierarchy'
@@ -448,11 +449,7 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
                   Inga resultat inrapporterade för {VALTYP_LABEL[valtyp].toLowerCase()} i {av.areaName} än.
                 </p>
               ))}
-            {av.marginalSeat && (
-              <p className="mt-2 text-xs text-slate-400">
-                {formatMarginalSeat(av.marginalSeat, av.totalMandat, compact, (kod) => partyRef.current.get(kod)?.forkortning ?? kod)}
-              </p>
-            )}
+            {av.marginalSeat && <MarginalSeatChips info={av.marginalSeat} totalMandat={av.totalMandat} party={partyRef.current} />}
           </>
         )}
         {/* "Bryt ner" renders OBEROENDE av isPrompt (se kommentar vid `drill` ovan) —

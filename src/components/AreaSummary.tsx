@@ -9,10 +9,11 @@
 // används för undertext/valdeltagande-etiketten (samma anda som mobilens
 // `compact`-läge i ResultPanel.tsx, fast hårdkodat här — varje ruta är alltid smal).
 import { VALTYP_LABEL, type Valtyp } from '@/lib/results'
-import { formatMarginalSeat, sparrFor, uppsamlingSuffix } from '@/lib/aggregate'
+import { sparrFor, uppsamlingSuffix } from '@/lib/aggregate'
 import { RIKET, type Area } from '@/lib/area'
 import { ResultTable } from '@/components/ResultTable'
 import { MandatBars } from '@/components/MandatBars'
+import { MarginalSeatChips } from '@/components/MarginalSeatChips'
 import { AreaSelect } from '@/components/AreaSelect'
 import { ValtypSelector } from '@/components/ValtypSelector'
 import { useAreaView } from '@/components/useAreaView'
@@ -125,11 +126,7 @@ export function AreaSummary({
                   Inga resultat inrapporterade för {VALTYP_LABEL[valtyp].toLowerCase()} i {av.areaName} än.
                 </p>
               ))}
-            {av.marginalSeat && (
-              <p className="mt-2 text-xs text-slate-400">
-                {formatMarginalSeat(av.marginalSeat, av.totalMandat, true, (kod) => partyRef.current.get(kod)?.forkortning ?? kod)}
-              </p>
-            )}
+            {av.marginalSeat && <MarginalSeatChips info={av.marginalSeat} totalMandat={av.totalMandat} party={partyRef.current} />}
           </>
         )}
       </div>
