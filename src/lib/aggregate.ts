@@ -6,7 +6,7 @@
 // som "–". Mandat (increment 2) och ±2022 (increment 3) fylls i utan att röra
 // tabellkomponenten. Kollaps till "Övriga" sker vid RENDER — andel/spärr räknas
 // alltid på HELA partiuppsättningen, aldrig på den 1%-kollapsade.
-import { computeAssembly, modifiedSainteLague, placeLevelingSeats, type ConstituencyVotes, type MarginalSeatInfo, type PartyVotes } from './mandate'
+import { computeAssembly, modifiedSainteLague, placeLevelingSeats, type ConstituencyVotes, type PartyVotes } from './mandate'
 import type { Valtyp } from './results'
 import { SEAT_CONFIG_2026 } from './seatConfig2026'
 
@@ -143,42 +143,11 @@ export function collapseForDisplay(area: AreaResult, threshold = DISPLAY_THRESHO
   return { shown, ovriga, sparrIndex: idx === -1 ? shown.length : idx }
 }
 
-// Render-tid: formatera marginalmandat-raden (handover 14 sep, Val ANALYSIS; utökad 14 sep
-// med näst närmaste utmanaren, Lars uttryckliga önskan; utökad igen 14 sep med den TREDJE
-// närmaste, samma önskemål) — delad textbyggnad mellan ResultPanel.tsx (huvudvyn, desktop+
-// mobil) och AreaSummary.tsx (Dashboard-rutorna), så BÅDA ytorna alltid visar exakt samma text
-// för samma data. `partyName` är en enkel uppslagsfunktion (partikod → förkortning) — hålls fri
-// från React/PartyMeta-typen här så denna fil inte behöver bry sig om VILKEN källa anroparen
-// har (partyRef.current.get(...) i båda dagens call sites). Visar de TRE närmaste utmanarna
-// (redan sorterade så i marginalSeatInfo) — näst/tredje närmast utelämnas graciöst var för sig
-// om den inte finns (t.ex. bara 3 kvalificerade partier totalt → bara 2 möjliga utmanare,
-// marginalpartiet räknas inte som sin egen utmanare). `null` om ingen utmanare alls finns (bör
-// aldrig hända i praktiken — marginalSeatInfo kräver redan ≥2 kvalificerade partier).
-export function formatMarginalSeat(
-  m: MarginalSeatInfo,
-  totalMandat: number | null,
-  compact: boolean,
-  partyName: (kod: string) => string,
-): string | null {
-  const [top, second, third] = m.challengers
-  if (!top) return null
-  const marginalName = partyName(m.marginalParty)
-  const challengerName = partyName(top.party)
-  const votes = top.votesNeeded.toLocaleString('sv-SE')
-  const secondText =
-    second &&
-    (compact
-      ? ` ${partyName(second.party)} näst närmast (~${second.votesNeeded.toLocaleString('sv-SE')}).`
-      : ` Därefter ${partyName(second.party)}, som skulle behöva ~${second.votesNeeded.toLocaleString('sv-SE')} röster.`)
-  const thirdText =
-    third &&
-    (compact
-      ? ` ${partyName(third.party)} tredje närmast (~${third.votesNeeded.toLocaleString('sv-SE')}).`
-      : ` Därefter ${partyName(third.party)}, som skulle behöva ~${third.votesNeeded.toLocaleString('sv-SE')} röster.`)
-  return compact
-    ? `Sista mandatet: ${marginalName}. ${challengerName} närmast (~${votes} röster).${secondText || ''}${thirdText || ''}`
-    : `Sista mandatet${totalMandat != null ? ` (#${totalMandat})` : ''} innehas av ${marginalName}. ${challengerName} ligger närmast och skulle behöva ~${votes} fler röster för att ta det.${secondText || ''}${thirdText || ''}`
-}
+// Marginalmandat-RENDERINGEN flyttade till components/MarginalSeatChips.tsx (handover
+// 15 sep, Lars: kompakta färgade partichips i stället för en löptextmening — samma
+// delad-komponent-mönster som SlutligBar). Den tidigare formatMarginalSeat (ren
+// strängbyggnad) togs bort härifrån, ingen anropare kvar. MarginalSeatInfo-DATAN/
+// -beräkningen (mandate.ts:s marginalSeatInfo) är HELT oförändrad — bara presentationen.
 
 // --- Uppsamlingsdistrikt-registret (handover 13 sep, Val ANALYSIS) -------------
 // Strukturell referens (kod/kommunkod/lankod/kretskod/namn) över VILKA uppsamlingsdistrikt
