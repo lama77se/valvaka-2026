@@ -187,7 +187,7 @@ export function PersonrosterPanel({
         </div>
       )}
       {!compact && (
-        <p className="mt-1.5 text-[11px] text-slate-600">
+        <p className="mt-1.5 text-[11px] text-slate-500">
           Visar {shown === entries ? `${page * PAGE_SIZE + 1}–${page * PAGE_SIZE + shown.length}` : shown.length}, {partikod ? partyLabel(partikod, parties.get(partikod) ?? { forkortning: null, farg: null }) : 'alla partier'}.
         </p>
       )}
