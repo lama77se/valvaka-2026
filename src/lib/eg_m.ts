@@ -48,6 +48,12 @@ export interface EgMPersonroster {
   slutligDone: number
   slutligTotal: number
   slutligPct: number
+  // Emelies plats bland M:s EGNA kandidater i SAMMA geografi (Gävleborg för RD/RF,
+  // Hudiksvall för KF), rangordnat efter personröster — handover 15 sep, Lars.
+  // null = hon (eller ALLA M-kandidater) har ännu inga personröster i området att
+  // rangordna mot (väntat tidigt i sluträkningen — se slutligPct ovan).
+  rank: number | null
+  rankTotal: number | null
 }
 
 interface PersonrosterRow { valtyp: string; antal_personroster: number }
@@ -86,8 +92,34 @@ async function fetchSlutligCount(valtyp: Valtyp, prefix: string): Promise<number
   return new Set(rows.map((r) => r.valdistriktskod)).size
 }
 
+// Emelies plats bland M:s egna kandidater i EN valtyp+geografi (Lars, 15 sep: "vilken
+// plats av moderater ... ligger hon på", per nivå/lista). Summerar VARJE M-kandidats
+// personröster i samma geografiska område (personroster+uppsamling_personroster,
+// samma två källor/samma union som Emelies egen summa ovan — konsekvent nämnare/
+// urval), rangordnar fallande, hittar hennes kandidatnummer. Samma namn-fälla-princip
+// som resten av arbetet: rangordningen görs på kandidatnummer, ALDRIG på namnsträngen
+// (två M-kandidater kan i teorin ha liknande namn, kandidatnumret är alltid unikt per
+// lista). Delad "isKommun"-växel mellan RF (lankod) och KF (kommunkod) — samma
+// organ-nyckel-princip som uppsamling_result/uppsamling_personroster redan använder.
+async function fetchMRanking(valtyp: Valtyp, prefix: string, orgField: 'lankod' | 'kommunkod'): Promise<{ rank: number | null; rankTotal: number | null }> {
+  const [prRows, uppRows] = await Promise.all([
+    fetchPaged<{ kandidatnummer: number; antal_personroster: number }>((from, to) =>
+      supabase.from('personroster').select('kandidatnummer,antal_personroster').eq('valtyp', valtyp).eq('partikod', PARTIKOD).ilike('valdistriktskod', `${prefix}%`).range(from, to),
+    ),
+    fetchPaged<{ kandidatnummer: number; antal_personroster: number }>((from, to) =>
+      supabase.from('uppsamling_personroster').select('kandidatnummer,antal_personroster').eq('valtyp', valtyp).eq('partikod', PARTIKOD).eq(orgField, prefix).range(from, to),
+    ),
+  ])
+  const totals = new Map<number, number>()
+  for (const r of [...prRows, ...uppRows]) totals.set(r.kandidatnummer, (totals.get(r.kandidatnummer) ?? 0) + r.antal_personroster)
+  if (!totals.has(KANDIDATNUMMER)) return { rank: null, rankTotal: null } // hon har (ännu) inga egna rader i området
+  const sorted = [...totals.entries()].sort((a, b) => b[1] - a[1])
+  const idx = sorted.findIndex(([k]) => k === KANDIDATNUMMER)
+  return { rank: idx + 1, rankTotal: sorted.length }
+}
+
 export async function fetchEgMData(): Promise<EgMPersonroster[]> {
-  const [pr, uppPr, gavleborgTotal, hudiksvallTotal, rdDone, rfDone, kfDone] = await Promise.all([
+  const [pr, uppPr, gavleborgTotal, hudiksvallTotal, rdDone, rfDone, kfDone, rdRank, rfRank, kfRank] = await Promise.all([
     supabase.from('personroster').select('valtyp,antal_personroster').eq('kandidatnummer', KANDIDATNUMMER).eq('partikod', PARTIKOD),
     supabase.from('uppsamling_personroster').select('valtyp,antal_personroster').eq('kandidatnummer', KANDIDATNUMMER).eq('partikod', PARTIKOD),
     fetchDistrictTotal(LANSKOD_GAVLEBORG),
@@ -95,6 +127,9 @@ export async function fetchEgMData(): Promise<EgMPersonroster[]> {
     fetchSlutligCount('RD', LANSKOD_GAVLEBORG),
     fetchSlutligCount('RF', LANSKOD_GAVLEBORG),
     fetchSlutligCount('KF', KOMMUNKOD_HUDIKSVALL),
+    fetchMRanking('RD', LANSKOD_GAVLEBORG, 'lankod'),
+    fetchMRanking('RF', LANSKOD_GAVLEBORG, 'lankod'),
+    fetchMRanking('KF', KOMMUNKOD_HUDIKSVALL, 'kommunkod'),
   ])
   if (pr.error) throw new Error(pr.error.message)
   if (uppPr.error) throw new Error(uppPr.error.message)
@@ -106,6 +141,7 @@ export async function fetchEgMData(): Promise<EgMPersonroster[]> {
   const LABEL: Record<Valtyp, string> = { RD: 'Riksdagsvalet Gävleborg', RF: 'Regionvalet Gävleborg', KF: 'Kommunvalet Hudiksvall' }
   const TOTAL: Record<Valtyp, number> = { RD: gavleborgTotal, RF: gavleborgTotal, KF: hudiksvallTotal }
   const DONE: Record<Valtyp, number> = { RD: rdDone, RF: rfDone, KF: kfDone }
+  const RANK: Record<Valtyp, { rank: number | null; rankTotal: number | null }> = { RD: rdRank, RF: rfRank, KF: kfRank }
 
   return (['RD', 'RF', 'KF'] as Valtyp[]).map((valtyp) => {
     const slutligTotal = TOTAL[valtyp]
@@ -117,6 +153,8 @@ export async function fetchEgMData(): Promise<EgMPersonroster[]> {
       slutligDone,
       slutligTotal,
       slutligPct: slutligTotal > 0 ? Math.round((slutligDone / slutligTotal) * 100) : 0,
+      rank: RANK[valtyp].rank,
+      rankTotal: RANK[valtyp].rankTotal,
     }
   })
 }
