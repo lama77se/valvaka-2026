@@ -47,7 +47,18 @@ export function EgMApp() {
       {data && (
         <div className="flex w-full max-w-sm flex-col gap-4">
           {data.map((p) => (
-            <div key={p.valtyp} className="rounded-lg border border-slate-800 bg-slate-900/40 px-5 py-6 text-center">
+            <div key={p.valtyp} className="relative rounded-lg border border-slate-800 bg-slate-900/40 px-5 py-6 text-center">
+              {/* Sluträkningsgrad (handover 15 sep, Lars) — badge i övre högra hörnet:
+                  RD/RF mot Gävleborgs läns totala distriktsantal (samma geografi för
+                  båda), KF mot Hudiksvalls kommuns — se lib/eg_m.ts:s fetchSlutligCount/
+                  fetchDistrictTotal för nämnarens exakta betydelse ("alla distrikt i
+                  området", inte bara redan rapporterade). */}
+              <span
+                className="absolute right-2 top-2 rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-slate-300"
+                title={`${p.slutligDone} av ${p.slutligTotal} distrikt slutgiltigt räknade`}
+              >
+                {p.slutligPct} %
+              </span>
               <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">{p.label}</p>
               <p className="mt-2 text-5xl font-bold tabular-nums text-slate-100">{nf.format(p.total)}</p>
               <p className="mt-1 text-sm text-slate-500">personröster</p>

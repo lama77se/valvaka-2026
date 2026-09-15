@@ -34,18 +34,67 @@ export const RESYNC_MAX_MS = 45000
 export const KANDIDATNUMMER = 14863
 export const PARTIKOD = '0001' // Moderaterna (bekräftat: party.beteckning === 'Moderaterna')
 
+// Geografin badgen (sluträkningsgrad, handover 15 sep) skopas till — RD och RF delar
+// SAMMA fysiska distriktsmängd (Gävleborgs län; RD:s riksdagsvalkrets 25 = länet, RF:s
+// region = länet), KF skopas till Hudiksvalls kommun specifikt (Lars: "på riksdag ska
+// det vara en % av [Gävleborgs distriktsantal] ... i kommun % av [Hudiksvalls]").
+const LANSKOD_GAVLEBORG = '21'
+const KOMMUNKOD_HUDIKSVALL = '2184'
+
 export interface EgMPersonroster {
   valtyp: Valtyp
   label: string
   total: number
+  slutligDone: number
+  slutligTotal: number
+  slutligPct: number
 }
 
 interface PersonrosterRow { valtyp: string; antal_personroster: number }
 
+async function fetchPaged<T>(build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>): Promise<T[]> {
+  const PAGE = 1000
+  const out: T[] = []
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await build(from, from + PAGE - 1)
+    if (error) throw new Error(error.message)
+    if (!data || data.length === 0) break
+    out.push(...data)
+    if (data.length < PAGE) break
+  }
+  return out
+}
+
+// Totalt antal FYSISKA distrikt i ett prefix (Gävleborgs län / Hudiksvalls kommun) —
+// nämnaren är "alla distrikt i området", inte "alla hittills rapporterade" (Lars: "%
+// av alla distrikt i Gävleborg"). Hämtas en gång, delas mellan RD+RF (samma prefix).
+async function fetchDistrictTotal(prefix: string): Promise<number> {
+  const rows = await fetchPaged<{ valdistriktskod: string }>((from, to) =>
+    supabase.from('district').select('valdistriktskod').ilike('valdistriktskod', `${prefix}%`).range(from, to),
+  )
+  return rows.length
+}
+
+// Antal av DE distrikten som är slutgiltigt räknade för denna valtyp — samma "minst en
+// rad med status='slutlig'"-princip som ResultStore.isSlutlig() (results.ts), fast en
+// engångsfråga i stället för en levande store (skopad direkt i frågan: status='slutlig'
+// filtrerat server-side, betydligt mindre resultset än att hämta alla rader).
+async function fetchSlutligCount(valtyp: Valtyp, prefix: string): Promise<number> {
+  const rows = await fetchPaged<{ valdistriktskod: string }>((from, to) =>
+    supabase.from('result').select('valdistriktskod').eq('valtyp', valtyp).eq('status', 'slutlig').ilike('valdistriktskod', `${prefix}%`).range(from, to),
+  )
+  return new Set(rows.map((r) => r.valdistriktskod)).size
+}
+
 export async function fetchEgMData(): Promise<EgMPersonroster[]> {
-  const [pr, uppPr] = await Promise.all([
+  const [pr, uppPr, gavleborgTotal, hudiksvallTotal, rdDone, rfDone, kfDone] = await Promise.all([
     supabase.from('personroster').select('valtyp,antal_personroster').eq('kandidatnummer', KANDIDATNUMMER).eq('partikod', PARTIKOD),
     supabase.from('uppsamling_personroster').select('valtyp,antal_personroster').eq('kandidatnummer', KANDIDATNUMMER).eq('partikod', PARTIKOD),
+    fetchDistrictTotal(LANSKOD_GAVLEBORG),
+    fetchDistrictTotal(KOMMUNKOD_HUDIKSVALL),
+    fetchSlutligCount('RD', LANSKOD_GAVLEBORG),
+    fetchSlutligCount('RF', LANSKOD_GAVLEBORG),
+    fetchSlutligCount('KF', KOMMUNKOD_HUDIKSVALL),
   ])
   if (pr.error) throw new Error(pr.error.message)
   if (uppPr.error) throw new Error(uppPr.error.message)
@@ -53,5 +102,19 @@ export async function fetchEgMData(): Promise<EgMPersonroster[]> {
   const all = [...((pr.data ?? []) as PersonrosterRow[]), ...((uppPr.data ?? []) as PersonrosterRow[])]
   const sumBy = (valtyp: Valtyp) => all.filter((r) => r.valtyp === valtyp).reduce((a, r) => a + r.antal_personroster, 0)
   const LABEL: Record<Valtyp, string> = { RD: 'Riksdagsvalet', RF: 'Regionvalet', KF: 'Kommunvalet' }
-  return (['RD', 'RF', 'KF'] as Valtyp[]).map((valtyp) => ({ valtyp, label: LABEL[valtyp], total: sumBy(valtyp) }))
+  const TOTAL: Record<Valtyp, number> = { RD: gavleborgTotal, RF: gavleborgTotal, KF: hudiksvallTotal }
+  const DONE: Record<Valtyp, number> = { RD: rdDone, RF: rfDone, KF: kfDone }
+
+  return (['RD', 'RF', 'KF'] as Valtyp[]).map((valtyp) => {
+    const slutligTotal = TOTAL[valtyp]
+    const slutligDone = DONE[valtyp]
+    return {
+      valtyp,
+      label: LABEL[valtyp],
+      total: sumBy(valtyp),
+      slutligDone,
+      slutligTotal,
+      slutligPct: slutligTotal > 0 ? Math.round((slutligDone / slutligTotal) * 100) : 0,
+    }
+  })
 }
