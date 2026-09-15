@@ -36,7 +36,16 @@ export function EgMApp() {
   const total = data?.reduce((a, p) => a + p.total, 0) ?? null
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-slate-950 px-4 py-4 text-slate-100">
+    // `justify-center` (borttaget 15 sep, Lars) höll fint när sidan fick plats på EN
+    // mobilskärm (ursprunglig spec), men centrerar hela flex-kolumnen VERTIKALT — så
+    // fort innehållet (nu: topp 3 + grannar per frame, mer text än den ursprungliga
+    // topp-1-varianten) blir högre än viewporten skjuts headern nedåt i stället för att
+    // ligga kvar överst, och man måste scrolla för att ens SE den. `justify-start` +
+    // `py-6` (i stället för `py-4`, kompenserar det extra andrummet `justify-center`
+    // annars gav upptill/nedtill) ger samma look när allt får plats på en skärm, men
+    // headern ligger alltid överst och man scrollar bara nedåt för det som inte får
+    // plats — aldrig förbi den.
+    <div className="flex min-h-screen flex-col items-center justify-start gap-4 bg-slate-950 px-4 py-6 text-slate-100">
       <header className="flex w-full max-w-sm items-start justify-between gap-2">
         <div>
           <h1 className="text-lg font-semibold text-slate-100">Emelie Gustafsson</h1>
@@ -80,10 +89,11 @@ export function EgMApp() {
                   Plats {p.rank} av {p.rankTotal} (M)
                 </p>
               )}
-              {/* Ledaren + grannarna på platsen före/efter (handover 15 sep, Lars: "vem
-                  som är 1'a ... och vem som är på platsen före/efter henne"). Max tre
+              {/* Topp 3 + grannarna på platsen före/efter henne (handover 15 sep, Lars:
+                  "vem som är 1'a ... och vem som är på platsen före/efter henne", plus
+                  samma dags uppföljning "topp 3 istället för topp 1 bara"). Max fem
                   rader, redan dedupade i lib/eg_m.ts (t.ex. plats 2 → "plats före" ÄR
-                  ledaren, visas bara en gång). */}
+                  redan med i topp 3, visas bara en gång). */}
               {p.neighbors.length > 0 && (
                 <div className="mt-3 space-y-0.5 border-t border-slate-800 pt-2 text-left">
                   {p.neighbors.map((n) => (

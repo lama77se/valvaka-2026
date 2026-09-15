@@ -58,11 +58,12 @@ export interface EgMPersonroster {
   // topplistan — inkl. ledaren — så fort bara HON saknade data.)
   rank: number | null
   rankTotal: number | null
-  // Ledaren (plats 1) + hennes närmaste grannar (plats-1/plats+1) — Lars, 15 sep: "vem
-  // som är 1'a ... och vem som är på platsen före/efter henne". Har hon 0 kryss (syntetisk
-  // sistaplats, se fetchMRanking) blir "plats före" = kandidaten med minst kryss i
-  // verkligheten. Max 3 poster, dedupat (t.ex. om hon själv ligger på plats 2 ÄR "plats
-  // före" = ledaren, visas bara en gång; är hon 1:a själv IS hon "ledaren"-posten).
+  // Topp 3 + hennes närmaste grannar (plats-1/plats+1) — Lars, 15 sep: "vem som är 1'a
+  // ... och vem som är på platsen före/efter henne", uppföljning samma dag: "topp 3
+  // istället för topp 1 bara". Har hon 0 kryss (syntetisk sistaplats, se fetchMRanking)
+  // blir "plats före" = kandidaten med minst kryss i verkligheten. Max 5 poster,
+  // dedupat (t.ex. om hon själv ligger på plats 2 ÄR "plats före" redan med i topp 3,
+  // visas bara en gång; är hon 1:a-3:a själv ÄR hon en av topp 3-posterna).
   neighbors: RankEntry[]
 }
 
@@ -161,15 +162,16 @@ async function fetchMRanking(
   const rank = idx === -1 ? sorted.length + 1 : idx + 1
   const rankTotal = idx === -1 ? sorted.length + 1 : sorted.length
 
-  // Ledaren (plats 1) + hennes grannar (plats-1/plats+1) — handover 15 sep, Lars: "vem
-  // som är 1'a ... och vem som är på platsen före/efter henne". Hennes EGEN rad listas
-  // aldrig här (bara "runtomkring" henne) — UNDANTAGET är när hon själv är 1:a, då ÄR
-  // ledarposten henne (se docstringen ovanför fältet). Är hon sist av alla (syntetisk
-  // sistaplats ovan) blir "plats före" = den riktiga kandidaten med minst kryss, och
-  // "plats efter" (rank+1) filtreras bort av `r <= sorted.length` (finns bara i
-  // `sorted`, de RIKTIGA raderna — hennes syntetiska sistaplats är aldrig med där).
-  // En Set dedupar automatiskt (t.ex. plats 2 → "plats före" ÄR ledaren, visas en gång).
-  const wantedRanks = new Set([1, rank - 1, rank + 1].filter((r) => r >= 1 && r <= sorted.length))
+  // Topp 3 + hennes grannar (plats-1/plats+1) — Lars 15 sep uppföljning: "kan vi visa en
+  // topp 3 istället för topp 1 bara. och sedan plus den som ligger före/efter Emelie
+  // precis som nu". Hennes EGEN rad listas aldrig här specifikt (bara "runtomkring"
+  // henne) — UNDANTAGET är om hon själv råkar ligga inom topp 3 eller vara en av
+  // grannarna (se docstringen ovanför fältet). Är hon sist av alla (syntetisk sistaplats
+  // ovan) blir "plats före" = den riktiga kandidaten med minst kryss, och "plats efter"
+  // (rank+1) filtreras bort av `r <= sorted.length` (finns bara i `sorted`, de RIKTIGA
+  // raderna — hennes syntetiska sistaplats är aldrig med där). En Set dedupar
+  // automatiskt (t.ex. plats 2 → "plats före" ÄR redan med i topp 3, visas en gång).
+  const wantedRanks = new Set([1, 2, 3, rank - 1, rank + 1].filter((r) => r >= 1 && r <= sorted.length))
   const neighbors = sorted.filter((e) => wantedRanks.has(e.rank)).map(({ rank, namn, total }) => ({ rank, namn, total }))
 
   return { rank, rankTotal, neighbors }
