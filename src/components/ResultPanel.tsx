@@ -4,7 +4,7 @@
 // <ResultTable>. Områdesväljaren styr delad `selectedArea` (kartklick → drilldown).
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { VALTYP_LABEL, type Valtyp } from '@/lib/results'
-import { comparisonFor, formatMarginalSeat, mergeVotes, sparrFor, uppsamlingCountsForArea, uppsamlingRowFor, uppsamlingSuffix, type Level } from '@/lib/aggregate'
+import { comparisonFor, formatMarginalSeat, mergeVotes, sparrFor, uppsamlingCountsForArea, uppsamlingEntriesFor, uppsamlingRowFor, uppsamlingSuffix, type Level } from '@/lib/aggregate'
 import { RIKET, useResults } from '@/components/ResultsProvider'
 import { ResultTable } from '@/components/ResultTable'
 import { MandatBars } from '@/components/MandatBars'
@@ -15,6 +15,14 @@ import { REPORTED_NEUTRAL, UNREPORTED_FILL } from '@/components/DistrictMap'
 import { useAreaView } from '@/components/useAreaView'
 import { AreaSelect } from '@/components/AreaSelect'
 import { PersonrosterPanel } from '@/components/PersonrosterPanel'
+import {
+  fetchUppsamlingDetail,
+  fetchUppsamlingPersonroster,
+  fetchUppsamlingSummaries,
+  type UppsamlingDetail,
+  type UppsamlingPersonrosterRow,
+  type UppsamlingSummary,
+} from '@/lib/uppsamlingDrill'
 
 const CHILD_LABEL: Record<string, string> = { valkrets: 'Valkretsar', region: 'Län', kommun: 'Kommuner', distrikt: 'Distrikt' }
 
@@ -287,6 +295,54 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
   })
   const uppRow = drill.uppsamlingRow // sena röster för organet → egen rad sist i nedbrytningen
 
+  // Uppsamlingsdrilldown (handover 15 sep, Lars): "Uppsamling"-raden är nu klickbar ner
+  // till enskilda uppsamlingsdistrikt, precis som val.se redan gör. HELT SEPARAT från
+  // selectedArea/setSelectedArea — uppsamlingsdistrikt är inte en riktig geografisk
+  // Area/Level-nivå (ingen egen geometri, se uppsamlingsdistrikt_registry-docstringen) —
+  // ett lokalt läge i stället, så den vanliga Bryt ner-vägen (rader/URL/breadcrumbs)
+  // förblir helt orörd. list = listan av enskilda distrikt i den klickade bucketen;
+  // detail = ETT distrikts egen resultatrad (parti/röster, ingen valdeltagande).
+  type UppView = { kind: 'list' } | { kind: 'detail'; kod: string }
+  const [uppView, setUppView] = useState<UppView | null>(null)
+  useEffect(() => setUppView(null), [valtyp, selectedArea])
+
+  // SAMMA organ-/valkrets-upplösning som avgjorde uppRow ovan (uppsamlingRowFor) — delad
+  // uppsamlingOrganKey-regel i aggregate.ts garanterar att listan här alltid är EXAKT de
+  // distrikt som ligger bakom den klickade radens summa, aldrig fler/färre.
+  const uppEntries = useMemo(
+    () => uppsamlingEntriesFor(valtyp, selectedArea.level, selectedArea.code, uppsamlingRegistryRef.current[valtyp], drill.childLevel),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [valtyp, selectedArea, drill.childLevel, revision],
+  )
+
+  const [uppSummaries, setUppSummaries] = useState<Map<string, UppsamlingSummary>>(new Map())
+  const [uppListFailed, setUppListFailed] = useState(false)
+  useEffect(() => {
+    if (uppView?.kind !== 'list') return
+    let cancelled = false
+    setUppListFailed(false)
+    fetchUppsamlingSummaries(valtyp, uppEntries.map((e) => e.kod), partyRef.current)
+      .then((m) => { if (!cancelled) setUppSummaries(m) })
+      .catch(() => { if (!cancelled) setUppListFailed(true) })
+    return () => { cancelled = true }
+  }, [uppView, valtyp, uppEntries, partyRef])
+
+  const [uppDetail, setUppDetail] = useState<UppsamlingDetail | null>(null)
+  const [uppDetailPersonroster, setUppDetailPersonroster] = useState<UppsamlingPersonrosterRow[]>([])
+  const [uppDetailFailed, setUppDetailFailed] = useState(false)
+  useEffect(() => {
+    if (uppView?.kind !== 'detail') return
+    let cancelled = false
+    setUppDetailFailed(false)
+    setUppDetail(null)
+    Promise.all([fetchUppsamlingDetail(valtyp, uppView.kod), fetchUppsamlingPersonroster(valtyp, uppView.kod).catch(() => [])])
+      .then(([detail, pr]) => { if (!cancelled) { setUppDetail(detail); setUppDetailPersonroster(pr) } })
+      .catch(() => { if (!cancelled) setUppDetailFailed(true) })
+    return () => { cancelled = true }
+  }, [uppView, valtyp])
+
+  const uppEntryNamn = (kod: string) => uppEntries.find((e) => e.kod === kod)?.namn ?? kod
+
   return (
     <div className="flex h-full flex-col gap-3 overflow-hidden">
       {/* Rad: områdesväljare (vänster) + valtyp-badge (höger) som återbekräftar vilket val
@@ -400,8 +456,10 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
           </>
         )}
         {/* "Bryt ner" renders OBEROENDE av isPrompt (se kommentar vid `drill` ovan) —
-            RF/KF utan valt organ visar den ändå, med samtliga toppnivå-organ som rader. */}
-        {drill.anyLive && drill.childLevel && drillItems.length > 0 && (
+            RF/KF utan valt organ visar den ändå, med samtliga toppnivå-organ som rader.
+            uppView !== null → uppsamlingsdrilldown-vyerna (nedan) tar över i stället,
+            den vanliga Bryt ner-tabellen döljs helt så länge man är i den vyn. */}
+        {uppView === null && drill.anyLive && drill.childLevel && drillItems.length > 0 && (
               <div className="mt-3 border-t border-slate-800 pt-3">
                 <p className="mb-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[11px] font-semibold uppercase tracking-widest text-slate-400">
                   Bryt ner — {CHILD_LABEL[drill.childLevel] ?? drill.childLevel}
@@ -533,13 +591,19 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
                       </tr>
                     )})}
                     {uppRow && (
-                      // Uppsamlingsröster (sena röster) — egen icke-klickbar rad, visuellt skild från
-                      // de geografiska barnen (kursiv, dämpad, streckad neutral kantlinje). Andel per
-                      // parti + total röster i "Räkn."-kolumnen (rösterna som räknats, inte distrikt).
-                      <tr className="border-t border-slate-800 italic text-slate-400">
+                      // Uppsamlingsröster (sena röster) — visuellt skild från de geografiska
+                      // barnen (kursiv, dämpad, streckad neutral kantlinje). Klickbar ner till
+                      // enskilda uppsamlingsdistrikt (handover 15 sep, Lars: "precis som val.se
+                      // redan gör") när det finns några i den här bucketen (uppEntries) — annars
+                      // (borde inte hända i praktiken: uppRow>0 rader betyder röster finns, alltså
+                      // ska minst ETT distrikt ligga bakom) ingen klick-handler.
+                      <tr
+                        className={`border-t border-slate-800 italic text-slate-400 ${uppEntries.length > 0 ? 'cursor-pointer hover:bg-slate-800/50' : ''}`}
+                        onClick={uppEntries.length > 0 ? () => setUppView({ kind: 'list' }) : undefined}
+                      >
                         <td
                           className="max-w-[150px] truncate border-l-2 border-dashed border-slate-600 py-0.5 pl-1.5 pr-1 text-left"
-                          title="Uppsamlingsdistrikt: sena förtids-, utlands- och brevröster som inte hann sorteras till rätt distrikt i tid. Räknas vid onsdagsräkningen och vägs in i organtotalen (syns inte på kartan)."
+                          title="Uppsamlingsdistrikt: sena förtids-, utlands- och brevröster som inte hann sorteras till rätt distrikt i tid. Räknas vid onsdagsräkningen och vägs in i organtotalen (syns inte på kartan). Klicka för enskilda distrikt."
                         >
                           Uppsamling
                         </td>
@@ -563,6 +627,119 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
                   </tbody>
                 </table>
               </div>
+        )}
+        {/* Uppsamlingsdrilldown — listan av enskilda distrikt i den klickade bucketen
+            (handover 15 sep, Lars). Samma tabellstil/kolumner som Bryt ner ovan för
+            konsekvens, men egen liten tbody (uppEntries, inte drillItems). */}
+        {uppView?.kind === 'list' && (
+          <div className="mt-3 border-t border-slate-800 pt-3">
+            <button
+              type="button"
+              onClick={() => setUppView(null)}
+              className="mb-1.5 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-widest text-slate-400 hover:text-slate-200"
+            >
+              ‹ Uppsamling — enskilda distrikt
+            </button>
+            {uppListFailed && <p className="text-[12px] text-rose-400">Kunde inte hämta uppsamlingsdistrikten.</p>}
+            <table className="w-full border-separate border-spacing-0 text-[13px] tabular-nums">
+              <thead>
+                <tr className="text-slate-400">
+                  <th className="pb-1 pr-1 text-left font-medium">Distrikt</th>
+                  {drill.cols.map((c) => (
+                    <th key={c.fork} className="px-0.5 pb-1 text-center font-bold" style={{ color: onDark(c.farg) }}>
+                      {c.fork}
+                    </th>
+                  ))}
+                  <th className="pb-1 pl-1 text-right font-medium">Räkn.</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...uppEntries]
+                  .sort((a, b) => (a.namn ?? a.kod).localeCompare(b.namn ?? b.kod, 'sv'))
+                  .map((e) => {
+                    const s = uppSummaries.get(e.kod)
+                    return (
+                      <tr key={e.kod} className="cursor-pointer italic text-slate-400 hover:bg-slate-800/50" onClick={() => setUppView({ kind: 'detail', kod: e.kod })}>
+                        <td className="max-w-[150px] truncate border-l-2 border-dashed border-slate-600 py-0.5 pl-1.5 pr-1 text-left" title={e.namn ?? e.kod}>
+                          {e.namn ?? e.kod}
+                        </td>
+                        {drill.cols.map((c) => {
+                          const v = s?.andel[c.fork]
+                          const has = v && v > 0.0005
+                          return (
+                            <td key={c.fork} className="px-0.5 py-0.5 text-center align-top leading-tight">
+                              <div className={!has ? 'text-slate-600' : 'text-slate-300'}>{has ? (v * 100).toFixed(1) : '·'}</div>
+                            </td>
+                          )
+                        })}
+                        <td className="whitespace-nowrap py-0.5 pl-1 text-right text-slate-500" title={s?.reported ? `${s.total.toLocaleString('sv-SE')} sena röster` : 'ej rapporterat'}>
+                          {s?.reported ? '✓' : '·'}
+                        </td>
+                      </tr>
+                    )
+                  })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {/* Uppsamlingsdrilldown — detaljvy för ETT enskilt uppsamlingsdistrikt: partiröster
+            (samma form som en vanlig distriktstabell), INGEN valdeltagande-rad (turnout
+            saknar medvetet uppsamlingsdistrikt, matchar val.se — se lib/uppsamlingDrill.ts).
+            Personröster (uppsamling_personroster) som komplement, inte ett hårt krav. */}
+        {uppView?.kind === 'detail' && (
+          <div className="mt-3 border-t border-slate-800 pt-3">
+            <button
+              type="button"
+              onClick={() => setUppView({ kind: 'list' })}
+              className="mb-1.5 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-widest text-slate-400 hover:text-slate-200"
+            >
+              ‹ {uppEntryNamn(uppView.kod)}
+            </button>
+            {uppDetailFailed && <p className="text-[12px] text-rose-400">Kunde inte hämta distriktets resultat.</p>}
+            {!uppDetail && !uppDetailFailed && <p className="text-[12px] text-slate-500">Laddar…</p>}
+            {uppDetail && uppDetail.rows.length === 0 && <p className="text-[12px] text-slate-500">Inga röster rapporterade än.</p>}
+            {uppDetail && uppDetail.rows.length > 0 && (
+              <table className="w-full border-separate border-spacing-0 text-[13px] tabular-nums">
+                <thead>
+                  <tr className="text-slate-400">
+                    <th className="pb-1 pr-1 text-left font-medium">Parti</th>
+                    <th className="px-0.5 pb-1 text-right font-medium">Röster</th>
+                    <th className="pb-1 pl-1 text-right font-medium">Andel</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {uppDetail.rows.map((r) => {
+                    const meta = partyRef.current.get(r.partikod)
+                    return (
+                      <tr key={r.partikod}>
+                        <td className="max-w-[150px] truncate border-l-2 py-0.5 pl-1.5 pr-1 text-left text-slate-200" style={{ borderColor: meta?.farg ?? REPORTED_NEUTRAL }}>
+                          {meta?.forkortning ?? r.partikod}
+                        </td>
+                        <td className="px-0.5 py-0.5 text-right tabular-nums text-slate-200">{r.roster.toLocaleString('sv-SE')}</td>
+                        <td className="py-0.5 pl-1 text-right tabular-nums text-slate-400">{(r.andel * 100).toFixed(1)} %</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            )}
+            {uppDetailPersonroster.length > 0 && (
+              <div className="mt-3 border-t border-slate-800 pt-2">
+                <p className="mb-1 text-[11px] font-semibold uppercase tracking-widest text-slate-400">Personröster</p>
+                <ul className="space-y-0.5 text-[12px] tabular-nums text-slate-300">
+                  {uppDetailPersonroster.map((p) => (
+                    <li key={`${p.partikod}-${p.kandidatnummer}`} className="flex items-center gap-1.5">
+                      <span className="w-8 shrink-0 font-bold" style={{ color: onDark(partyRef.current.get(p.partikod)?.farg ?? '#94a3b8') }}>
+                        {partyRef.current.get(p.partikod)?.forkortning ?? p.partikod}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate">{p.namn}</span>
+                      <span className="shrink-0 text-slate-100">{p.antalPersonroster.toLocaleString('sv-SE')}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
         )}
         {!isPrompt && <PersonrosterPanel valtyp={valtyp} area={selectedArea} parties={partyRef.current} compact={compact} />}
       </div>
