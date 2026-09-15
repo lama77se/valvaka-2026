@@ -30,11 +30,21 @@ export function EgMApp() {
     return () => { aliveRef.current = false; if (timer) clearTimeout(timer) }
   }, [])
 
+  // TOTAL (handover 15 sep, Lars) — summan av alla tre valtypers personröster, en
+  // enda räknare uppe vid namnet i stället för att behöva lägga ihop de tre frames
+  // rutorna själv.
+  const total = data?.reduce((a, p) => a + p.total, 0) ?? null
+
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-slate-950 px-4 py-6 text-slate-100">
-      <header className="text-center">
-        <h1 className="text-lg font-semibold text-slate-100">Emelie Gustafsson</h1>
-        <p className="text-sm text-slate-400">Moderaterna — personröster 2026</p>
+    <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-slate-950 px-4 py-4 text-slate-100">
+      <header className="flex w-full max-w-sm items-start justify-between gap-2">
+        <div>
+          <h1 className="text-lg font-semibold text-slate-100">Emelie Gustafsson</h1>
+          <p className="text-sm text-slate-400">Moderaterna — personröster 2026</p>
+        </div>
+        {total != null && (
+          <p className="shrink-0 whitespace-nowrap pt-0.5 text-xs font-semibold tabular-nums text-sky-300">TOTAL: {nf.format(total)}</p>
+        )}
       </header>
 
       {failed && !data && (
@@ -47,7 +57,7 @@ export function EgMApp() {
       {data && (
         <div className="flex w-full max-w-sm flex-col gap-4">
           {data.map((p) => (
-            <div key={p.valtyp} className="relative rounded-lg border border-slate-800 bg-slate-900/40 px-5 py-6 text-center">
+            <div key={p.valtyp} className="relative rounded-lg border border-slate-800 bg-slate-900/40 px-5 py-4 text-center">
               {/* Sluträkningsgrad (handover 15 sep, Lars) — badge i övre högra hörnet:
                   RD/RF mot Gävleborgs läns totala distriktsantal (samma geografi för
                   båda), KF mot Hudiksvalls kommuns — se lib/eg_m.ts:s fetchSlutligCount/
@@ -69,6 +79,21 @@ export function EgMApp() {
                 <p className="mt-1 text-xs tabular-nums text-sky-300">
                   Plats {p.rank} av {p.rankTotal} (M)
                 </p>
+              )}
+              {/* Ledaren + grannarna på platsen före/efter (handover 15 sep, Lars: "vem
+                  som är 1'a ... och vem som är på platsen före/efter henne"). Max tre
+                  rader, redan dedupade i lib/eg_m.ts (t.ex. plats 2 → "plats före" ÄR
+                  ledaren, visas bara en gång). */}
+              {p.neighbors.length > 0 && (
+                <div className="mt-3 space-y-0.5 border-t border-slate-800 pt-2 text-left">
+                  {p.neighbors.map((n) => (
+                    <div key={n.rank} className="flex items-center gap-1.5 text-[11px] tabular-nums text-slate-400">
+                      <span className="w-4 shrink-0 text-right text-slate-500">{n.rank}.</span>
+                      <span className={`min-w-0 flex-1 truncate ${n.rank === p.rank ? 'font-semibold text-sky-300' : ''}`}>{n.namn}</span>
+                      <span className="shrink-0 text-slate-300">{nf.format(n.total)}</span>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           ))}

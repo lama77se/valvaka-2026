@@ -54,6 +54,17 @@ export interface EgMPersonroster {
   // rangordna mot (väntat tidigt i sluträkningen — se slutligPct ovan).
   rank: number | null
   rankTotal: number | null
+  // Ledaren (plats 1) + hennes närmaste grannar (plats-1/plats+1) — Lars, 15 sep:
+  // "vem som är 1'a ... och vem som är på platsen före/efter henne". Max 3 poster,
+  // dedupat (t.ex. om hon själv ligger på plats 2 ÄR "plats före" = ledaren, visas
+  // bara en gång; är hon 1:a själv IS hon "ledaren"-posten).
+  neighbors: RankEntry[]
+}
+
+export interface RankEntry {
+  rank: number
+  namn: string
+  total: number
 }
 
 interface PersonrosterRow { valtyp: string; antal_personroster: number }
@@ -101,21 +112,43 @@ async function fetchSlutligCount(valtyp: Valtyp, prefix: string): Promise<number
 // (två M-kandidater kan i teorin ha liknande namn, kandidatnumret är alltid unikt per
 // lista). Delad "isKommun"-växel mellan RF (lankod) och KF (kommunkod) — samma
 // organ-nyckel-princip som uppsamling_result/uppsamling_personroster redan använder.
-async function fetchMRanking(valtyp: Valtyp, prefix: string, orgField: 'lankod' | 'kommunkod'): Promise<{ rank: number | null; rankTotal: number | null }> {
+async function fetchMRanking(
+  valtyp: Valtyp,
+  prefix: string,
+  orgField: 'lankod' | 'kommunkod',
+): Promise<{ rank: number | null; rankTotal: number | null; neighbors: RankEntry[] }> {
   const [prRows, uppRows] = await Promise.all([
-    fetchPaged<{ kandidatnummer: number; antal_personroster: number }>((from, to) =>
-      supabase.from('personroster').select('kandidatnummer,antal_personroster').eq('valtyp', valtyp).eq('partikod', PARTIKOD).ilike('valdistriktskod', `${prefix}%`).range(from, to),
+    fetchPaged<{ kandidatnummer: number; antal_personroster: number; namn: string }>((from, to) =>
+      supabase.from('personroster').select('kandidatnummer,antal_personroster,namn').eq('valtyp', valtyp).eq('partikod', PARTIKOD).ilike('valdistriktskod', `${prefix}%`).range(from, to),
     ),
-    fetchPaged<{ kandidatnummer: number; antal_personroster: number }>((from, to) =>
-      supabase.from('uppsamling_personroster').select('kandidatnummer,antal_personroster').eq('valtyp', valtyp).eq('partikod', PARTIKOD).eq(orgField, prefix).range(from, to),
+    fetchPaged<{ kandidatnummer: number; antal_personroster: number; namn: string }>((from, to) =>
+      supabase.from('uppsamling_personroster').select('kandidatnummer,antal_personroster,namn').eq('valtyp', valtyp).eq('partikod', PARTIKOD).eq(orgField, prefix).range(from, to),
     ),
   ])
   const totals = new Map<number, number>()
-  for (const r of [...prRows, ...uppRows]) totals.set(r.kandidatnummer, (totals.get(r.kandidatnummer) ?? 0) + r.antal_personroster)
-  if (!totals.has(KANDIDATNUMMER)) return { rank: null, rankTotal: null } // hon har (ännu) inga egna rader i området
-  const sorted = [...totals.entries()].sort((a, b) => b[1] - a[1])
-  const idx = sorted.findIndex(([k]) => k === KANDIDATNUMMER)
-  return { rank: idx + 1, rankTotal: sorted.length }
+  // Namn-fälla (samma princip som personroster.ts:s RPC:er): samma kandidat kan ha
+  // olika stavning i olika rader — max(namn) väljer en deterministisk representant,
+  // aldrig grupperingsnyckel.
+  const names = new Map<number, string>()
+  for (const r of [...prRows, ...uppRows]) {
+    totals.set(r.kandidatnummer, (totals.get(r.kandidatnummer) ?? 0) + r.antal_personroster)
+    const prev = names.get(r.kandidatnummer)
+    if (prev == null || r.namn > prev) names.set(r.kandidatnummer, r.namn)
+  }
+  if (!totals.has(KANDIDATNUMMER)) return { rank: null, rankTotal: null, neighbors: [] } // hon har (ännu) inga egna rader i området
+
+  const sorted = [...totals.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([kandidatnummer, total], i): RankEntry & { kandidatnummer: number } => ({ rank: i + 1, kandidatnummer, namn: names.get(kandidatnummer) ?? '', total }))
+  const rank = sorted.findIndex((e) => e.kandidatnummer === KANDIDATNUMMER) + 1
+
+  // Ledaren (plats 1) + hennes grannar (plats-1/plats+1) — handover 15 sep, Lars:
+  // "vem som är 1'a ... och vem som är på platsen före/efter henne". En Set dedupar
+  // automatiskt (t.ex. plats 2 → "plats före" ÄR ledaren, visas bara en gång).
+  const wantedRanks = new Set([1, rank - 1, rank + 1].filter((r) => r >= 1 && r <= sorted.length))
+  const neighbors = sorted.filter((e) => wantedRanks.has(e.rank)).map(({ rank, namn, total }) => ({ rank, namn, total }))
+
+  return { rank, rankTotal: sorted.length, neighbors }
 }
 
 export async function fetchEgMData(): Promise<EgMPersonroster[]> {
@@ -141,7 +174,7 @@ export async function fetchEgMData(): Promise<EgMPersonroster[]> {
   const LABEL: Record<Valtyp, string> = { RD: 'Riksdagsvalet Gävleborg', RF: 'Regionvalet Gävleborg', KF: 'Kommunvalet Hudiksvall' }
   const TOTAL: Record<Valtyp, number> = { RD: gavleborgTotal, RF: gavleborgTotal, KF: hudiksvallTotal }
   const DONE: Record<Valtyp, number> = { RD: rdDone, RF: rfDone, KF: kfDone }
-  const RANK: Record<Valtyp, { rank: number | null; rankTotal: number | null }> = { RD: rdRank, RF: rfRank, KF: kfRank }
+  const RANK: Record<Valtyp, { rank: number | null; rankTotal: number | null; neighbors: RankEntry[] }> = { RD: rdRank, RF: rfRank, KF: kfRank }
 
   return (['RD', 'RF', 'KF'] as Valtyp[]).map((valtyp) => {
     const slutligTotal = TOTAL[valtyp]
@@ -155,6 +188,7 @@ export async function fetchEgMData(): Promise<EgMPersonroster[]> {
       slutligPct: slutligTotal > 0 ? Math.round((slutligDone / slutligTotal) * 100) : 0,
       rank: RANK[valtyp].rank,
       rankTotal: RANK[valtyp].rankTotal,
+      neighbors: RANK[valtyp].neighbors,
     }
   })
 }
