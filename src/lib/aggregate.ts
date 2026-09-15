@@ -361,6 +361,17 @@ export function uppsamlingForArea(
 //     lista): hela hinken, precis som innan — ingen nesting sker där.
 //   • Valkretsnivå (dess EGNA kommun-/distriktsbarn kan aldrig gå djupare geografiskt): hela
 //     den lösta hinken för just DEN valkretsen.
+// Organ-nyckeln en (valtyp,nivå,områdeskod) motsvarar i uppsamlingens hinkar (RD → ''
+// riksvid hink, RF → länskod, KF → kommunkod) — EN plats för regeln, delad av
+// uppsamlingRowFor (röstsummor) OCH uppsamlingEntriesFor (de enskilda distrikts-
+// posterna bakom summan, handover 15 sep) så de två ALDRIG kan divergera om vilken
+// hink ett område hör till.
+function uppsamlingOrganKey(valtyp: Valtyp, level: Level, areaCode: string | null): string | null {
+  if (valtyp === 'RD' && level === 'riket') return ''
+  if ((valtyp === 'RF' && level === 'region') || (valtyp === 'KF' && level === 'kommun')) return areaCode
+  return null
+}
+
 export function uppsamlingRowFor(
   valtyp: Valtyp,
   level: Level,
@@ -370,10 +381,32 @@ export function uppsamlingRowFor(
 ): PartyVotes | null {
   if (!uppsamling) return null
   if (level === 'valkrets' && areaCode) return uppsamling.byValkrets.get(areaCode) ?? null
-  const organKey =
-    valtyp === 'RD' && level === 'riket' ? '' : (valtyp === 'RF' && level === 'region') || (valtyp === 'KF' && level === 'kommun') ? areaCode : null
+  const organKey = uppsamlingOrganKey(valtyp, level, areaCode)
   if (organKey == null) return null
   return (childLevel === 'valkrets' ? uppsamling.unresolvedByOrgan.get(organKey) : uppsamling.byOrgan.get(organKey)) ?? null
+}
+
+// De ENSKILDA uppsamlingsdistrikt-posterna bakom uppsamlingRowFor:s aggregerade summa
+// för samma (valtyp,nivå,områdeskod,childLevel) — handover 15 sep, Lars: gör
+// "Uppsamling"-raden klickbar ner till enskilda distrikt, precis som val.se redan gör
+// (resultat.val.se listar och länkar enskilda uppsamlingsdistrikt). SAMMA organKey-regel
+// (uppsamlingOrganKey ovan) och SAMMA "bara olösta om barnen är valkretsar"-princip som
+// uppsamlingRowFor — annars skulle listan här kunna visa FLER eller FÄRRE distrikt än
+// vad som faktiskt ligger bakom den klickade radens summa.
+export function uppsamlingEntriesFor(
+  valtyp: Valtyp,
+  level: Level,
+  areaCode: string | null,
+  entries: readonly UppsamlingDistriktEntry[],
+  childLevel: Level | null,
+): UppsamlingDistriktEntry[] {
+  if (level === 'valkrets' && areaCode) return entries.filter((e) => e.kretskod === areaCode)
+  const organKey = uppsamlingOrganKey(valtyp, level, areaCode)
+  if (organKey == null) return []
+  const inOrgan =
+    valtyp === 'RD' ? () => true : valtyp === 'RF' ? (e: UppsamlingDistriktEntry) => e.lankod === organKey : (e: UppsamlingDistriktEntry) => e.kommunkod === organKey
+  const matches = entries.filter(inOrgan)
+  return childLevel === 'valkrets' ? matches.filter((e) => e.kretskod == null) : matches
 }
 
 // Proportionell mandatfördelning (jämkad uddatalsmetod 1,2) bland partier ≥ spärr.
