@@ -449,7 +449,7 @@ export function ResultPanel({ compact = false }: { compact?: boolean } = {}) {
                   Inga resultat inrapporterade för {VALTYP_LABEL[valtyp].toLowerCase()} i {av.areaName} än.
                 </p>
               ))}
-            {av.marginalSeat && <MarginalSeatChips info={av.marginalSeat} totalMandat={av.totalMandat} party={partyRef.current} compact={compact} />}
+            {av.marginalSeat && <MarginalSeatChips info={av.marginalSeat} totalMandat={av.totalMandat} party={partyRef.current} />}
           </>
         )}
         {/* "Bryt ner" renders OBEROENDE av isPrompt (se kommentar vid `drill` ovan) —

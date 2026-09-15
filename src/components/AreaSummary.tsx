@@ -126,7 +126,7 @@ export function AreaSummary({
                   Inga resultat inrapporterade för {VALTYP_LABEL[valtyp].toLowerCase()} i {av.areaName} än.
                 </p>
               ))}
-            {av.marginalSeat && <MarginalSeatChips info={av.marginalSeat} totalMandat={av.totalMandat} party={partyRef.current} compact />}
+            {av.marginalSeat && <MarginalSeatChips info={av.marginalSeat} totalMandat={av.totalMandat} party={partyRef.current} />}
           </>
         )}
       </div>
